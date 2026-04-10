@@ -59,24 +59,25 @@ export default function StationsScreen() {
   const [isGeocoding, setIsGeocoding] = useState(false);
   const currentLocation = useRef<GeoLocation | null>(null);
 
-  // ── Auto-load and Confirm Timer ──────────────────────────────────────────
+  // ── Auto-load on mount (once only) ──────────────────────────────────────
   useEffect(() => {
     if (stations.length === 0 && !isLoading) {
       fetchViaGPS();
     }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // 5-second lock logic for confirmation prompt
+  // ── 5-sec Confirm Modal Timer (re-arms when smartTank or lastPromptedMs changes) ──
+  useEffect(() => {
     const timer = setTimeout(() => {
       if (!smartTank) return;
       const now = Date.now();
       const MS_IN_DAY = 86_400_000;
       const daysSinceConfirmed = (now - smartTank.lastConfirmedMs) / MS_IN_DAY;
-      const daysSincePrompted = (now - lastPromptedMs) / MS_IN_DAY;
+      const daysSincePrompted  = (now - lastPromptedMs) / MS_IN_DAY;
       const estPct = estimateLevelPercent(smartTank);
-      
-      // The Dual-5-Day Lock Check
+
       if (
-        daysSincePrompted > TANK_CONFIRM_LOCK_DAYS &&
+        daysSincePrompted  > TANK_CONFIRM_LOCK_DAYS &&
         daysSinceConfirmed > TANK_CONFIRM_LOCK_DAYS &&
         estPct < 40
       ) {
@@ -85,7 +86,7 @@ export default function StationsScreen() {
     }, 5000);
 
     return () => clearTimeout(timer);
-  }, [smartTank, lastPromptedMs]); // recalculate if dependencies change, but only clear timeout on unmount or deps change
+  }, [smartTank, lastPromptedMs]);
 
   // ── GPS fetch ─────────────────────────────────────────────────────────────
   async function fetchViaGPS(fuelType?: FuelType) {

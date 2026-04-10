@@ -115,8 +115,8 @@ export function buildNotificationPayload(
   const urgency = smartTank ? computeRefuelUrgency(smartTank) : null;
   const daysLabel = urgency
     ? urgency.daysUntilEmpty < 1
-      ? 'heute noch'
-      : `noch ~${urgency.daysUntilEmpty.toFixed(0)} Tag(e)`
+      ? 'today'
+      : `~${urgency.daysUntilEmpty.toFixed(0)} day(s) left`
     : '';
 
   if (corridorStation && corridorStation.netSavingEur > 0) {
@@ -126,13 +126,13 @@ export function buildNotificationPayload(
     const price  = corridorStation.price?.toFixed(3) ?? '—';
 
     return {
-      title: '⛽ Zeit zum Tanken — FuelAmpel',
-      body: `${name} auf dem Weg: ${price} €/L · spart ~${saving} € · nur ${detour} km Umweg${daysLabel ? ` · Tank reicht ${daysLabel}` : ''}`,
+      title: '⛽️ Refuel on your way — FuelAmpel',
+      body: `${name} en route: ${price} €/L · saves ~${saving} € · only ${detour} km detour${daysLabel ? ` · Tank lasts ${daysLabel}` : ''}`,
     };
   }
 
   return {
-    title: `⛽ Zeit zum Tanken — FuelAmpel`,
+    title: `⛽️ FuelAmpel — Time to refuel`,
     body: decision.reason + (daysLabel ? ` (${daysLabel})` : ''),
   };
 }
