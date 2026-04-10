@@ -32,6 +32,12 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Generate native Android project (Expo Prebuild)
+        run: npx expo prebuild --platform android --clean --non-interactive
+
       - name: Grant Gradle execute permission
         working-directory: android
         run: chmod +x gradlew
@@ -65,3 +71,4 @@ jobs:
             3. 点开 APK 直接安装
           files: android/app/build/outputs/apk/release/app-release.apk
           make_latest: true
+          token: ${{ secrets.GITHUB_TOKEN }}
