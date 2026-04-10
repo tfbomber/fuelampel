@@ -29,10 +29,10 @@ export function TankConfirmModal({ visible, estimatedPercent, onConfirm, onAdjus
           
           <View style={styles.actions}>
             <TouchableOpacity style={[styles.btn, styles.btnAdjust]} onPress={onAdjust}>
-              <Text style={styles.btnAdjustText}>No, adjust</Text>
+              <Text style={styles.btnAdjustText}>Adjust level</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.btn, styles.btnConfirm]} onPress={onConfirm}>
-              <Text style={styles.btnConfirmText}>Yes, looks right</Text>
+              <Text style={styles.btnConfirmText}>Looks right</Text>
             </TouchableOpacity>
           </View>
         </Pressable>

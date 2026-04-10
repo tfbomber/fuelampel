@@ -208,6 +208,7 @@ export default function HomeScreen() {
       toValue: val, duration: 300, useNativeDriver: false,
     }).start();
     suppressBannerUntilRef.current = Date.now() + 10_000;
+    setMode('normal');
     // Recompute decision with new level (no network call)
     setTimeout(() => recomputeDecision(), 50);
     console.log(`[HomeScreen] Level adjusted to ${val}%`);
@@ -215,7 +216,10 @@ export default function HomeScreen() {
 
   function handleBlankTap() {
     if (mode === 'adjusting') {
-      setMode('normal');
+      // Commit the current slider value before exiting adjust mode.
+      // Without this, the bar stays at the dragged position visually but
+      // the store retains the old value, causing a mismatch on next render.
+      handleSliderCommit(sliderValue);
       if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
     }
   }
