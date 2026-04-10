@@ -1,0 +1,58 @@
+{
+  "expo": {
+    "name": "Fuel Ampel",
+    "slug": "fuelampel",
+    "version": "1.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.fuelampel.app",
+      "versionCode": 2,
+      "adaptiveIcon": {
+        "backgroundColor": "#0D0F14",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Fuel Ampel needs your location to find nearby fuel stations."
+        }
+      ],
+      "expo-notifications",
+      "expo-router",
+      "expo-system-ui"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "990b5df3-3041-4a0f-9771-adaca6c1788e"
+      }
+    },
+    "owner": "wid1990"
+  }
+}

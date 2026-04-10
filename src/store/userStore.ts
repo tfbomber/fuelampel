@@ -1,0 +1,452 @@
+// ====================================================
+// FuelAmpel — User Store (Zustand + AsyncStorage)
+// Persists user preferences, onboarding state, shadow tank.
+// ====================================================
+
+import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  FuelType, GeoLocation, ShadowTankState, SmartTankState,
+  RefuelingStyle, CarType, LastRefuelAmount, CommonArea,
+  RefuelEvent, DaySnapshot,
+} from '../utils/types';
+import {
+  createDefaultShadowTank,
+  resetShadowTank,
+  updateConsumption,
+} from '../core/shadowTank';
+import {
+  createDefaultSmartTank,
+  recordRefuel as smartRecordRefuel,
+  applyDaySnapshot,
+  confirmPattern,
+  applyManualLevelCorrection,
+  migrateFromShadowTank,
+  setTotalRangeKm as smartSetTotalRangeKm,
+  updateCommuteDistance,
+} from '../core/smartTank';
+import { fetchRoadMetrics } from '../utils/routingDistance';
+
+// ─── State Shape ──────────────────────────────────────────────────────────────
+
+interface UserState {
+  // Onboarding gate
+  hasCompletedOnboarding: boolean;
+
+  // Preferences (Must — collected in onboarding)
+  fuelType: FuelType;
+  commonAreas: CommonArea[];      // up to 2 PLZ areas user usually refuels in
+
+  // Preferences (Optional — collected in onboarding or set later)
+  refuelingStyle: RefuelingStyle | null;
+  carType: CarType | null;
+  lastRefuelAmount: LastRefuelAmount | null;
+
+  // Legacy location fields (kept for backward compat with Decide tab)
+  homeLocation: GeoLocation | null;
+  workLocation: GeoLocation | null;
+
+  // Shadow Tank (legacy — kept for migration)
+  shadowTank: ShadowTankState;
+
+  // Smart Shadow Tank v2
+  smartTank: SmartTankState | null; // null until initSmartTank is called
+
+  // Notification tracking
+  lastNotifiedMs: number;
+  /** Non-Critical pushes sent in the current 7-day window. */
+  notificationWeekCount: number;
+  /** Timestamp when the current weekly window started. */
+  notificationWeekStartMs: number;
+
+  // Confirm prompt tracking
+  lastPromptedMs: number;
+
+  // ── Actions ──────────────────────────────────────────────────────────────────
+
+  // Onboarding
+  completeOnboarding: (data: {
+    fuelType: FuelType;
+    commonAreas: CommonArea[];
+    refuelingStyle: RefuelingStyle | null;
+    carType: CarType | null;
+    lastRefuelAmount: LastRefuelAmount | null;
+  }) => void;
+
+  // Individual preference setters (used by Settings)
+  setFuelType: (type: FuelType) => void;
+  setCommonAreas: (areas: CommonArea[]) => void;
+  setRefuelingStyle: (style: RefuelingStyle | null) => void;
+  setCarType: (type: CarType | null) => void;
+  setLastRefuelAmount: (amount: LastRefuelAmount | null) => void;
+
+  // Legacy location setters
+  setHomeLocation: (loc: GeoLocation | null) => void;
+  setWorkLocation: (loc: GeoLocation | null) => void;
+
+  // Legacy shadow tank actions (kept for backward compat)
+  recordRefuel: (litresFueled?: number) => void;
+  setAvgConsumption: (l100km: number) => void;
+  setTankCapacity: (litres: number) => void;
+
+  // Smart Tank v2 actions
+  initSmartTank: (home: CommonArea, work?: CommonArea, initialPct?: number) => void;
+  recordSmartRefuel: (litresAdded: number, confirmedBy: RefuelEvent['confirmedBy']) => void;
+  applyLocationSnapshot: (distFromHomeKm: number, distFromWorkKm: number | null) => void;
+  confirmTripPattern: (dayOfWeek: number, confirmed: boolean) => void;
+  adjustLevelManually: (newPercent: number) => void;
+  recordNavigatedToStation: () => void;
+  clearPendingRefuelConfirm: () => void;
+
+  // Tank range (optional — unlocks km display on TankBar)
+  setTotalRangeKm: (rangeKm: number | null) => void;
+
+  // Notification tracking
+  recordNotificationSent: (isCritical?: boolean) => void;
+
+  // Confidence / Prompt tracking
+  setLastPrompted: () => void;
+  confirmCurrentLevel: () => void;
+
+  // Reset actions (Settings)
+  resetCommonArea: () => void;
+  resetPreferences: () => void;
+  fullReset: () => void;
+}
+
+// ─── Store ────────────────────────────────────────────────────────────────────
+
+export const useUserStore = create<UserState>()(
+  persist(
+    (set, get) => ({
+      // --- Default values ---
+      hasCompletedOnboarding: false,
+
+      fuelType: 'e5',
+      commonAreas: [],
+      refuelingStyle: null,
+      carType: null,
+      lastRefuelAmount: null,
+
+      homeLocation: null,
+      workLocation: null,
+
+      shadowTank: createDefaultShadowTank(),
+      smartTank: null, // initialized after onboarding or migration
+      lastNotifiedMs: 0,
+      notificationWeekCount: 0,
+      notificationWeekStartMs: Date.now(),
+      lastPromptedMs: 0,
+
+      // --- Onboarding ---
+      completeOnboarding: (data) => {
+        console.log('[UserStore] Onboarding completed:', JSON.stringify(data));
+        const homeLocFromArea = data.commonAreas[0]?.loc ?? null;
+        const home = data.commonAreas[0];
+        const work = data.commonAreas[1];
+        // Initialise SmartTank with the PLZ data collected during onboarding
+        const newSmartTank = home
+          ? createDefaultSmartTank(home, work)
+          : null;
+        set({
+          hasCompletedOnboarding: true,
+          fuelType: data.fuelType,
+          commonAreas: data.commonAreas,
+          refuelingStyle: data.refuelingStyle,
+          carType: data.carType,
+          lastRefuelAmount: data.lastRefuelAmount,
+          homeLocation: homeLocFromArea,
+          smartTank: newSmartTank,
+        });
+
+        // Async OSRM road distance refinement
+        if (newSmartTank && home?.loc && work?.loc) {
+          const dummyStation = { lat: work.loc.lat, lng: work.loc.lng } as any;
+          fetchRoadMetrics(home.loc, [dummyStation]).then((metrics) => {
+            if (metrics && metrics[0]) {
+              const currentSmartTank = get().smartTank;
+              if (currentSmartTank) {
+                set({ smartTank: updateCommuteDistance(currentSmartTank, metrics[0].distKm) });
+              }
+            }
+          }).catch(err => console.warn('[UserStore] OSRM onboarding fetch failed:', err));
+        }
+      },
+
+      // --- Individual setters ---
+      setFuelType: (type) => {
+        console.log(`[UserStore] Fuel type → ${type}`);
+        set({ fuelType: type });
+      },
+
+      setCommonAreas: (areas) => {
+        console.log(`[UserStore] Common areas updated: ${areas.map(a => a.plz).join(', ')}`);
+        const homeLocFromArea = areas[0]?.loc ?? null;
+        set({ commonAreas: areas, homeLocation: homeLocFromArea });
+
+        // Update SmartTank baseline if it exists
+        const { smartTank } = get();
+        if (smartTank) {
+          const home = areas[0];
+          const work = areas[1];
+          if (home?.loc && work?.loc) {
+            const dummyStation = { lat: work.loc.lat, lng: work.loc.lng } as any;
+            fetchRoadMetrics(home.loc, [dummyStation]).then((metrics) => {
+              if (metrics && metrics[0]) {
+                const currentSmartTank = get().smartTank;
+                if (currentSmartTank) {
+                  set({ smartTank: updateCommuteDistance(currentSmartTank, metrics[0].distKm) });
+                }
+              }
+            }).catch(err => console.warn('[UserStore] OSRM settings fetch failed:', err));
+          } else {
+            // Fallback: Use 0 km for work -> triggers 15km/day default
+            set({ smartTank: updateCommuteDistance(smartTank, 0) });
+          }
+        }
+      },
+
+      setRefuelingStyle: (style) => {
+        console.log(`[UserStore] Refueling style → ${style}`);
+        set({ refuelingStyle: style });
+      },
+
+      setCarType: (type) => {
+        console.log(`[UserStore] Car type → ${type}`);
+        set({ carType: type });
+      },
+
+      setLastRefuelAmount: (amount) => {
+        console.log(`[UserStore] Last refuel amount → ${amount}`);
+        set({ lastRefuelAmount: amount });
+      },
+
+      setHomeLocation: (loc) => {
+        console.log('[UserStore] Home location updated');
+        set({ homeLocation: loc });
+      },
+
+      setWorkLocation: (loc) => {
+        console.log('[UserStore] Work location updated');
+        set({ workLocation: loc });
+      },
+
+      // --- Legacy Shadow Tank (kept for migration) ---
+      recordRefuel: (litresFueled) => {
+        const currentTank = get().shadowTank;
+        const newTank = resetShadowTank(currentTank, litresFueled);
+        console.log(`[UserStore] [Legacy] Refuel recorded. New estimated range: ${newTank.kmAtLastRefuel} km`);
+        set({ shadowTank: newTank });
+      },
+
+      setAvgConsumption: (l100km) => {
+        const updated = updateConsumption(get().shadowTank, l100km);
+        console.log(`[UserStore] Avg consumption → ${updated.avgConsumptionPer100km} L/100km`);
+        set({ shadowTank: updated });
+      },
+
+      setTankCapacity: (litres) => {
+        const clamped = Math.max(20, Math.min(120, litres));
+        console.log(`[UserStore] Tank capacity → ${clamped} L`);
+        set((state) => ({
+          shadowTank: { ...state.shadowTank, tankCapacityL: clamped },
+          // Sync to smart tank as well
+          smartTank: state.smartTank
+            ? { ...state.smartTank, tankCapacityL: clamped }
+            : state.smartTank,
+        }));
+      },
+
+      // --- Smart Tank v2 actions ---
+      initSmartTank: (home, work, initialPct) => {
+        const { shadowTank, smartTank } = get();
+        if (smartTank) {
+          console.log('[UserStore] SmartTank already initialised — skipping init');
+          return;
+        }
+        // Attempt migration from legacy, else fresh start
+        const newSmartTank = shadowTank.lastRefuelTimeMs > 0
+          ? migrateFromShadowTank(shadowTank, home, work)
+          : createDefaultSmartTank(home, work, initialPct);
+        console.log('[UserStore] SmartTank initialised:', JSON.stringify({ levelPercent: newSmartTank.levelPercent }));
+        set({ smartTank: newSmartTank });
+
+        // Async OSRM road distance refinement
+        if (home?.loc && work?.loc) {
+          const dummyStation = { lat: work.loc.lat, lng: work.loc.lng } as any;
+          fetchRoadMetrics(home.loc, [dummyStation]).then((metrics) => {
+            if (metrics && metrics[0]) {
+              const currentSmartTank = get().smartTank;
+              if (currentSmartTank) {
+                set({ smartTank: updateCommuteDistance(currentSmartTank, metrics[0].distKm) });
+              }
+            }
+          }).catch(err => console.warn('[UserStore] OSRM init fetch failed:', err));
+        }
+      },
+
+      recordSmartRefuel: (litresAdded, confirmedBy) => {
+        const { smartTank } = get();
+        if (!smartTank) return;
+        const updated = smartRecordRefuel(smartTank, litresAdded, confirmedBy);
+        set({ smartTank: updated });
+      },
+
+      applyLocationSnapshot: (distFromHomeKm, distFromWorkKm) => {
+        const { smartTank } = get();
+        if (!smartTank) return;
+        const now = Date.now();
+        const date = new Date(now);
+        const snapshot: DaySnapshot = {
+          dateISO: date.toISOString().slice(0, 10),
+          dayOfWeek: date.getDay(),
+          timeMs: now,
+          distFromHomeKm,
+          distFromWorkKm,
+          status:
+            distFromHomeKm <= 1.5 ? 'HOME' :
+            (distFromWorkKm !== null && distFromWorkKm <= 1.5) ? 'WORK' : 'AWAY',
+        };
+        console.log(`[UserStore] Location snapshot: ${snapshot.status}, distHome=${distFromHomeKm.toFixed(1)} km`);
+        set({ smartTank: applyDaySnapshot(smartTank, snapshot) });
+      },
+
+      confirmTripPattern: (dayOfWeek, confirmed) => {
+        const { smartTank } = get();
+        if (!smartTank) return;
+        set({ smartTank: confirmPattern(smartTank, dayOfWeek, confirmed) });
+      },
+
+      adjustLevelManually: (newPercent) => {
+        const { smartTank } = get();
+        if (!smartTank) return;
+        set({ smartTank: applyManualLevelCorrection(smartTank, newPercent) });
+      },
+
+      setLastPrompted: () => {
+        set({ lastPromptedMs: Date.now() });
+      },
+
+      confirmCurrentLevel: () => {
+        const state = get().smartTank;
+        if (!state) return;
+        set({
+          smartTank: {
+            ...state,
+            lastConfirmedMs: Date.now(),
+            confidence: 1.0,
+            lastConfirmedBy: 'manual',
+          }
+        });
+        set({ lastPromptedMs: Date.now() });
+      },
+
+      recordNavigatedToStation: () => {
+        const { smartTank } = get();
+        if (!smartTank) return;
+        set({
+          smartTank: {
+            ...smartTank,
+            lastNavigatedToStationMs: Date.now(),
+            pendingRefuelConfirm: true,
+          },
+        });
+        console.log('[UserStore] Navigation to station recorded — pending refuel confirm');
+      },
+
+      clearPendingRefuelConfirm: () => {
+        const { smartTank } = get();
+        if (!smartTank) return;
+        set({ smartTank: { ...smartTank, pendingRefuelConfirm: false } });
+      },
+
+      setTotalRangeKm: (rangeKm) => {
+        const { smartTank } = get();
+        if (!smartTank) return;
+        set({ smartTank: smartSetTotalRangeKm(smartTank, rangeKm) });
+      },
+
+
+      /**
+       * Record a push notification was sent.
+       * Non-Critical pushes count against the weekly budget.
+       * Weekly window resets automatically after 7 days.
+       */
+      recordNotificationSent: (isCritical = false) => {
+        const { notificationWeekCount, notificationWeekStartMs } = get();
+        const weekReset = Date.now() - notificationWeekStartMs >= 7 * 24 * 60 * 60 * 1000;
+        set({
+          lastNotifiedMs: Date.now(),
+          notificationWeekCount: isCritical ? notificationWeekCount : (weekReset ? 1 : notificationWeekCount + 1),
+          notificationWeekStartMs: weekReset ? Date.now() : notificationWeekStartMs,
+        });
+        console.log(`[UserStore] Notification sent — isCritical=${isCritical}, weekCount=${isCritical ? notificationWeekCount : (weekReset ? 1 : notificationWeekCount + 1)}`);
+      },
+
+      // --- Reset actions ---
+
+      // A: Reset Common Area (PLZs only)
+      resetCommonArea: () => {
+        console.log('[UserStore] RESET: Common Area cleared');
+        set({ commonAreas: [], homeLocation: null });
+      },
+
+      // B: Reset Preferences (fuel type + style + car + amount)
+      resetPreferences: () => {
+        console.log('[UserStore] RESET: Preferences reset to defaults');
+        set({
+          fuelType: 'e5',
+          refuelingStyle: null,
+          carType: null,
+          lastRefuelAmount: null,
+        });
+      },
+
+      // C: Full Reset — clears everything, returns to pre-onboarding
+      fullReset: () => {
+        console.log('[UserStore] FULL RESET: All data cleared');
+        set({
+          hasCompletedOnboarding: false,
+          fuelType: 'e5',
+          commonAreas: [],
+          refuelingStyle: null,
+          carType: null,
+          lastRefuelAmount: null,
+          homeLocation: null,
+          workLocation: null,
+          shadowTank: createDefaultShadowTank(),
+          smartTank: null,
+          lastNotifiedMs: 0,
+          notificationWeekCount: 0,
+          notificationWeekStartMs: Date.now(),
+          lastPromptedMs: 0,
+        });
+      },
+    }),
+    {
+      name: 'fuelampel-user-store',
+      storage: createJSONStorage(() => AsyncStorage),
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          // Migration: add confidence field if missing from persisted SmartTank
+          if (state.smartTank && (state.smartTank as any).confidence === undefined) {
+            state.smartTank.confidence = 0.5;
+            console.log('[UserStore] Migration v2: smartTank.confidence initialized to 0.5');
+          }
+          // Migration: add weekly notification tracking if missing
+          if ((state as any).notificationWeekCount === undefined) {
+            state.notificationWeekCount = 0;
+            state.notificationWeekStartMs = Date.now();
+            console.log('[UserStore] Migration v2: notificationWeek fields initialized');
+          }
+          // Migration: add lastPromptedMs if missing (new field in V1 decision engine)
+          if ((state as any).lastPromptedMs === undefined) {
+            (state as any).lastPromptedMs = 0;
+            console.log('[UserStore] Migration v3: lastPromptedMs initialized to 0');
+          }
+        }
+      },
+    }
+  )
+);
