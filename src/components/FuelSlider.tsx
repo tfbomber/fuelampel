@@ -9,7 +9,7 @@
 //      appears at correct position on first render.
 // ====================================================
 
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { View, Animated, PanResponder, StyleSheet, Text } from 'react-native';
 
 const THUMB = 32;   // container size for emoji
@@ -37,6 +37,17 @@ export function FuelSlider({
   const valueRef  = useRef(value);
   const [width, setWidth] = useState(1);   // triggers re-render once measured
   const [local, setLocal] = useState(value);
+  const isDraggingRef = useRef(false);
+
+  // Sync internal state whenever the parent changes `value` prop
+  // (e.g. mode switches, parent resets the slider to current fuelPct)
+  // Guard: do NOT override local state while the user is actively dragging
+  useEffect(() => {
+    if (!isDraggingRef.current) {
+      valueRef.current = value;
+      setLocal(value);
+    }
+  }, [value]);
 
   // Measure after layout — sets state so thumb jumps to correct position
   const measure = useCallback(() => {
@@ -56,6 +67,7 @@ export function FuelSlider({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder:  () => true,
     onPanResponderGrant: (e) => {
+      isDraggingRef.current = true;
       const v = snap(e.nativeEvent.pageX);
       valueRef.current = v;
       setLocal(v);
@@ -75,6 +87,7 @@ export function FuelSlider({
       valueRef.current = v;
       setLocal(v);
       animatedFill?.setValue(v);
+      isDraggingRef.current = false;
       onSlidingComplete?.(v);
     },
   })).current;

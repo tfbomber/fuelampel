@@ -59,11 +59,9 @@ jobs:
             ## ⛽ FuelAmpel v${{ steps.version.outputs.VERSION }}
 
             ### 本次更新 (What's New)
-            - 🔴🟡🟢 V1 智能决策引擎：综合加权评分 + 3% 好价阈值 + 16-19点时段窗口
-            - 💬 轻量级油量确认弹窗 (5天双重防骚扰锁)
-            - ✨ 金色小车高亮动效引导用户调整油量
-            - 🐛 修复 useEffect 未导入导致的崩溃
-            - 📦 versionCode 升级至 2
+            - 🐛 修复首次安装 / 清除缓存后不进入引导页 (Guide) 的问题
+            - 🐛 修复油量条第二次调整时位置不正确的问题
+            - 📦 versionCode 升级至 5
 
             ### 安装方法 (Installation)
             1. 下载附件中的 `app-release.apk`

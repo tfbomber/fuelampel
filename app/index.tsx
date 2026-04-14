@@ -20,6 +20,12 @@ export default function Root() {
 
   useEffect(() => {
     if (!hydrated) {
+      // Guard: hydration may already be done before this effect runs
+      // (race condition on first install — AsyncStorage returns null instantly)
+      if (useUserStore.persist.hasHydrated()) {
+        setHydrated(true);
+        return;
+      }
       const unsub = useUserStore.persist.onFinishHydration(() => {
         setHydrated(true);
       });
