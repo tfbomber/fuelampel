@@ -163,6 +163,9 @@ function AddressAutocompleteInput({
   }
 
   function handleClear() {
+    // Cancel any in-flight request before resetting — otherwise the request
+    // could complete and overwrite the cleared state.
+    if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
     setQuery('');
     setSuggestions([]);
     setOpen(false);
@@ -188,15 +191,27 @@ function AddressAutocompleteInput({
           value={query}
           onChangeText={(t) => {
             setQuery(t);
-            if (searchState !== 'idle') setSearchState('idle');
-            if (open) { setOpen(false); setSuggestions([]); }
+            // Always reset unconditionally — avoids stale-closure miss when
+            // the user edits text while a request is already in-flight.
+            setSearchState('idle');
+            // Cancel the in-flight request immediately so it can't overwrite
+            // state after the user has already changed the query.
+            if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
+            setSuggestions([]);
+            setOpen(false);
           }}
           placeholder={placeholder}
           placeholderTextColor="#4B5563"
           returnKeyType="search"
           onSubmitEditing={triggerSearch}
           onFocus={() => { if (suggestions.length > 0) setOpen(true); }}
-          onBlur={() => setTimeout(() => setOpen(false), 200)}
+          onBlur={() => {
+            // Cancel any in-flight request when the user moves focus away.
+            // Without this, the spinner persists even after the input loses focus.
+            if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
+            setSearchState('idle');
+            setTimeout(() => setOpen(false), 200);
+          }}
           accessibilityLabel={label}
         />
         <View style={acStyles.endAdornment}>
