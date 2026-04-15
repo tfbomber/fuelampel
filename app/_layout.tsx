@@ -10,7 +10,7 @@
 // making it the only reliable place for a routing gate.
 // ====================================================
 
-import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View, StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { useLocationSnapshot } from '../src/hooks/useLocationSnapshot';
@@ -40,12 +40,13 @@ if (Platform.OS === 'android') {
 }
 
 // ── Onboarding Gate ───────────────────────────────────────────────────────────
-// Runs on every layout render. Once hydrated, redirects to the correct screen.
-// Uses segments to avoid redirect loops when already on the right screen.
+// Runs inside the root layout on every render cycle.
+// Waits for Zustand to rehydrate from AsyncStorage, then navigates imperatively.
+// Lives in _layout.tsx (not index.tsx) because Expo Router restores the last
+// active route on re-launch, bypassing app/index.tsx for returning users.
 function OnboardingGate() {
   const router   = useRouter();
   const segments = useSegments();
-  const rootNavigationState = useRootNavigationState();
 
   // Track Zustand hydration state
   const [hydrated, setHydrated] = useState(
@@ -64,25 +65,28 @@ function OnboardingGate() {
   }, [hydrated]);
 
   useEffect(() => {
-    // CRITICAL FIX: Expo Router requires rootNavigationState.key to be defined
-    // before any imperative navigation (router.replace) can be executed. 
-    // Without this, the event is silently dropped by the engine.
-    if (!hydrated || !rootNavigationState?.key) return;
+    if (!hydrated) return;
 
-    // Already on the onboarding screen — don't redirect, let onboarding drive navigation
+    // Already on onboarding — let onboarding drive its own navigation
     const inOnboarding = segments[0] === 'onboarding';
     if (inOnboarding) return;
 
     const { hasCompletedOnboarding, smartTank } = useUserStore.getState();
 
-    if (!hasCompletedOnboarding) {
-      console.log('[OnboardingGate] → /onboarding (new / reset user)');
-      router.replace('/onboarding');
-    } else if (!smartTank) {
-      console.log('[OnboardingGate] → /onboarding?mode=smartTankInit (no SmartTank)');
-      router.replace('/onboarding?mode=smartTankInit');
-    }
-  }, [hydrated, segments, rootNavigationState?.key]);
+    // setTimeout(fn, 0) defers one JS tick.
+    // By the time useEffect fires in _layout.tsx, the Stack has already
+    // committed its navigation state synchronously during render, so
+    // router.replace() is safe to call here.
+    setTimeout(() => {
+      if (!hasCompletedOnboarding) {
+        console.log('[OnboardingGate] → /onboarding (new / reset user)');
+        router.replace('/onboarding');
+      } else if (!smartTank) {
+        console.log('[OnboardingGate] → /onboarding?mode=smartTankInit (no SmartTank)');
+        router.replace('/onboarding?mode=smartTankInit');
+      }
+    }, 0);
+  }, [hydrated, segments]);
 
   return null; // purely logic, no UI
 }
