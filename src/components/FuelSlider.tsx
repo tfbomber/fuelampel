@@ -49,28 +49,28 @@ export function FuelSlider({
     }
   }, [value]);
 
-  // ─── Step snapping ────────────────────────────────────────────────────────
-  // Native Slider uses step=1 for smooth dragging; we snap in our callbacks
-  // to honour the desired step interval (default: 5%).
-  const snap = (v: number): number => Math.round(v / step) * step;
-
   // ─── Callbacks ────────────────────────────────────────────────────────────
+  // NOTE: No JS-side snapping here.
+  // step={step} is passed directly to the native Slider so Android SeekBar
+  // handles stepping at the platform layer — zero JS round-trip, zero jump-back.
 
   const handleValueChange = (v: number) => {
     isDraggingRef.current = true;
-    const s = snap(v);
-    setLocal(s);
-    animatedFill?.setValue(s);
-    onValueChange?.(s);
+    // v is already a step multiple (native Slider enforces step={step})
+    setLocal(v);
+    animatedFill?.setValue(v);
+    onValueChange?.(v);
   };
 
   const handleSlidingComplete = (v: number) => {
-    const s = snap(v);
+    // Safety clamp to ensure final value is integer multiple of step
+    const s = Math.round(v / step) * step;
     setLocal(s);
     animatedFill?.setValue(s);
     isDraggingRef.current = false;
     onSlidingComplete?.(s);
   };
+
 
   // ─── Emoji thumb position (visual only) ──────────────────────────────────
   // Positioned using containerWidth captured via onLayout.
@@ -98,7 +98,7 @@ export function FuelSlider({
         style={st.nativeSlider}
         minimumValue={0}
         maximumValue={100}
-        step={1}
+        step={step}
         value={local}
         onValueChange={handleValueChange}
         onSlidingComplete={handleSlidingComplete}
