@@ -262,6 +262,9 @@ export default function HomeScreen() {
     <ScrollView
       style={styles.screen}
       contentContainerStyle={styles.content}
+      // Disable scroll while the tank slider is active — prevents ScrollView from
+      // stealing horizontal PanResponder gesture events from FuelSlider.
+      scrollEnabled={mode !== 'adjusting'}
       refreshControl={
         <RefreshControl
           refreshing={isLoading}

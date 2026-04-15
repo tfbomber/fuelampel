@@ -1,15 +1,24 @@
 // ====================================================
 // FuelAmpel — Root Stack Layout
 // Wraps tabs + settings modal in a single Stack.
+//
+// ONBOARDING GATE (2026-04-15):
+// The routing gate MUST live here, not in index.tsx.
+// Expo Router restores the last active route on re-launch,
+// which means app/index.tsx is bypassed entirely for
+// returning users. _layout.tsx is ALWAYS rendered,
+// making it the only reliable place for a routing gate.
 // ====================================================
 
-import { Stack } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View, StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { useLocationSnapshot } from '../src/hooks/useLocationSnapshot';
 import { useDailyCheckScheduler } from '../src/hooks/useDailyCheckScheduler';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import { useEffect, useState } from 'react';
+import { useUserStore } from '../src/store/userStore';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -30,6 +39,54 @@ if (Platform.OS === 'android') {
   });
 }
 
+// ── Onboarding Gate ───────────────────────────────────────────────────────────
+// Runs on every layout render. Once hydrated, redirects to the correct screen.
+// Uses segments to avoid redirect loops when already on the right screen.
+function OnboardingGate() {
+  const router   = useRouter();
+  const segments = useSegments();
+
+  // Track Zustand hydration state
+  const [hydrated, setHydrated] = useState(
+    () => useUserStore.persist.hasHydrated()
+  );
+
+  useEffect(() => {
+    if (!hydrated) {
+      if (useUserStore.persist.hasHydrated()) {
+        setHydrated(true);
+        return;
+      }
+      const unsub = useUserStore.persist.onFinishHydration(() => setHydrated(true));
+      return () => unsub();
+    }
+  }, [hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+
+    // Already on the onboarding screen — don't redirect, let onboarding drive navigation
+    const inOnboarding = segments[0] === 'onboarding';
+    if (inOnboarding) return;
+
+    const { hasCompletedOnboarding, smartTank } = useUserStore.getState();
+
+    // Defer one tick so Expo Router's root Stack has committed its screen registry
+    setTimeout(() => {
+      if (!hasCompletedOnboarding) {
+        console.log('[OnboardingGate] → /onboarding (new / reset user)');
+        router.replace('/onboarding');
+      } else if (!smartTank) {
+        console.log('[OnboardingGate] → /onboarding?mode=smartTankInit (no SmartTank)');
+        router.replace('/onboarding?mode=smartTankInit');
+      }
+      // else: fully configured — stay on current (tabs) screen
+    }, 0);
+  }, [hydrated, segments]);
+
+  return null; // purely logic, no UI
+}
+
 export default function RootLayout() {
   // Silently takes location snapshots (foreground only, 3h gap-gated)
   useLocationSnapshot();
@@ -39,6 +96,8 @@ export default function RootLayout() {
   return (
     <View style={styles.root}>
       <StatusBar style="light" />
+      {/* Onboarding gate runs silently alongside the Stack */}
+      <OnboardingGate />
       <Stack
         screenOptions={{
           headerStyle: { backgroundColor: '#0D0F14' },

@@ -75,6 +75,10 @@ export function FuelSlider({
   };
 
   const pan = useRef(PanResponder.create({
+    // Capture phase: claim the gesture BEFORE ScrollView or any parent can intercept.
+    // This is the critical fix for horizontal drags inside a vertical ScrollView.
+    onStartShouldSetPanResponderCapture: () => true,
+    onMoveShouldSetPanResponderCapture:  () => true,
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder:  () => true,
 
