@@ -5,8 +5,14 @@
 // Fill:  colored track (green/amber/red) matching level
 // Supports external Animated.Value for fill animation
 //
-// Fix: width starts in state (not just ref) so thumb
-//      appears at correct position on first render.
+// FIX (2026-04-15): Removed fragile measure()/pageX absolute-coordinate
+// approach which caused Android to miscalculate touch position by the
+// screen's horizontal margin (rendering ~45% for any central touch).
+// Now uses:
+//   - e.nativeEvent.locationX on grant (reliable relative-to-container coord)
+//   - gestureState.dx for drag delta (rock-solid, no coordinate frame issues)
+//   - pointerEvents="none" on thumb so it never intercepts the container touch
+//   - onPanResponderTerminate to cleanly exit if ScrollView swipes in
 // ====================================================
 
 import React, { useRef, useState, useCallback, useEffect } from 'react';
@@ -31,64 +37,89 @@ export function FuelSlider({
   onValueChange, onSlidingComplete, animatedFill,
 }: Props) {
   const containerRef = useRef<View>(null);
-  // width in BOTH ref (for PanResponder closure) AND state (for initial render)
-  const widthRef  = useRef(1);
-  const pageXRef  = useRef(0);
-  const valueRef  = useRef(value);
-  const [width, setWidth] = useState(1);   // triggers re-render once measured
-  const [local, setLocal] = useState(value);
-  const isDraggingRef = useRef(false);
+  // Width captured via onLayout — reliable on all platforms
+  const widthRef     = useRef(1);
+  // Tracks the value at the moment the drag starts, so dx offsets are correct
+  const baseValueRef = useRef(value);
+  const valueRef     = useRef(value);
+  const [width, setWidth]   = useState(1);
+  const [local, setLocal]   = useState(value);
+  const isDraggingRef       = useRef(false);
 
   // Sync internal state whenever the parent changes `value` prop
-  // (e.g. mode switches, parent resets the slider to current fuelPct)
   // Guard: do NOT override local state while the user is actively dragging
   useEffect(() => {
     if (!isDraggingRef.current) {
-      valueRef.current = value;
+      valueRef.current  = value;
+      baseValueRef.current = value;
       setLocal(value);
     }
   }, [value]);
 
-  // Measure after layout — sets state so thumb jumps to correct position
-  const measure = useCallback(() => {
-    containerRef.current?.measure((_x, _y, w, _h, px) => {
+  // onLayout is more reliable than measure() for container width.
+  // It fires synchronously as part of the layout pass on both platforms.
+  const handleLayout = useCallback((e: { nativeEvent: { layout: { width: number } } }) => {
+    const w = e.nativeEvent.layout.width;
+    if (w > 0) {
       widthRef.current = w;
-      pageXRef.current = px;
-      setWidth(w); // ← this re-render fixes the initial position bug
-    });
+      setWidth(w);
+    }
   }, []);
 
-  const snap = (pageX: number) => {
-    const rel = Math.max(0, Math.min(1, (pageX - pageXRef.current) / widthRef.current));
-    return Math.round((rel * 100) / step) * step;
+  /**
+   * Snap a fraction (0–1) to the nearest step value (0–100).
+   */
+  const snapFraction = (fraction: number): number => {
+    const clamped = Math.max(0, Math.min(1, fraction));
+    return Math.round((clamped * 100) / step) * step;
   };
 
   const pan = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder:  () => true,
+
     onPanResponderGrant: (e) => {
       isDraggingRef.current = true;
-      const v = snap(e.nativeEvent.pageX);
+      // locationX is relative to the container element — no coordinate frame issues
+      const fraction = e.nativeEvent.locationX / widthRef.current;
+      const v = snapFraction(fraction);
+      baseValueRef.current = v;  // anchor for dx-based dragging
       valueRef.current = v;
       setLocal(v);
-      animatedFill?.setValue(v); // keep fill in sync with thumb during drag
+      animatedFill?.setValue(v);
       onValueChange?.(v);
     },
-    onPanResponderMove: (e) => {
-      const v = snap(e.nativeEvent.pageX);
+
+    onPanResponderMove: (_, gestureState) => {
+      // dx is the total horizontal displacement from the grant point — rock-solid
+      const deltaPct   = (gestureState.dx / widthRef.current) * 100;
+      const rawValue   = baseValueRef.current + deltaPct;
+      const fraction   = rawValue / 100;
+      const v = snapFraction(fraction);
       if (v === valueRef.current) return;
       valueRef.current = v;
       setLocal(v);
-      animatedFill?.setValue(v); // sync fill
+      animatedFill?.setValue(v);
       onValueChange?.(v);
     },
-    onPanResponderRelease: (e) => {
-      const v = snap(e.nativeEvent.pageX);
+
+    onPanResponderRelease: (_, gestureState) => {
+      const deltaPct = (gestureState.dx / widthRef.current) * 100;
+      const rawValue = baseValueRef.current + deltaPct;
+      const v = snapFraction(rawValue / 100);
       valueRef.current = v;
+      baseValueRef.current = v;
       setLocal(v);
       animatedFill?.setValue(v);
       isDraggingRef.current = false;
       onSlidingComplete?.(v);
+    },
+
+    // ScrollView may reclaim the gesture mid-drag — clean exit, commit last known value
+    onPanResponderTerminate: () => {
+      isDraggingRef.current = false;
+      baseValueRef.current = valueRef.current;
+      onSlidingComplete?.(valueRef.current);
     },
   })).current;
 
@@ -106,7 +137,7 @@ export function FuelSlider({
     <View
       ref={containerRef}
       style={st.container}
-      onLayout={measure}
+      onLayout={handleLayout}
       {...pan.panHandlers}
     >
       {/* Track background */}
@@ -117,8 +148,8 @@ export function FuelSlider({
         }
       </View>
 
-      {/* 🚗 Car emoji thumb — centered on value position */}
-      <View style={[st.thumbBox, { left: thumbLeft }]}>
+      {/* 🚗 Car emoji thumb — pointerEvents="none" so it never hijacks the container touch */}
+      <View style={[st.thumbBox, { left: thumbLeft }]} pointerEvents="none">
         <Text style={st.thumbEmoji}>🚗</Text>
       </View>
     </View>

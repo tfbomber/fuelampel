@@ -5,19 +5,25 @@
 //   2. Existing user missing SmartTank (post-update) → smartTankInit only
 //   3. Fully configured                              → main tabs
 //
-// IMPORTANT: We must wait for Zustand to rehydrate from AsyncStorage before
-// routing, otherwise a returning user will briefly flash to /onboarding
-// because the default value of hasCompletedOnboarding is false.
+// FIX (2026-04-15): Replaced <Redirect> with imperative router.replace() inside
+// a useEffect deferred via setTimeout(..., 0). This prevents Expo Router v3 from
+// silently dropping the navigation event when it fires during the initial layout
+// mount cycle before the root Stack has fully committed its screen registry.
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
-import { Redirect } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useUserStore } from '../src/store/userStore';
 
 export default function Root() {
+  const router = useRouter();
+
   const [hydrated, setHydrated] = useState(
     () => useUserStore.persist.hasHydrated()
   );
 
+  // Wait for Zustand to rehydrate from AsyncStorage before routing.
+  // Prevents a returning user from briefly flashing to /onboarding
+  // because the default value of hasCompletedOnboarding is false.
   useEffect(() => {
     if (!hydrated) {
       // Guard: hydration may already be done before this effect runs
@@ -33,24 +39,33 @@ export default function Root() {
     }
   }, [hydrated]);
 
-  const hasCompletedOnboarding = useUserStore(s => s.hasCompletedOnboarding);
-  const smartTank              = useUserStore(s => s.smartTank);
+  // Navigate imperatively once hydration is confirmed.
+  // setTimeout(..., 0) defers the call one tick past the current render cycle,
+  // ensuring Expo Router's root Stack has fully committed its screen registry
+  // before we issue the replace command.
+  useEffect(() => {
+    if (!hydrated) return;
+
+    const { hasCompletedOnboarding, smartTank } = useUserStore.getState();
+
+    setTimeout(() => {
+      if (!hasCompletedOnboarding) {
+        // Case 1: Truly new user — must go through full onboarding guide
+        console.log('[Root] Routing → /onboarding (new user)');
+        router.replace('/onboarding');
+      } else if (!smartTank) {
+        // Case 2: Existing user who completed onboarding but has no SmartTank data
+        //         (e.g. after an app update that introduced SmartTank)
+        console.log('[Root] Routing → /onboarding?mode=smartTankInit (existing user, no SmartTank)');
+        router.replace('/onboarding?mode=smartTankInit');
+      } else {
+        // Case 3: Fully configured — go straight to tabs
+        console.log('[Root] Routing → /(tabs)');
+        router.replace('/(tabs)');
+      }
+    }, 0);
+  }, [hydrated]);
 
   // Show blank screen while rehydrating — prevents flash to wrong route
-  if (!hydrated) {
-    return <View style={{ flex: 1, backgroundColor: '#0D0F14' }} />;
-  }
-
-  // Case 1: Truly new user — must go through full onboarding guide
-  if (!hasCompletedOnboarding) {
-    return <Redirect href="/onboarding" />;
-  }
-
-  // Case 2: Existing user who completed onboarding but has no SmartTank data
-  //         (e.g. after an app update that introduced SmartTank)
-  if (!smartTank) {
-    return <Redirect href="/onboarding?mode=smartTankInit" />;
-  }
-
-  return <Redirect href="/(tabs)" />;
+  return <View style={{ flex: 1, backgroundColor: '#0D0F14' }} />;
 }
