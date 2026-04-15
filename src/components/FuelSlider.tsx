@@ -1,34 +1,34 @@
 // ====================================================
-// FuelAmpel — FuelSlider  (custom PanResponder slider)
+// FuelAmpel — FuelSlider (native platform Slider)
 //
-// Thumb: 🚗 emoji — fun, thematic, instantly clear
-// Fill:  colored track (green/amber/red) matching level
-// Supports external Animated.Value for fill animation
+// PROPER SOLUTION (2026-04-15 v1.1.7):
+// Replaced hand-rolled PanResponder implementation with
+// @react-native-community/slider — a native platform SeekBar
+// on Android and UISlider on iOS.
 //
-// FIX (2026-04-15): Removed fragile measure()/pageX absolute-coordinate
-// approach which caused Android to miscalculate touch position by the
-// screen's horizontal margin (rendering ~45% for any central touch).
-// Now uses:
-//   - e.nativeEvent.locationX on grant (reliable relative-to-container coord)
-//   - gestureState.dx for drag delta (rock-solid, no coordinate frame issues)
-//   - pointerEvents="none" on thumb so it never intercepts the container touch
-//   - onPanResponderTerminate to cleanly exit if ScrollView swipes in
+// All previous PanResponder / locationX / measure() code has
+// been deleted. Coordinate system bugs inside Animated.View
+// on Android are a platform-level limitation that cannot be
+// patched in JS. The native slider is the only correct solution.
+//
+// 🚗 emoji is a purely visual overlay layer (pointerEvents="none")
+// positioned by the current value %; it never participates in
+// touch handling — the native Slider handles all gestures.
 // ====================================================
 
-import React, { useRef, useState, useCallback, useEffect } from 'react';
-import { View, Animated, PanResponder, StyleSheet, Text } from 'react-native';
+import React, { useRef, useState, useEffect } from 'react';
+import { View, StyleSheet, Text, Animated } from 'react-native';
+import Slider from '@react-native-community/slider';
 
-const THUMB = 32;   // container size for emoji
-const TRACK = 14;   // track bar height
+const THUMB = 32;  // emoji container diameter (dp)
 
 interface Props {
-  value: number;              // 0–100 initial value
+  value: number;              // 0–100
   fillColor: string;
   step?: number;
   onValueChange?: (v: number) => void;
   onSlidingComplete?: (v: number) => void;
-  /** When provided, drives fill width externally (refuel animation).
-   *  During drag also kept in sync so fill follows the thumb. */
+  /** Animated.Value driven by dragging — keeps ShadowTankBar fill in sync. */
   animatedFill?: Animated.Value;
 }
 
@@ -36,122 +36,82 @@ export function FuelSlider({
   value, fillColor, step = 5,
   onValueChange, onSlidingComplete, animatedFill,
 }: Props) {
-  const containerRef = useRef<View>(null);
-  // Width captured via onLayout — reliable on all platforms
-  const widthRef     = useRef(1);
-  // Tracks the value at the moment the drag starts, so dx offsets are correct
-  const baseValueRef = useRef(value);
-  const valueRef     = useRef(value);
-  const [width, setWidth]   = useState(1);
-  const [local, setLocal]   = useState(value);
-  const isDraggingRef       = useRef(false);
+  const [local, setLocal]             = useState(value);
+  const [containerWidth, setWidth]    = useState(1);
+  const isDraggingRef                 = useRef(false);
 
-  // Sync internal state whenever the parent changes `value` prop
-  // Guard: do NOT override local state while the user is actively dragging
+  // ─── Sync with parent value when NOT dragging ─────────────────────────────
+  // Parent passes `sliderValue` which is set by handleManualAdjust to fuelPct.
+  // Guard needed so that onValueChange callback doesn't trigger a reset loop.
   useEffect(() => {
     if (!isDraggingRef.current) {
-      valueRef.current  = value;
-      baseValueRef.current = value;
       setLocal(value);
     }
   }, [value]);
 
-  // onLayout is more reliable than measure() for container width.
-  // It fires synchronously as part of the layout pass on both platforms.
-  const handleLayout = useCallback((e: { nativeEvent: { layout: { width: number } } }) => {
-    const w = e.nativeEvent.layout.width;
-    if (w > 0) {
-      widthRef.current = w;
-      setWidth(w);
-    }
-  }, []);
+  // ─── Step snapping ────────────────────────────────────────────────────────
+  // Native Slider uses step=1 for smooth dragging; we snap in our callbacks
+  // to honour the desired step interval (default: 5%).
+  const snap = (v: number): number => Math.round(v / step) * step;
 
-  /**
-   * Snap a fraction (0–1) to the nearest step value (0–100).
-   */
-  const snapFraction = (fraction: number): number => {
-    const clamped = Math.max(0, Math.min(1, fraction));
-    return Math.round((clamped * 100) / step) * step;
+  // ─── Callbacks ────────────────────────────────────────────────────────────
+
+  const handleValueChange = (v: number) => {
+    isDraggingRef.current = true;
+    const s = snap(v);
+    setLocal(s);
+    animatedFill?.setValue(s);
+    onValueChange?.(s);
   };
 
-  const pan = useRef(PanResponder.create({
-    // Capture phase: claim the gesture BEFORE ScrollView or any parent can intercept.
-    // This is the critical fix for horizontal drags inside a vertical ScrollView.
-    onStartShouldSetPanResponderCapture: () => true,
-    onMoveShouldSetPanResponderCapture:  () => true,
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder:  () => true,
+  const handleSlidingComplete = (v: number) => {
+    const s = snap(v);
+    setLocal(s);
+    animatedFill?.setValue(s);
+    isDraggingRef.current = false;
+    onSlidingComplete?.(s);
+  };
 
-    onPanResponderGrant: () => {
-      isDraggingRef.current = true;
-      // Do NOT read nativeEvent coordinates AT ALL. They are fundamentally broken
-      // inside Animated.View on Android. Instead, use the current visual value 
-      // as the anchor and strictly rely on relative dx displacement.
-      baseValueRef.current = valueRef.current;
-      animatedFill?.setValue(valueRef.current);
-      onValueChange?.(valueRef.current);
-    },
-
-    onPanResponderMove: (_, gestureState) => {
-      // dx is the total horizontal displacement from the grant point — rock-solid
-      const deltaPct   = (gestureState.dx / widthRef.current) * 100;
-      const rawValue   = baseValueRef.current + deltaPct;
-      const fraction   = rawValue / 100;
-      const v = snapFraction(fraction);
-      if (v === valueRef.current) return;
-      valueRef.current = v;
-      setLocal(v);
-      animatedFill?.setValue(v);
-      onValueChange?.(v);
-    },
-
-    onPanResponderRelease: (_, gestureState) => {
-      const deltaPct = (gestureState.dx / widthRef.current) * 100;
-      const rawValue = baseValueRef.current + deltaPct;
-      const v = snapFraction(rawValue / 100);
-      valueRef.current = v;
-      baseValueRef.current = v;
-      setLocal(v);
-      animatedFill?.setValue(v);
-      isDraggingRef.current = false;
-      onSlidingComplete?.(v);
-    },
-
-    // ScrollView may reclaim the gesture mid-drag — clean exit, commit last known value
-    onPanResponderTerminate: () => {
-      isDraggingRef.current = false;
-      baseValueRef.current = valueRef.current;
-      onSlidingComplete?.(valueRef.current);
-    },
-  })).current;
-
-  // Fill: animatedFill when provided (for external animation), else local state
-  const fillWidth: any = animatedFill
-    ? animatedFill.interpolate({
-        inputRange: [0, 100], outputRange: ['0%', '100%'], extrapolate: 'clamp',
-      })
-    : `${local}%`;
-
-  // Thumb: centered on the value position using measured width (state)
-  const thumbLeft = (local / 100) * width - THUMB / 2;
+  // ─── Emoji thumb position (visual only) ──────────────────────────────────
+  // Positioned using containerWidth captured via onLayout.
+  // At 0% → left ≈ -THUMB/2 (clipped by container overflow:hidden is off, so
+  // we clamp to max(0, ...) to keep it fully visible).
+  const rawLeft  = (local / 100) * containerWidth - THUMB / 2;
+  const thumbLeft = Math.max(0, Math.min(containerWidth - THUMB, rawLeft));
 
   return (
     <View
-      ref={containerRef}
       style={st.container}
-      onLayout={handleLayout}
-      {...pan.panHandlers}
+      onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
     >
-      {/* Track background */}
-      <View style={st.track}>
-        {animatedFill
-          ? <Animated.View style={[st.fill, { width: fillWidth, backgroundColor: fillColor }]} />
-          : <View        style={[st.fill, { width: fillWidth, backgroundColor: fillColor }]} />
-        }
-      </View>
+      {/*
+        Native platform Slider — SeekBar (Android) / UISlider (iOS).
+        Handles ALL touch & gesture recognition at the platform level.
+        No JavaScript coordinate math involved — zero coordinate bugs.
 
-      {/* 🚗 Car emoji thumb — pointerEvents="none" so it never hijacks the container touch */}
-      <View style={[st.thumbBox, { left: thumbLeft }]} pointerEvents="none">
+        thumbTintColor="transparent" hides the native thumb visually;
+        the 🚗 emoji below serves as the visible thumb indicator.
+        The native touch target still covers the full track width,
+        so the user can tap anywhere on the track to set the value.
+      */}
+      <Slider
+        style={st.nativeSlider}
+        minimumValue={0}
+        maximumValue={100}
+        step={1}
+        value={local}
+        onValueChange={handleValueChange}
+        onSlidingComplete={handleSlidingComplete}
+        minimumTrackTintColor={fillColor}
+        maximumTrackTintColor="rgba(255,255,255,0.10)"
+        thumbTintColor="transparent"
+      />
+
+      {/* 🚗 emoji — purely decorative, intercepts no touches */}
+      <View
+        pointerEvents="none"
+        style={[st.thumbBox, { left: thumbLeft }]}
+      >
         <Text style={st.thumbEmoji}>🚗</Text>
       </View>
     </View>
@@ -162,16 +122,13 @@ const st = StyleSheet.create({
   container: {
     height: THUMB + 10,
     justifyContent: 'center',
+    position: 'relative',
   },
-  track: {
-    height: TRACK,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: TRACK / 2,
-    overflow: 'hidden',
-  },
-  fill: {
-    height: '100%',
-    borderRadius: TRACK / 2,
+  nativeSlider: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: THUMB + 10,
   },
   thumbBox: {
     position: 'absolute',
@@ -182,9 +139,11 @@ const st = StyleSheet.create({
     justifyContent: 'center',
     top: '50%',
     marginTop: -(THUMB / 2),
+    // Subtle glow behind emoji so it reads against any track colour
+    backgroundColor: 'rgba(13,15,20,0.55)',
   },
   thumbEmoji: {
-    fontSize: 22,
-    lineHeight: 28,
+    fontSize: 20,
+    lineHeight: 26,
   },
 });
