@@ -82,16 +82,14 @@ export function FuelSlider({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder:  () => true,
 
-    onPanResponderGrant: (e) => {
+    onPanResponderGrant: () => {
       isDraggingRef.current = true;
-      // locationX is relative to the container element — no coordinate frame issues
-      const fraction = e.nativeEvent.locationX / widthRef.current;
-      const v = snapFraction(fraction);
-      baseValueRef.current = v;  // anchor for dx-based dragging
-      valueRef.current = v;
-      setLocal(v);
-      animatedFill?.setValue(v);
-      onValueChange?.(v);
+      // Do NOT read nativeEvent coordinates AT ALL. They are fundamentally broken
+      // inside Animated.View on Android. Instead, use the current visual value 
+      // as the anchor and strictly rely on relative dx displacement.
+      baseValueRef.current = valueRef.current;
+      animatedFill?.setValue(valueRef.current);
+      onValueChange?.(valueRef.current);
     },
 
     onPanResponderMove: (_, gestureState) => {

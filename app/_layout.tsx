@@ -10,7 +10,7 @@
 // making it the only reliable place for a routing gate.
 // ====================================================
 
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { Stack, useRouter, useSegments, useRootNavigationState } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View, StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { useLocationSnapshot } from '../src/hooks/useLocationSnapshot';
@@ -45,6 +45,7 @@ if (Platform.OS === 'android') {
 function OnboardingGate() {
   const router   = useRouter();
   const segments = useSegments();
+  const rootNavigationState = useRootNavigationState();
 
   // Track Zustand hydration state
   const [hydrated, setHydrated] = useState(
@@ -63,7 +64,10 @@ function OnboardingGate() {
   }, [hydrated]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    // CRITICAL FIX: Expo Router requires rootNavigationState.key to be defined
+    // before any imperative navigation (router.replace) can be executed. 
+    // Without this, the event is silently dropped by the engine.
+    if (!hydrated || !rootNavigationState?.key) return;
 
     // Already on the onboarding screen — don't redirect, let onboarding drive navigation
     const inOnboarding = segments[0] === 'onboarding';
@@ -71,18 +75,14 @@ function OnboardingGate() {
 
     const { hasCompletedOnboarding, smartTank } = useUserStore.getState();
 
-    // Defer one tick so Expo Router's root Stack has committed its screen registry
-    setTimeout(() => {
-      if (!hasCompletedOnboarding) {
-        console.log('[OnboardingGate] → /onboarding (new / reset user)');
-        router.replace('/onboarding');
-      } else if (!smartTank) {
-        console.log('[OnboardingGate] → /onboarding?mode=smartTankInit (no SmartTank)');
-        router.replace('/onboarding?mode=smartTankInit');
-      }
-      // else: fully configured — stay on current (tabs) screen
-    }, 0);
-  }, [hydrated, segments]);
+    if (!hasCompletedOnboarding) {
+      console.log('[OnboardingGate] → /onboarding (new / reset user)');
+      router.replace('/onboarding');
+    } else if (!smartTank) {
+      console.log('[OnboardingGate] → /onboarding?mode=smartTankInit (no SmartTank)');
+      router.replace('/onboarding?mode=smartTankInit');
+    }
+  }, [hydrated, segments, rootNavigationState?.key]);
 
   return null; // purely logic, no UI
 }
