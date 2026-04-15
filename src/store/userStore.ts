@@ -33,6 +33,9 @@ import { fetchRoadMetrics } from '../utils/routingDistance';
 interface UserState {
   // Onboarding gate
   hasCompletedOnboarding: boolean;
+  /** True when user explicitly tapped "Überspringen" on step 1/2 — prevents
+   *  OnboardingGate from redirecting back to onboarding on next launch. */
+  hasSkippedSmartTankSetup: boolean;
 
   // Preferences (Must — collected in onboarding)
   fuelType: FuelType;
@@ -66,6 +69,7 @@ interface UserState {
   // ── Actions ──────────────────────────────────────────────────────────────────
 
   // Onboarding
+  skipSmartTankSetup: () => void;
   completeOnboarding: (data: {
     fuelType: FuelType;
     commonAreas: CommonArea[];
@@ -122,6 +126,7 @@ export const useUserStore = create<UserState>()(
     (set, get) => ({
       // --- Default values ---
       hasCompletedOnboarding: false,
+      hasSkippedSmartTankSetup: false,
 
       fuelType: 'e5',
       commonAreas: [],
@@ -140,6 +145,11 @@ export const useUserStore = create<UserState>()(
       lastPromptedMs: 0,
 
       // --- Onboarding ---
+      skipSmartTankSetup: () => {
+        console.log('[UserStore] SmartTank setup skipped by user');
+        set({ hasSkippedSmartTankSetup: true, hasCompletedOnboarding: true });
+      },
+
       completeOnboarding: (data) => {
         console.log('[UserStore] Onboarding completed:', JSON.stringify(data));
         const homeLocFromArea = data.commonAreas[0]?.loc ?? null;
@@ -408,6 +418,7 @@ export const useUserStore = create<UserState>()(
         console.log('[UserStore] FULL RESET: All data cleared');
         set({
           hasCompletedOnboarding: false,
+          hasSkippedSmartTankSetup: false,
           fuelType: 'e5',
           commonAreas: [],
           refuelingStyle: null,

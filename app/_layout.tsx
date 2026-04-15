@@ -71,7 +71,7 @@ function OnboardingGate() {
     const inOnboarding = segments[0] === 'onboarding';
     if (inOnboarding) return;
 
-    const { hasCompletedOnboarding, smartTank } = useUserStore.getState();
+    const { hasCompletedOnboarding, smartTank, hasSkippedSmartTankSetup } = useUserStore.getState();
 
     // setTimeout(fn, 0) defers one JS tick.
     // By the time useEffect fires in _layout.tsx, the Stack has already
@@ -81,8 +81,8 @@ function OnboardingGate() {
       if (!hasCompletedOnboarding) {
         console.log('[OnboardingGate] → /onboarding (new / reset user)');
         router.replace('/onboarding');
-      } else if (!smartTank) {
-        console.log('[OnboardingGate] → /onboarding?mode=smartTankInit (no SmartTank)');
+      } else if (!smartTank && !hasSkippedSmartTankSetup) {
+        console.log('[OnboardingGate] → /onboarding?mode=smartTankInit (no SmartTank, not skipped)');
         router.replace('/onboarding?mode=smartTankInit');
       }
     }, 0);

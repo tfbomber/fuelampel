@@ -317,7 +317,22 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* ── Refuel Confirm Banner — only 'timeout' type shown; low_alert fully suppressed ── */}
+      {/* ── SmartTank Not Configured Banner ── */}
+      {!isSmartActive && (
+        <TouchableOpacity
+          style={styles.setupBanner}
+          onPress={() => router.push('/settings')}
+          activeOpacity={0.8}
+          accessibilityLabel="Set up SmartTank"
+        >
+          <Text style={styles.setupBannerText}>
+            💡 SmartTank nicht konfiguriert — Tippe hier, um Heimatregion einzurichten und smarte Tankvorhersagen zu aktivieren.
+          </Text>
+          <Text style={styles.setupBannerCta}>Jetzt ›</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* ── Refuel Confirm Banner — only 'timeout' type shown */}
       {!pendingPattern && refuelBanner === 'timeout' && mode === 'normal'
         && Date.now() > suppressBannerUntilRef.current && (
         <View style={styles.refuelBanner}>
@@ -551,6 +566,22 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   refuelBannerBtnText: { color: '#FCA5A5', fontSize: 12, fontWeight: '700' },
+
+  // Setup banner (SmartTank not configured)
+  setupBanner: {
+    marginHorizontal: 16,
+    backgroundColor: 'rgba(99,102,241,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(99,102,241,0.25)',
+    borderRadius: 14,
+    padding: 14,
+    gap: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  setupBannerText: { color: '#A5B4FC', fontSize: 13, flex: 1, lineHeight: 18 },
+  setupBannerCta:  { color: '#6366F1', fontSize: 14, fontWeight: '700' },
 
   absoluteOverlay: {
     ...StyleSheet.absoluteFillObject,

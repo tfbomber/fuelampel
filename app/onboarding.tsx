@@ -7,7 +7,7 @@
 // Step 3 (Optional, skippable): Car Type + Last Refuel Amount
 // ====================================================
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   ScrollView, ActivityIndicator, FlatList, Keyboard,
@@ -18,7 +18,7 @@ import { useUserStore } from '../src/store/userStore';
 import {
   FuelType, RefuelingStyle, CarType, LastRefuelAmount, CommonArea,
 } from '../src/utils/types';
-import { searchAddress, AddressSuggestion } from '../src/utils/geocoding';
+import { searchAddressWithFallback, AddressSuggestion } from '../src/utils/geocoding';
 import { FuelSlider } from '../src/components/FuelSlider';
 
 // ── Option metadata ───────────────────────────────────────────────────────────
@@ -94,6 +94,14 @@ const pill = StyleSheet.create({
 });
 
 // ── Address Autocomplete Input ────────────────────────────────────────────────
+// DESIGN: No debounce / auto-search on keystroke.
+// The user types their full address, then:
+//   (a) taps the 🔍 button, OR
+//   (b) presses the keyboard "Search" key.
+// A single focused network request fires (Plan A → Plan B cascade, max 6 s).
+// This eliminates Nominatim rate-limit bans from rapid keystroke requests.
+
+type SearchState = 'idle' | 'loading' | 'no_results' | 'error';
 
 interface AutocompleteInputProps {
   label: string;
@@ -102,84 +110,70 @@ interface AutocompleteInputProps {
   selectedArea: CommonArea | null;
   onSelect: (area: CommonArea) => void;
   onClear: () => void;
-  /** If provided, this ref's focus() is called after a suggestion is picked. */
-  nextInputRef?: React.RefObject<TextInput | null>;
 }
 
 function AddressAutocompleteInput({
-  label, icon, placeholder, selectedArea, onSelect, onClear, nextInputRef,
+  label, icon, placeholder, selectedArea, onSelect, onClear,
 }: AutocompleteInputProps) {
   const [query,       setQuery]       = useState(selectedArea?.displayName ?? '');
   const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
-  const [loading,     setLoading]     = useState(false);
+  const [searchState, setSearchState] = useState<SearchState>('idle');
   const [open,        setOpen]        = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // AbortController for the current in-flight Nominatim request.
-  // Cancelled the moment the user types again to prevent stale results.
-  const abortRef    = useRef<AbortController | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
-  const handleChange = useCallback((text: string) => {
-    setQuery(text);
+  const canSearch  = query.trim().length >= 3;
+  const isLoading  = searchState === 'loading';
+  const isResolved = selectedArea !== null;
 
-    // Cancel any pending debounce timer
-    if (debounceRef.current) clearTimeout(debounceRef.current);
+  // ─── Trigger search ───────────────────────────────────────────────────────
+  // Called on 🔍 button tap OR keyboard Search/Return key.
+  // Runs Plan A (Nominatim, 3 s) then Plan B (Photon, 3 s) automatically.
+  async function triggerSearch() {
+    if (!canSearch || isLoading) return;
+    if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
 
-    // Cancel any in-flight network request immediately
-    if (abortRef.current) {
-      abortRef.current.abort();
-      abortRef.current = null;
+    Keyboard.dismiss();
+    setSearchState('loading');
+    setOpen(false);
+    setSuggestions([]);
+
+    const ac = new AbortController();
+    abortRef.current = ac;
+    const { results, failed } = await searchAddressWithFallback(query.trim(), ac.signal);
+    if (ac.signal.aborted) return; // user cancelled — don't update state
+    abortRef.current = null;
+
+    if (results.length > 0) {
+      setSuggestions(results);
+      setOpen(true);
+      setSearchState('idle');
+    } else {
+      setSearchState(failed ? 'error' : 'no_results');
     }
-
-    if (text.length < 3) {
-      setSuggestions([]);
-      setOpen(false);
-      setLoading(false); // FIX: always reset spinner when query is too short
-      return;
-    }
-
-    setLoading(true);
-    // 400ms debounce — respects Nominatim's 1 req/s guideline while still feeling snappy
-    debounceRef.current = setTimeout(async () => {
-      const ac = new AbortController();
-      abortRef.current = ac;
-
-      const results = await searchAddress(text, ac.signal);
-
-      // Only update state if this request was NOT cancelled by a follow-up keystroke
-      if (!ac.signal.aborted) {
-        setSuggestions(results);
-        setOpen(results.length > 0);
-        setLoading(false);
-        abortRef.current = null;
-      }
-    }, 400);
-  }, []);
+  }
 
   function pickSuggestion(s: AddressSuggestion) {
-    const area: CommonArea = {
-      plz: '',
-      displayName: s.shortName,
-      loc: s.loc,
-    };
+    const area: CommonArea = { plz: '', displayName: s.shortName, loc: s.loc };
     setQuery(s.shortName);
     setSuggestions([]);
     setOpen(false);
+    setSearchState('idle');
     Keyboard.dismiss();
     onSelect(area);
-    // Auto-advance focus to the next input if provided
-    if (nextInputRef?.current) {
-      setTimeout(() => nextInputRef.current?.focus(), 150);
-    }
   }
 
   function handleClear() {
     setQuery('');
     setSuggestions([]);
     setOpen(false);
+    setSearchState('idle');
     onClear();
   }
 
-  const isResolved = selectedArea !== null;
+  const statusMsg =
+    searchState === 'error'      ? '⚠️  Netzwerkfehler — beide Server nicht erreichbar' :
+    searchState === 'no_results' ? `Keine Ergebnisse — Schreibweise prüfen oder per GPS überspringen` :
+    null;
 
   return (
     <View style={acStyles.container}>
@@ -192,24 +186,43 @@ function AddressAutocompleteInput({
         <TextInput
           style={acStyles.input}
           value={query}
-          onChangeText={handleChange}
+          onChangeText={(t) => {
+            setQuery(t);
+            if (searchState !== 'idle') setSearchState('idle');
+            if (open) { setOpen(false); setSuggestions([]); }
+          }}
           placeholder={placeholder}
           placeholderTextColor="#4B5563"
-          returnKeyType="next"
+          returnKeyType="search"
+          onSubmitEditing={triggerSearch}
           onFocus={() => { if (suggestions.length > 0) setOpen(true); }}
           onBlur={() => setTimeout(() => setOpen(false), 200)}
           accessibilityLabel={label}
         />
         <View style={acStyles.endAdornment}>
-          {loading     && <ActivityIndicator size="small" color="#6366F1" />}
-          {isResolved  && !loading && <Text style={acStyles.checkmark}>✓</Text>}
-          {(query.length > 0 && !loading) && (
+          {isLoading   && <ActivityIndicator size="small" color="#6366F1" />}
+          {isResolved  && !isLoading && <Text style={acStyles.checkmark}>✓</Text>}
+          {!isResolved && !isLoading && query.length > 0 && (
             <TouchableOpacity onPress={handleClear} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Text style={acStyles.clearBtn}>✕</Text>
             </TouchableOpacity>
           )}
+          {/* 🔍 search button — only shown when there's enough text and not yet resolved */}
+          {canSearch && !isLoading && !isResolved && (
+            <TouchableOpacity
+              onPress={triggerSearch}
+              style={acStyles.searchBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityLabel="Search address"
+            >
+              <Text style={acStyles.searchBtnText}>🔍</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
+
+      {/* Error / no-results inline feedback */}
+      {statusMsg && <Text style={acStyles.statusMsg}>{statusMsg}</Text>}
 
       {/* Dropdown */}
       {open && (
@@ -247,6 +260,9 @@ const acStyles = StyleSheet.create({
   endAdornment:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
   checkmark:     { color: '#22C55E', fontSize: 18, fontWeight: '700' },
   clearBtn:      { color: '#4B5563', fontSize: 14, fontWeight: '700' },
+  searchBtn:     { backgroundColor: 'rgba(99,102,241,0.15)', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: 'rgba(99,102,241,0.3)' },
+  searchBtnText: { fontSize: 14 },
+  statusMsg:     { color: '#F87171', fontSize: 12, paddingHorizontal: 2, lineHeight: 18 },
   dropdown: {
     marginTop: 4,
     backgroundColor: '#1E2130',
@@ -389,9 +405,6 @@ export default function OnboardingScreen() {
   const [tankPct,   setTankPct]   = useState(50);
   const [totalRangeKm, setTotalRangeKm] = useState<string>(''); // optional km/full tank
 
-  // Ref for work area input — home pick auto-focuses it
-  const workInputRef = useRef<TextInput | null>(null);
-
   const canProceed =
     step === 0 ? true :
     step === 1 ? homeArea !== null :
@@ -401,6 +414,22 @@ export default function OnboardingScreen() {
   function next() {
     if (step < 4) { setStep(s => s + 1); return; }
     commit();
+  }
+
+  /**
+   * Skip the entire setup — commit whatever data is available and mark
+   * SmartTank setup as skipped so OnboardingGate won't block on next launch.
+   * The HomeScreen will show a soft setup banner instead.
+   */
+  function handleSkipAll() {
+    const areas: CommonArea[] = [];
+    if (homeArea) areas.push(homeArea);
+    if (workArea) areas.push(workArea);
+    completeOnboarding({ fuelType, commonAreas: areas, refuelingStyle: refStyle, carType, lastRefuelAmount: refAmount });
+    adjustLevelManually(tankPct);
+    useUserStore.getState().skipSmartTankSetup();
+    console.log('[Onboarding] User skipped SmartTank setup');
+    router.replace('/(tabs)');
   }
 
   function commit() {
@@ -444,6 +473,11 @@ export default function OnboardingScreen() {
               <Text style={s.skipText}>Skip</Text>
             </TouchableOpacity>
           )}
+          {(step === 1 || step === 2) && (
+            <TouchableOpacity onPress={handleSkipAll} style={s.skipBtn}>
+              <Text style={s.skipText}>Überspringen</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Step 0 — Fuel Type */}
@@ -474,7 +508,6 @@ export default function OnboardingScreen() {
                 selectedArea={homeArea}
                 onSelect={setHomeArea}
                 onClear={() => setHomeArea(null)}
-                nextInputRef={workInputRef}
               />
             </View>
             <View style={s.options}>
@@ -593,7 +626,9 @@ export default function OnboardingScreen() {
         </TouchableOpacity>
 
         {step === 1 && !homeArea && (
-          <Text style={s.hint}>Home area is required to continue</Text>
+          <Text style={s.hint}>
+            Enter your home area, then tap 🔍 to search.{' '}Can't connect? Tap <Text style={{ color: '#9CA3AF', fontWeight: '600' }}>Überspringen</Text> to set up later.
+          </Text>
         )}
 
       </ScrollView>
