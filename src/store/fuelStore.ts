@@ -21,6 +21,8 @@ import { fetchRoadMetrics } from '../utils/routingDistance';
 interface FuelStoreState {
   stations: Station[];
   lastFetchMs: number;
+  /** Location used in the last successful fetch (rounded to 3 dp for cache-key matching). */
+  lastFetchLoc: GeoLocation | null;
   isLoading: boolean;
   error: string | null;
   decision: DecisionResult | null;
@@ -29,6 +31,12 @@ interface FuelStoreState {
 
   // Actions
   refresh: (location: GeoLocation, force?: boolean, fuelTypeOverride?: FuelType) => Promise<void>;
+  /**
+   * Re-pick prices for a new fuel type from the cached raw station data.
+   * Zero network requests — O(n) in-memory map. Call instead of refresh()
+   * when only the fuel type changes and the location hasn't moved.
+   */
+  switchFuelType: (newType: FuelType) => void;
   /** Re-run decision with cached stations (no network call). Call after user adjusts tank level. */
   recomputeDecision: () => void;
   clearError: () => void;
@@ -41,6 +49,7 @@ export const useFuelStore = create<FuelStoreState>()(
     (set, get) => ({
       stations: [],
   lastFetchMs: 0,
+  lastFetchLoc: null,
   isLoading: false,
   error: null,
   decision: null,
@@ -48,11 +57,18 @@ export const useFuelStore = create<FuelStoreState>()(
 
   refresh: async (location: GeoLocation, force = false, fuelTypeOverride?: FuelType) => {
     const now = Date.now();
-    const { lastFetchMs } = get();
+    const { lastFetchMs, lastFetchLoc } = get();
 
-    // Respect rate limit unless forced (e.g. new PLZ location or fuel type change)
-    if (!force && now - lastFetchMs < STATION_CACHE_TTL_MS) {
-      console.log('[FuelStore] Skipping fetch — cache still valid');
+    // Location match: compare rounded to 3 decimal places (≈ 100 m precision)
+    const round3 = (n: number) => Math.round(n * 1000) / 1000;
+    const sameLocation =
+      lastFetchLoc !== null &&
+      round3(lastFetchLoc.lat) === round3(location.lat) &&
+      round3(lastFetchLoc.lng) === round3(location.lng);
+
+    // Skip only if: not forced AND TTL still valid AND same location
+    if (!force && now - lastFetchMs < STATION_CACHE_TTL_MS && sameLocation) {
+      console.log('[FuelStore] Skipping fetch — cache valid for this location');
       return;
     }
 
@@ -107,6 +123,7 @@ export const useFuelStore = create<FuelStoreState>()(
       set({
         stations,
         lastFetchMs: now,
+        lastFetchLoc: location,
         isLoading: false,
         decision,
         distanceSource,
@@ -120,6 +137,29 @@ export const useFuelStore = create<FuelStoreState>()(
   },
 
   clearError: () => set({ error: null }),
+
+  /**
+   * Re-pick the active display price for each station from its cached raw
+   * price fields. Zero network requests — completes in < 1 ms regardless
+   * of station count.
+   */
+  switchFuelType: (newType: FuelType) => {
+    const { stations } = get();
+    if (stations.length === 0) {
+      console.log('[FuelStore] switchFuelType skipped — no cached stations');
+      return;
+    }
+    const updated = stations.map(s => ({
+      ...s,
+      price: newType === 'e5'     ? s.priceE5
+           : newType === 'e10'    ? s.priceE10
+           : s.priceDiesel,
+    }));
+    set({ stations: updated });
+    // Recompute recommendation with new prices (pure in-memory)
+    get().recomputeDecision();
+    console.log(`[FuelStore] switchFuelType → ${newType} (${updated.length} stations re-picked)`);
+  },
 
   recomputeDecision: () => {
     const { stations } = get();
@@ -145,6 +185,7 @@ export const useFuelStore = create<FuelStoreState>()(
       partialize: (state) => ({
         stations: state.stations,
         lastFetchMs: state.lastFetchMs,
+        lastFetchLoc: state.lastFetchLoc,
         decision: state.decision,
         distanceSource: state.distanceSource,
       }),

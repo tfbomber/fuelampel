@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity, Pressable } from 'react-native';
+import * as Haptics from 'expo-haptics';
 
 interface Props {
   visible: boolean;
@@ -28,10 +29,10 @@ export function TankConfirmModal({ visible, estimatedPercent, onConfirm, onAdjus
           </View>
           
           <View style={styles.actions}>
-            <TouchableOpacity style={[styles.btn, styles.btnAdjust]} onPress={onAdjust}>
+            <TouchableOpacity style={[styles.btn, styles.btnAdjust]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onAdjust(); }}>
               <Text style={styles.btnAdjustText}>Adjust level</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.btn, styles.btnConfirm]} onPress={onConfirm}>
+            <TouchableOpacity style={[styles.btn, styles.btnConfirm]} onPress={() => { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); onConfirm(); }}>
               <Text style={styles.btnConfirmText}>Looks right</Text>
             </TouchableOpacity>
           </View>

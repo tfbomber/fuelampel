@@ -8,22 +8,26 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   RefreshControl, ActivityIndicator, TextInput, Pressable,
-  Keyboard, Alert, Modal,
+  Keyboard, Modal,
 } from 'react-native';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { useFuelStore } from '../../src/store/fuelStore';
 import { useUserStore } from '../../src/store/userStore';
 import { StationListItem } from '../../src/components/StationListItem';
+import { StationMapView } from '../../src/components/StationMapView';
 import { TankConfirmModal } from '../../src/components/TankConfirmModal';
 import { Station, FuelType, GeoLocation } from '../../src/utils/types';
 import { formatFuelType } from '../../src/utils/formatters';
-import { geocodePLZ } from '../../src/utils/geocoding';
+import { geocodePLZ, searchAddressWithFallback, AddressSuggestion } from '../../src/utils/geocoding';
 import { sortByValue, findNearestOpen } from '../../src/utils/ranking';
 import { estimateLevelPercent } from '../../src/core/smartTank';
 import { TANK_CONFIRM_LOCK_DAYS } from '../../src/utils/constants';
+import * as Haptics from 'expo-haptics';
 
 type SortMode = 'price' | 'distance' | 'value';
+type ViewMode = 'list' | 'map';
+type SearchState = 'idle' | 'loading' | 'no_results' | 'error';
 const FUEL_TYPES: FuelType[] = ['e5', 'e10', 'diesel'];
 
 // ─── Median helper ────────────────────────────────────────────────────────────
@@ -36,7 +40,7 @@ function median(prices: number[]): number {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function StationsScreen() {
-  const { stations, isLoading, error, refresh, distanceSource } = useFuelStore();
+  const { stations, isLoading, error, refresh, switchFuelType, distanceSource } = useFuelStore();
   const { 
     fuelType: storedFuelType, 
     homeLocation, 
@@ -51,12 +55,17 @@ export default function StationsScreen() {
   const router = useRouter();
 
   const [sortMode, setSortMode] = useState<SortMode>('value');
+  const [viewMode, setViewMode]  = useState<ViewMode>('list');
   const [localFuelType, setLocalFuelType] = useState<FuelType>(storedFuelType);
   const [showValueInfo, setShowValueInfo] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [plzInput, setPlzInput] = useState('');
+  // ── Location / address search state ──────────────────────────────────────
+  const [locQuery,       setLocQuery]       = useState('');
+  const [locSuggestions, setLocSuggestions] = useState<AddressSuggestion[]>([]);
+  const [locSearchState, setLocSearchState] = useState<SearchState>('idle');
+  const [locOpen,        setLocOpen]        = useState(false);
+  const locAbortRef = useRef<AbortController | null>(null);
   const [locationLabel, setLocationLabel] = useState('GPS');
-  const [isGeocoding, setIsGeocoding] = useState(false);
   const currentLocation = useRef<GeoLocation | null>(null);
 
   // ── Auto-load on mount (once only) ──────────────────────────────────────
@@ -110,27 +119,76 @@ export default function StationsScreen() {
     }
   }
 
-  // ── PLZ search ────────────────────────────────────────────────────────────
-  async function handlePLZSearch() {
-    const plz = plzInput.trim();
-    if (!plz) { fetchViaGPS(); return; }
+  // ── Location search (PLZ or address) ─────────────────────────────────────
+  // Accepts both PLZ (5 digits → geocodePLZ) and free text (address → cascade).
+  // Uses the same abort-on-change pattern as AddressAutocompleteInput.
+  async function triggerLocationSearch() {
+    const q = locQuery.trim();
+    if (!q) { fetchViaGPS(); return; }
 
-    setIsGeocoding(true);
+    if (locAbortRef.current) { locAbortRef.current.abort(); locAbortRef.current = null; }
     Keyboard.dismiss();
+    setLocSearchState('loading');
+    setLocOpen(false);
+    setLocSuggestions([]);
 
-    try {
-      const loc = await geocodePLZ(plz);
-      if (!loc) {
-        Alert.alert('PLZ not found', `Could not find location for "${plz}". Please check the postal code.`);
-        return;
+    // Fast path: 5-digit PLZ
+    if (/^\d{4,5}$/.test(q)) {
+      try {
+        const loc = await geocodePLZ(q);
+        if (!loc) {
+          setLocSearchState('no_results');
+          return;
+        }
+        currentLocation.current = loc;
+        setLocationLabel(`PLZ ${q}`);
+        setLocSearchState('idle');
+        await refresh(loc, true, localFuelType);
+      } catch {
+        setLocSearchState('error');
       }
-      currentLocation.current = loc;
-      setLocationLabel(`PLZ ${plz}`);
-      await refresh(loc, true, localFuelType);
-    } finally {
-      setIsGeocoding(false);
+      return;
+    }
+
+    // Slow path: free-text address → cascade Nominatim → Photon
+    const ac = new AbortController();
+    locAbortRef.current = ac;
+    const { results, failed } = await searchAddressWithFallback(q, ac.signal);
+    if (ac.signal.aborted) return;
+    locAbortRef.current = null;
+
+    if (results.length === 1) {
+      // Single result — pick it immediately, no dropdown needed
+      pickLocSuggestion(results[0]);
+    } else if (results.length > 1) {
+      setLocSuggestions(results);
+      setLocOpen(true);
+      setLocSearchState('idle');
+    } else {
+      setLocSearchState(failed ? 'error' : 'no_results');
     }
   }
+
+  function pickLocSuggestion(s: AddressSuggestion) {
+    if (!s.loc) return;
+    currentLocation.current = s.loc;
+    setLocationLabel(s.shortName);
+    setLocQuery(s.shortName);
+    setLocSuggestions([]);
+    setLocOpen(false);
+    setLocSearchState('idle');
+    Keyboard.dismiss();
+    refresh(s.loc, true, localFuelType);
+  }
+
+  function clearLocSearch() {
+    if (locAbortRef.current) { locAbortRef.current.abort(); locAbortRef.current = null; }
+    setLocQuery('');
+    setLocSuggestions([]);
+    setLocOpen(false);
+    setLocSearchState('idle');
+  }
+
 
   const onRefresh = useCallback(() => {
     const loc = currentLocation.current;
@@ -138,12 +196,17 @@ export default function StationsScreen() {
     else fetchViaGPS(localFuelType);
   }, [refresh, homeLocation, localFuelType]);
 
-  // ── Fuel type change ──────────────────────────────────────────────────────
+  // ── Fuel type switch — zero network (re-picks from cached raw prices) ────
   function handleFuelTypeChange(newType: FuelType) {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setLocalFuelType(newType);
-    const loc = currentLocation.current;
-    if (loc) refresh(loc, true, newType);
-    else fetchViaGPS(newType);
+    if (stations.length > 0) {
+      switchFuelType(newType);
+    } else {
+      const loc = currentLocation.current;
+      if (loc) refresh(loc, true, newType);
+      else fetchViaGPS(newType);
+    }
   }
 
   // ── Regional median ───────────────────────────────────────────────────────
@@ -244,33 +307,85 @@ export default function StationsScreen() {
   return (
     <View style={styles.screen}>
 
-      {/* ── Location bar ───────────────────────────────────────────────── */}
+      {/* ── Location search bar ─────────────────────────────────────────── */}
       <View style={styles.locBar}>
-        <TextInput
-          style={styles.plzInput}
-          placeholder="📮 Enter PLZ…"
-          placeholderTextColor="#4B5563"
-          value={plzInput}
-          onChangeText={setPlzInput}
-          keyboardType="numeric"
-          maxLength={5}
-          returnKeyType="search"
-          onSubmitEditing={handlePLZSearch}
-          accessibilityLabel="Postal code search input"
-        />
+        <View style={styles.locInputWrap}>
+          <TextInput
+            style={styles.plzInput}
+            placeholder="📮 PLZ or address…"
+            placeholderTextColor="#4B5563"
+            value={locQuery}
+            onChangeText={(t) => {
+              setLocQuery(t);
+              setLocSearchState('idle');
+              if (locAbortRef.current) { locAbortRef.current.abort(); locAbortRef.current = null; }
+              setLocSuggestions([]);
+              setLocOpen(false);
+            }}
+            returnKeyType="search"
+            onSubmitEditing={triggerLocationSearch}
+            onBlur={() => {
+              if (locAbortRef.current) { locAbortRef.current.abort(); locAbortRef.current = null; }
+              setLocSearchState('idle');
+              setTimeout(() => setLocOpen(false), 200);
+            }}
+            accessibilityLabel="Location or postal code search"
+          />
+          {/* Clear button */}
+          {locQuery.length > 0 && locSearchState !== 'loading' && (
+            <TouchableOpacity
+              onPress={clearLocSearch}
+              style={styles.locClearBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.locClearBtnText}>✕</Text>
+            </TouchableOpacity>
+          )}
+        </View>
         <TouchableOpacity
           style={styles.searchBtn}
-          onPress={handlePLZSearch}
-          disabled={isGeocoding || isLoading}
-          accessibilityLabel={plzInput ? 'Search by PLZ' : 'Use GPS location'}
+          onPress={locQuery.trim() ? triggerLocationSearch : () => fetchViaGPS()}
+          disabled={locSearchState === 'loading' || isLoading}
+          accessibilityLabel={locQuery.trim() ? 'Search location' : 'Use GPS location'}
         >
-          {isGeocoding ? (
+          {locSearchState === 'loading' ? (
             <ActivityIndicator size="small" color="#A5B4FC" />
           ) : (
-            <Text style={styles.searchBtnText}>{plzInput ? '🔍' : '📍 GPS'}</Text>
+            <Text style={styles.searchBtnText}>{locQuery.trim() ? '🔍' : '📍 GPS'}</Text>
           )}
         </TouchableOpacity>
       </View>
+
+      {/* ── Address suggestion dropdown ──────────────────────────────────── */}
+      {locOpen && locSuggestions.length > 0 && (
+        <View style={styles.locDropdown}>
+          {locSuggestions.map((s, i) => (
+            <TouchableOpacity
+              key={i}
+              style={[styles.locSuggestion, i > 0 && styles.locSuggestionBorder]}
+              onPress={() => pickLocSuggestion(s)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.locSuggestionShort} numberOfLines={1}>{s.shortName}</Text>
+              <Text style={styles.locSuggestionFull} numberOfLines={1}>{s.displayName}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
+      {/* ── Search error/no-result feedback ──────────────────────────────── */}
+      {(locSearchState === 'error' || locSearchState === 'no_results') && (
+        <View style={styles.locStatusBanner}>
+          <Text style={styles.locStatusText}>
+            {locSearchState === 'error'
+              ? '⚠️ Netzwerkfehler — GPS verwenden'
+              : `Kein Ergebnis für "${locQuery}"`}
+          </Text>
+          <TouchableOpacity onPress={() => fetchViaGPS()} style={styles.locGpsBtn}>
+            <Text style={styles.locGpsBtnText}>📍 GPS</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* ── Filter bar ─────────────────────────────────────────────────── */}
       <View style={styles.filterBar}>
@@ -290,20 +405,44 @@ export default function StationsScreen() {
           ))}
         </View>
 
-        {/* Sort tabs — three compact buttons */}
-        <View style={styles.sortGroup}>
-          {(['price', 'distance', 'value'] as SortMode[]).map(mode => (
-            <TouchableOpacity
-              key={mode}
-              style={[styles.sortBtn, sortMode === mode && styles.sortBtnActive]}
-              onPress={() => setSortMode(mode)}
-              accessibilityLabel={`Sort by ${mode}`}
-            >
-              <Text style={[styles.sortBtnText, sortMode === mode && styles.sortBtnTextActive]}>
-                {mode === 'price' ? '💰 Price' : mode === 'distance' ? '📍 Dist' : '⭐ Value'}
-              </Text>
-            </TouchableOpacity>
-          ))}
+        {/* Sort tabs ─ hidden in map mode */}
+        {viewMode === 'list' && (
+          <View style={styles.sortGroup}>
+            {(['price', 'distance', 'value'] as SortMode[]).map(mode => (
+              <TouchableOpacity
+                key={mode}
+                style={[styles.sortBtn, sortMode === mode && styles.sortBtnActive]}
+                onPress={() => setSortMode(mode)}
+                accessibilityLabel={`Sort by ${mode}`}
+              >
+                <Text style={[styles.sortBtnText, sortMode === mode && styles.sortBtnTextActive]}>
+                  {mode === 'price' ? '💰 Price' : mode === 'distance' ? '📍 Dist' : '⭐ Value'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+        {/* List / Map toggle */}
+        <View style={styles.viewToggle}>
+          <TouchableOpacity
+            style={[styles.viewToggleBtn, viewMode === 'list' && styles.viewToggleBtnActive]}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setViewMode('list'); }}
+            accessibilityLabel="List view"
+          >
+            <Text style={[styles.viewToggleBtnText, viewMode === 'list' && styles.viewToggleBtnTextActive]}>
+              📋 List
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.viewToggleBtn, viewMode === 'map' && styles.viewToggleBtnActive]}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setViewMode('map'); }}
+            accessibilityLabel="Map view"
+          >
+            <Text style={[styles.viewToggleBtnText, viewMode === 'map' && styles.viewToggleBtnTextActive]}>
+              🗺️ Map
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -322,25 +461,46 @@ export default function StationsScreen() {
         </View>
       )}
 
-      {/* ── Station FlatList ─────────────────────────────────────────────── */}
-      <FlatList
-        data={displayList}
-        keyExtractor={item => item.id}
-        renderItem={renderItem}
-        ListHeaderComponent={ListHeader}
-        ListEmptyComponent={EmptyState}
-        refreshControl={
-          <RefreshControl
-            refreshing={isLoading}
-            onRefresh={onRefresh}
-            tintColor="#6366F1"
-            colors={['#6366F1']}
-          />
-        }
-        contentContainerStyle={displayList.length === 0 ? styles.emptyContainer : undefined}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      />
+      {/* ── Map view ───────────────────────────────────────────────── */}
+      {viewMode === 'map' && stations.length > 0 && (
+        <StationMapView
+          stations={stations}
+          currentLocation={currentLocation.current}
+          fuelType={localFuelType}
+          regionMedian={regionMedian}
+          nearestStation={nearestOpen}
+          cheapestStation={stations.find(s => s.isOpen && s.price === cheapestPrice) ?? null}
+        />
+      )}
+      {viewMode === 'map' && stations.length === 0 && !isLoading && (
+        <View style={styles.emptyBox}>
+          <Text style={styles.emptyEmoji}>🗺️</Text>
+          <Text style={styles.emptyTitle}>Karte bereit</Text>
+          <Text style={styles.emptyText}>Zuerst GPS oder PLZ oben eingeben.</Text>
+        </View>
+      )}
+
+      {/* ── Station FlatList (list mode only) ────────────────────────────── */}
+      {viewMode === 'list' && (
+        <FlatList
+          data={displayList}
+          keyExtractor={item => item.id}
+          renderItem={renderItem}
+          ListHeaderComponent={ListHeader}
+          ListEmptyComponent={EmptyState}
+          refreshControl={
+            <RefreshControl
+              refreshing={isLoading}
+              onRefresh={onRefresh}
+              tintColor="#6366F1"
+              colors={['#6366F1']}
+            />
+          }
+          contentContainerStyle={displayList.length === 0 ? styles.emptyContainer : undefined}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        />
+      )}
 
       {/* ── Value Info Modal ─────────────────────────────────────────── */}
       <Modal
@@ -446,15 +606,61 @@ const styles = StyleSheet.create({
   },
   plzInput: {
     flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'transparent',
     color: '#F9FAFB',
     paddingHorizontal: 12,
     paddingVertical: 9,
     fontSize: 15,
   },
+  // Wraps plzInput + clear button inside locBar
+  locInputWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    paddingRight: 6,
+  },
+  locClearBtn: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  locClearBtnText: { color: '#4B5563', fontSize: 13, fontWeight: '700' },
+
+  // Address suggestion dropdown
+  locDropdown: {
+    backgroundColor: '#1A1D26',
+    borderBottomWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  locSuggestion:       { paddingHorizontal: 16, paddingVertical: 10, gap: 2 },
+  locSuggestionBorder: { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)' },
+  locSuggestionShort:  { color: '#F9FAFB', fontSize: 14, fontWeight: '700' },
+  locSuggestionFull:   { color: '#6B7280', fontSize: 11 },
+
+  // Status banner (no-result / error)
+  locStatusBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(239,68,68,0.07)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(239,68,68,0.15)',
+    gap: 10,
+  },
+  locStatusText:  { color: '#FCA5A5', fontSize: 12, flex: 1 },
+  locGpsBtn:      { backgroundColor: 'rgba(99,102,241,0.15)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: 'rgba(99,102,241,0.3)' },
+  locGpsBtnText:  { color: '#A5B4FC', fontSize: 12, fontWeight: '700' },
+
   searchBtn: {
     minWidth: 72,
     backgroundColor: 'rgba(99,102,241,0.18)',
@@ -502,7 +708,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  sortGroup: { flexDirection: 'row', gap: 5 },
+  sortGroup: { flexDirection: 'row', gap: 5, flex: 1 },
+  // List / Map view toggle
+  viewToggle: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+    overflow: 'hidden',
+  },
+  viewToggleBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  viewToggleBtnActive: {
+    backgroundColor: 'rgba(99,102,241,0.18)',
+  },
+  viewToggleBtnText:       { color: '#6B7280', fontSize: 12, fontWeight: '600' },
+  viewToggleBtnTextActive: { color: '#A5B4FC', fontWeight: '700' },
   sortBtn: {
     paddingHorizontal: 9,
     paddingVertical: 5,

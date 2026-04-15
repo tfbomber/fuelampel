@@ -64,7 +64,12 @@ function mapToStation(raw: TankerStation, fuelType: FuelType): Station {
     lat: raw.lat,
     lng: raw.lng,
     dist: raw.dist,
-    price: extractPrice(raw, fuelType),
+    // Active display price — the fuelType requested for this fetch
+    price:       extractPrice(raw, fuelType),
+    // Raw prices for all three types — allows zero-network fuel type switching
+    priceE5:     extractPrice(raw, 'e5'),
+    priceE10:    extractPrice(raw, 'e10'),
+    priceDiesel: extractPrice(raw, 'diesel'),
     isOpen: raw.isOpen,
     fetchedAt: Date.now(),
   };

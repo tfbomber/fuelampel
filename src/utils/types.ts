@@ -49,7 +49,12 @@ export interface Station {
   lat: number;
   lng: number;
   dist: number;          // km from user (road distance via OSRM)
-  price: number | null;  // price for selected fuel type
+  /** Active display price — re-picked from raw prices when fuel type changes. */
+  price: number | null;
+  /** Raw prices cached from single API fetch — never null after first load. */
+  priceE5:     number | null;
+  priceE10:    number | null;
+  priceDiesel: number | null;
   isOpen: boolean;
   fetchedAt: number;     // Unix timestamp ms — when we got this data
 }

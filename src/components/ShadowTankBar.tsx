@@ -9,8 +9,11 @@
 // parent can animate it (e.g. after "ich habe getankt").
 // ====================================================
 
-import React from 'react';
-import { View, Text, StyleSheet, Animated, Pressable } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
+import Animated, {
+  useSharedValue, useAnimatedStyle, withSpring,
+} from 'react-native-reanimated';
 
 interface Props {
   fuelLevelPercent: number;
@@ -18,14 +21,9 @@ interface Props {
   totalRangeKm?: number | null;
   /** When true, shows ~ prefix to indicate estimated (not confirmed) level. */
   isEstimated?: boolean;
-  /**
-   * Optional Animated.Value (0–100) for the fill width.
-   * If omitted, fill is driven by fuelLevelPercent directly.
-   */
-  animatedPct?: Animated.Value;
   /** When provided, holding the bar triggers this callback (manual level edit). */
   onLongPress?: () => void;
-  /** When provided, single tap triggers this callback (e.g. double-tap detection). */
+  /** When provided, single tap triggers this callback. */
   onPress?: () => void;
 }
 
@@ -35,7 +33,7 @@ function getBarColor(pct: number): string {
   return '#EF4444';
 }
 
-export function ShadowTankBar({ fuelLevelPercent, totalRangeKm, isEstimated, animatedPct, onLongPress, onPress }: Props) {
+export function ShadowTankBar({ fuelLevelPercent, totalRangeKm, isEstimated, onLongPress, onPress }: Props) {
   const color = getBarColor(fuelLevelPercent);
 
   // Right label: km if totalRangeKm is configured, else %
@@ -48,14 +46,15 @@ export function ShadowTankBar({ fuelLevelPercent, totalRangeKm, isEstimated, ani
     return `${prefix}${Math.round(fuelLevelPercent)}%`;
   })();
 
-  // Animated fill width
-  const fillWidth = animatedPct
-    ? animatedPct.interpolate({
-        inputRange: [0, 100],
-        outputRange: ['0%', '100%'],
-        extrapolate: 'clamp',
-      })
-    : `${fuelLevelPercent}%`;
+  // Reanimated smooth width transition
+  const fillPct = useSharedValue(fuelLevelPercent);
+  useEffect(() => {
+    fillPct.value = withSpring(fuelLevelPercent, { damping: 20, stiffness: 120 });
+  }, [fuelLevelPercent]);
+
+  const animatedFillStyle = useAnimatedStyle(() => ({
+    width: `${fillPct.value}%`,
+  }));
 
   const inner = (
     <View style={styles.container}>
@@ -68,7 +67,7 @@ export function ShadowTankBar({ fuelLevelPercent, totalRangeKm, isEstimated, ani
       {/* Fixed-height track zone — matches FuelSlider container (42px) so no layout shift on swap */}
       <View style={styles.trackZone}>
         <View style={styles.track}>
-          <Animated.View style={[styles.fill, { width: fillWidth as any, backgroundColor: color }]} />
+          <Animated.View style={[styles.fill, animatedFillStyle, { backgroundColor: color }]} />
         </View>
       </View>
     </View>

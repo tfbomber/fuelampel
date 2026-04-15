@@ -2,7 +2,7 @@
   "expo": {
     "name": "Fuel Ampel",
     "slug": "fuelampel",
-    "version": "1.2.1",
+    "version": "1.2.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -16,7 +16,7 @@
     },
     "android": {
       "package": "com.fuelampel.app",
-      "versionCode": 13,
+      "versionCode": 14,
       "adaptiveIcon": {
         "backgroundColor": "#0D0F14",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -45,7 +45,8 @@
       ],
       "expo-notifications",
       "expo-router",
-      "expo-system-ui"
+      "expo-system-ui",
+      "@maplibre/maplibre-react-native"
     ],
     "extra": {
       "router": {},

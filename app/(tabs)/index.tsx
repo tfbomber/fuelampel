@@ -57,6 +57,7 @@ const tgs = StyleSheet.create({
 });
 // ────────────────────────────────────────────────────────────────────────────────
 import { useDecision } from '../../src/hooks/useDecision';
+import * as Haptics from 'expo-haptics';
 import { useFuelStore } from '../../src/store/fuelStore';
 import { useUserStore } from '../../src/store/userStore';
 import {
@@ -172,6 +173,7 @@ export default function HomeScreen() {
 
   function handleGetankt() {
     if (fuelPct >= 100) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     prevFuelPctRef.current = fuelPct;
     isRefuelModeRef.current = true;
     recordSmartRefuel(0, 'user_tap');
@@ -359,7 +361,6 @@ export default function HomeScreen() {
             fuelLevelPercent={fuelPct}
             totalRangeKm={totalRangeKm}
             isEstimated={isEstimated}
-            animatedPct={animatedPct}
             onLongPress={mode === 'normal' ? handleManualAdjust : undefined}
             onPress={mode === 'normal' ? handleTankTap : undefined}
           />
