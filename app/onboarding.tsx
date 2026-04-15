@@ -114,18 +114,45 @@ function AddressAutocompleteInput({
   const [loading,     setLoading]     = useState(false);
   const [open,        setOpen]        = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // AbortController for the current in-flight Nominatim request.
+  // Cancelled the moment the user types again to prevent stale results.
+  const abortRef    = useRef<AbortController | null>(null);
 
   const handleChange = useCallback((text: string) => {
     setQuery(text);
+
+    // Cancel any pending debounce timer
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (text.length < 3) { setSuggestions([]); setOpen(false); return; }
+
+    // Cancel any in-flight network request immediately
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+
+    if (text.length < 3) {
+      setSuggestions([]);
+      setOpen(false);
+      setLoading(false); // FIX: always reset spinner when query is too short
+      return;
+    }
+
     setLoading(true);
+    // 400ms debounce — respects Nominatim's 1 req/s guideline while still feeling snappy
     debounceRef.current = setTimeout(async () => {
-      const results = await searchAddress(text);
-      setSuggestions(results);
-      setOpen(results.length > 0);
-      setLoading(false);
-    }, 250); // reduced from 400ms for faster feedback
+      const ac = new AbortController();
+      abortRef.current = ac;
+
+      const results = await searchAddress(text, ac.signal);
+
+      // Only update state if this request was NOT cancelled by a follow-up keystroke
+      if (!ac.signal.aborted) {
+        setSuggestions(results);
+        setOpen(results.length > 0);
+        setLoading(false);
+        abortRef.current = null;
+      }
+    }, 400);
   }, []);
 
   function pickSuggestion(s: AddressSuggestion) {

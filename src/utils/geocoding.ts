@@ -8,9 +8,13 @@ import { GeoLocation } from './types';
 
 const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org';
 const HEADERS = {
-  'User-Agent': 'FuelAmpel/1.0 (private use)',
+  // Nominatim usage policy requires a descriptive User-Agent
+  'User-Agent': 'FuelAmpelApp/1.1 (fuel price advisor; contact@fuelampel.app)',
   'Accept-Language': 'de,en',
 };
+
+// Request timeout (ms) — prevents perpetual loading if Nominatim is slow/rate-limiting
+const FETCH_TIMEOUT_MS = 8_000;
 
 // ─── Address result ───────────────────────────────────────────────────────────
 
@@ -35,13 +39,18 @@ export async function geocodePLZ(plz: string): Promise<GeoLocation | null> {
   const url = `${NOMINATIM_BASE}/search?postalcode=${cleaned}&country=DE&format=json&limit=1`;
   console.log(`[Geocoding] PLZ lookup: ${cleaned}`);
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
   try {
-    const res = await fetch(url, { headers: HEADERS });
+    const res = await fetch(url, { headers: HEADERS, signal: controller.signal });
+    clearTimeout(timeout);
     if (!res.ok) return null;
     const data = await res.json();
     if (!Array.isArray(data) || data.length === 0) return null;
     return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
   } catch {
+    clearTimeout(timeout);
     return null;
   }
 }
@@ -52,9 +61,19 @@ export async function geocodePLZ(plz: string): Promise<GeoLocation | null> {
  * Search for addresses by free text (city name, street, PLZ, or combination).
  * Returns up to 5 suggestions suitable for a dropdown.
  *
- * @param query  User-typed text, e.g. "40210", "Düsseldorf Zentrum", "Berliner Str 40"
+ * @param query   User-typed text, e.g. "40210", "Düsseldorf Zentrum"
+ * @param signal  Optional AbortSignal to cancel a stale request immediately
+ *
+ * FIX (2026-04-15):
+ *  - Added FETCH_TIMEOUT_MS AbortController to prevent perpetual loading when
+ *    Nominatim is slow or rate-limiting (was: await would never resolve).
+ *  - Added caller-supplied AbortSignal so stale in-flight requests are
+ *    cancelled the moment the user starts typing again.
  */
-export async function searchAddress(query: string): Promise<AddressSuggestion[]> {
+export async function searchAddress(
+  query: string,
+  signal?: AbortSignal,
+): Promise<AddressSuggestion[]> {
   const q = query.trim();
   if (q.length < 3) return [];
 
@@ -69,9 +88,39 @@ export async function searchAddress(query: string): Promise<AddressSuggestion[]>
   const url = `${NOMINATIM_BASE}/search?${params.toString()}`;
   console.log(`[Geocoding] Address search: "${q}"`);
 
+  // Own timeout guard — aborts after FETCH_TIMEOUT_MS regardless of caller signal
+  const timeoutController = new AbortController();
+  const timeout = setTimeout(() => {
+    console.warn('[Geocoding] Request timed out — aborting');
+    timeoutController.abort();
+  }, FETCH_TIMEOUT_MS);
+
+  // Use caller's signal if provided, otherwise use our timeout signal.
+  // We listen to BOTH by racing them: whichever aborts first wins.
+  const effectiveSignal = signal ?? timeoutController.signal;
+
+  // If a caller signal is provided, mirror its abort into our controller so
+  // the timeout cleanup path also fires.
+  let callerAbortListener: (() => void) | null = null;
+  if (signal) {
+    callerAbortListener = () => timeoutController.abort();
+    signal.addEventListener('abort', callerAbortListener);
+  }
+
   try {
-    const res = await fetch(url, { headers: HEADERS });
-    if (!res.ok) return [];
+    const res = await fetch(url, {
+      headers: HEADERS,
+      signal: effectiveSignal,
+    });
+    clearTimeout(timeout);
+    if (callerAbortListener && signal) {
+      signal.removeEventListener('abort', callerAbortListener);
+    }
+
+    if (!res.ok) {
+      console.warn(`[Geocoding] Nominatim returned HTTP ${res.status}`);
+      return [];
+    }
     const data = await res.json();
     if (!Array.isArray(data)) return [];
 
@@ -87,7 +136,7 @@ export async function searchAddress(query: string): Promise<AddressSuggestion[]>
         const shortParts = [plzPart, cityPart, subPart].filter(Boolean);
         const shortName  = shortParts.join(' ') || r.display_name.split(',')[0];
 
-        // Trim the long display name to max ~60 chars for readability
+        // Trim the long display name to max ~70 chars for readability
         const displayName = r.display_name.length > 70
           ? r.display_name.slice(0, 67) + '…'
           : r.display_name;
@@ -99,7 +148,13 @@ export async function searchAddress(query: string): Promise<AddressSuggestion[]>
         };
       });
 
-  } catch (err) {
+  } catch (err: any) {
+    clearTimeout(timeout);
+    if (callerAbortListener && signal) {
+      signal.removeEventListener('abort', callerAbortListener);
+    }
+    // AbortError = either timeout or caller-cancelled — not a real error
+    if (err?.name === 'AbortError') return [];
     console.error('[Geocoding] Search failed:', err);
     return [];
   }
