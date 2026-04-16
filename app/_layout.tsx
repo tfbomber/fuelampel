@@ -10,6 +10,7 @@
 // making it the only reliable place for a routing gate.
 // ====================================================
 
+import 'react-native-reanimated';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View, StyleSheet, Text, TouchableOpacity } from 'react-native';
