@@ -2,16 +2,15 @@
 // FuelAmpel — Onboarding Screen
 //
 // Step 0 (Must):  Fuel Type
-// Step 1 (Must):  Home & Work area — address/PLZ autocomplete with dropdown
+// Step 1 (Must):  Home & Work area — live address autocomplete (auto-search as you type)
 // Step 2 (Must):  Refueling Style
 // Step 3 (Optional, skippable): Car Type + Last Refuel Amount
 // ====================================================
 
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, ActivityIndicator, FlatList, Keyboard,
-  KeyboardAvoidingView, Platform,
+  ScrollView, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useUserStore } from '../src/store/userStore';
@@ -19,7 +18,7 @@ import { useFuelStore } from '../src/store/fuelStore';
 import {
   FuelType, RefuelingStyle, CarType, LastRefuelAmount, CommonArea,
 } from '../src/utils/types';
-import { searchAddressWithFallback, AddressSuggestion } from '../src/utils/geocoding';
+import { LiveAddressInput } from '../src/components/LiveAddressInput';
 import { FuelSlider } from '../src/components/FuelSlider';
 
 // ── Option metadata ───────────────────────────────────────────────────────────
@@ -92,238 +91,6 @@ const pill = StyleSheet.create({
   labelA: { color: '#E0E7FF' },
   desc:   { color: '#4B5563', fontSize: 12 },
   descA:  { color: '#A5B4FC' },
-});
-
-// ── Address Autocomplete Input ────────────────────────────────────────────────
-// DESIGN: No debounce / auto-search on keystroke.
-// The user types their full address, then:
-//   (a) taps the 🔍 button, OR
-//   (b) presses the keyboard "Search" key.
-// A single focused network request fires (Plan A → Plan B cascade, max 6 s).
-// This eliminates Nominatim rate-limit bans from rapid keystroke requests.
-
-type SearchState = 'idle' | 'loading' | 'no_results' | 'error';
-
-interface AutocompleteInputProps {
-  label: string;
-  icon: string;
-  placeholder: string;
-  selectedArea: CommonArea | null;
-  onSelect: (area: CommonArea) => void;
-  onClear: () => void;
-}
-
-function AddressAutocompleteInput({
-  label, icon, placeholder, selectedArea, onSelect, onClear,
-}: AutocompleteInputProps) {
-  const [query,       setQuery]       = useState(selectedArea?.displayName ?? '');
-  const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
-  const [searchState, setSearchState] = useState<SearchState>('idle');
-  const [open,        setOpen]        = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Track real focus state so we know whether to show dropdown when async results return.
-  const isFocusedRef = useRef(false);
-
-  const canSearch  = query.trim().length >= 3;
-  const isLoading  = searchState === 'loading';
-  const isResolved = selectedArea !== null;
-
-  // ─── Trigger search ───────────────────────────────────────────────────────
-  // Called on 🔍 button tap, keyboard Search/Return key, OR auto-debounce (800ms after stop typing).
-  // Runs Plan A (Nominatim, 3 s) then Plan B (Photon, 3 s) automatically.
-  // queryOverride: pass the raw text value directly to avoid stale React state closure in debounce.
-  async function triggerSearch(queryOverride?: string) {
-    const q = (queryOverride ?? query).trim();
-    if (q.length < 3) return;
-    // Always cancel the previous in-flight request — no stale isLoading guard needed.
-    if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
-
-    Keyboard.dismiss();
-    setSearchState('loading');
-    setOpen(false);
-    setSuggestions([]);
-
-    const ac = new AbortController();
-    abortRef.current = ac;
-    const { results, failed } = await searchAddressWithFallback(q, ac.signal);
-    if (ac.signal.aborted) return; // user cancelled — don't update state
-    abortRef.current = null;
-
-    if (results.length === 1 && !ac.signal.aborted) {
-      // Single unambiguous result — auto-pick regardless of focus state.
-      pickSuggestion(results[0]);
-    } else if (results.length > 1) {
-      setSuggestions(results);
-      // Only open dropdown if the input is still focused; avoids phantom dropdown on blur.
-      if (isFocusedRef.current) setOpen(true);
-      setSearchState('idle');
-    } else {
-      setSearchState(failed ? 'error' : 'no_results');
-    }
-  }
-
-  function pickSuggestion(s: AddressSuggestion) {
-    const area: CommonArea = { plz: '', displayName: s.shortName, loc: s.loc };
-    setQuery(s.shortName);
-    setSuggestions([]);
-    setOpen(false);
-    setSearchState('idle');
-    Keyboard.dismiss();
-    onSelect(area);
-  }
-
-  function handleClear() {
-    // Cancel pending debounce AND any in-flight request before resetting.
-    // Without this, a ghost search fires 800ms later with the already-cleared text.
-    if (debounceTimerRef.current) { clearTimeout(debounceTimerRef.current); debounceTimerRef.current = null; }
-    if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
-    setQuery('');
-    setSuggestions([]);
-    setOpen(false);
-    setSearchState('idle');
-    onClear();
-  }
-
-  const statusMsg =
-    searchState === 'error'      ? '⚠️  Netzwerkfehler — beide Server nicht erreichbar' :
-    searchState === 'no_results' ? `Keine Ergebnisse — Schreibweise prüfen oder per GPS überspringen` :
-    null;
-
-  return (
-    <View style={acStyles.container}>
-      <Text style={acStyles.label}>
-        <Text style={acStyles.icon}>{icon} </Text>
-        {label}
-      </Text>
-
-      <View style={[acStyles.inputWrap, isResolved && acStyles.inputWrapOk]}>
-        <TextInput
-          style={acStyles.input}
-          value={query}
-          onChangeText={(t) => {
-            setQuery(t);
-            // Always reset unconditionally — avoids stale-closure miss when
-            // the user edits text while a request is already in-flight.
-            setSearchState('idle');
-            // Cancel the in-flight request immediately so it can't overwrite
-            // state after the user has already changed the query.
-            if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
-            setSuggestions([]);
-            setOpen(false);
-            // Auto-search debounce: fire 800ms after user stops typing.
-            // Capture the raw text to avoid stale React state in the closure.
-            if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-            if (t.trim().length >= 3) {
-              debounceTimerRef.current = setTimeout(() => triggerSearch(t.trim()), 800);
-            }
-          }}
-          placeholder={placeholder}
-          placeholderTextColor="#4B5563"
-          returnKeyType="search"
-          onSubmitEditing={() => triggerSearch()}
-          onFocus={() => {
-            isFocusedRef.current = true;
-            if (suggestions.length > 0) setOpen(true);
-          }}
-          onBlur={() => {
-            isFocusedRef.current = false;
-            // ── KEY DESIGN DECISION ────────────────────────────────────────────
-            // Do NOT cancel the debounce timer here. The 800ms auto-search should
-            // fire naturally even if the user dismisses the keyboard before 800ms
-            // (e.g., by tapping elsewhere). isFocusedRef gates whether the dropdown
-            // opens when results arrive — preventing phantom dropdowns after blur,
-            // while still completing the search silently (single-result auto-picks).
-            // ──────────────────────────────────────────────────────────────────
-            // Abort any already-running HTTP request to free resources, and reset
-            // loading state so the spinner doesn't get stuck if search was in-flight.
-            if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
-            setSearchState('idle'); // prevents stuck spinner after abort
-            setTimeout(() => setOpen(false), 200);
-          }}
-          accessibilityLabel={label}
-        />
-        <View style={acStyles.endAdornment}>
-          {isLoading   && <ActivityIndicator size="small" color="#6366F1" />}
-          {isResolved  && !isLoading && <Text style={acStyles.checkmark}>✓</Text>}
-          {!isResolved && !isLoading && query.length > 0 && (
-            <TouchableOpacity onPress={handleClear} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={acStyles.clearBtn}>✕</Text>
-            </TouchableOpacity>
-          )}
-          {/* 🔍 search button — only shown when there's enough text and not yet resolved */}
-          {canSearch && !isLoading && !isResolved && (
-            <TouchableOpacity
-              onPress={() => triggerSearch()}
-              style={acStyles.searchBtn}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              accessibilityLabel="Search address"
-            >
-              <Text style={acStyles.searchBtnText}>🔍</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-
-      {/* Error / no-results inline feedback */}
-      {statusMsg && <Text style={acStyles.statusMsg}>{statusMsg}</Text>}
-
-      {/* Dropdown */}
-      {open && (
-        <View style={acStyles.dropdown}>
-          <FlatList
-            data={suggestions}
-            keyExtractor={(_, i) => i.toString()}
-            keyboardShouldPersistTaps="always"
-            scrollEnabled={false}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={acStyles.suggestion}
-                onPress={() => pickSuggestion(item)}
-                activeOpacity={0.7}
-              >
-                <Text style={acStyles.suggestionShort} numberOfLines={1}>{item.shortName}</Text>
-                <Text style={acStyles.suggestionFull} numberOfLines={1}>{item.displayName}</Text>
-              </TouchableOpacity>
-            )}
-            ItemSeparatorComponent={() => <View style={acStyles.sep} />}
-          />
-        </View>
-      )}
-    </View>
-  );
-}
-
-const acStyles = StyleSheet.create({
-  container:     { zIndex: 10, gap: 6 },
-  label:         { color: '#D1D5DB', fontSize: 14, fontWeight: '700' },
-  icon:          { fontSize: 16 },
-  inputWrap:     { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 14, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.12)', paddingHorizontal: 14, paddingVertical: 4 },
-  inputWrapOk:   { borderColor: '#22C55E' },
-  input:         { flex: 1, color: '#F9FAFB', fontSize: 15, paddingVertical: 11 },
-  endAdornment:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  checkmark:     { color: '#22C55E', fontSize: 18, fontWeight: '700' },
-  clearBtn:      { color: '#4B5563', fontSize: 14, fontWeight: '700' },
-  searchBtn:     { backgroundColor: 'rgba(99,102,241,0.15)', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: 'rgba(99,102,241,0.3)' },
-  searchBtnText: { fontSize: 14 },
-  statusMsg:     { color: '#F87171', fontSize: 12, paddingHorizontal: 2, lineHeight: 18 },
-  dropdown: {
-    marginTop: 4,
-    backgroundColor: '#1E2130',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.09)',
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
-  },
-  suggestion:      { paddingHorizontal: 14, paddingVertical: 11, gap: 2 },
-  suggestionShort: { color: '#F9FAFB', fontSize: 14, fontWeight: '700' },
-  suggestionFull:  { color: '#6B7280', fontSize: 11 },
-  sep:             { height: 1, backgroundColor: 'rgba(255,255,255,0.05)' },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -549,9 +316,9 @@ export default function OnboardingScreen() {
           <View style={s.stepWrap}>
             <Text style={s.emoji}>📍</Text>
             <Text style={s.title}>Where do you usually refuel?</Text>
-            <Text style={s.subtitle}>Enter an address, city, or postal code.{'\n'}We'll find stations near those areas.</Text>
+            <Text style={s.subtitle}>Start typing — results appear automatically.{'\n'}We'll find stations near those areas.</Text>
             <View style={[s.options, { zIndex: 20 }]}>
-              <AddressAutocompleteInput
+              <LiveAddressInput
                 label="Home area"
                 icon="🏠"
                 placeholder="e.g. 80331 or München Zentrum"
@@ -561,7 +328,7 @@ export default function OnboardingScreen() {
               />
             </View>
             <View style={s.options}>
-              <AddressAutocompleteInput
+              <LiveAddressInput
                 label="Work area  (optional)"
                 icon="🏢"
                 placeholder="e.g. 10115 or Berlin Mitte"
@@ -677,7 +444,7 @@ export default function OnboardingScreen() {
 
         {step === 1 && !homeArea && (
           <Text style={s.hint}>
-            Enter your home area, then tap 🔍 to search.{' '}Can't connect? Tap <Text style={{ color: '#9CA3AF', fontWeight: '600' }}>Überspringen</Text> to set up later.
+            Start typing to search automatically.{' '}Can't connect? Tap <Text style={{ color: '#9CA3AF', fontWeight: '600' }}>Überspringen</Text> to set up later.
           </Text>
         )}
 

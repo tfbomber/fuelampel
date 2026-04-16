@@ -27,7 +27,6 @@ import * as Haptics from 'expo-haptics';
 
 type SortMode = 'price' | 'distance' | 'value';
 type ViewMode = 'list' | 'map';
-type SearchState = 'idle' | 'loading' | 'no_results' | 'error';
 const FUEL_TYPES: FuelType[] = ['e5', 'e10', 'diesel'];
 
 // ─── Median helper ────────────────────────────────────────────────────────────
@@ -60,14 +59,12 @@ export default function StationsScreen() {
   const [showValueInfo, setShowValueInfo] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   // ── Location / address search state ──────────────────────────────────────
-  const [locQuery,       setLocQuery]       = useState('');
-  const [locSuggestions, setLocSuggestions] = useState<AddressSuggestion[]>([]);
-  const [locSearchState, setLocSearchState] = useState<SearchState>('idle');
-  const [locOpen,        setLocOpen]        = useState(false);
+  const [locQuery,    setLocQuery]    = useState('');
+  const [locResults,  setLocResults]  = useState<AddressSuggestion[]>([]);
+  const [locLoading,  setLocLoading]  = useState(false);
+  const [locNoResult, setLocNoResult] = useState(false);
   const locAbortRef    = useRef<AbortController | null>(null);
   const locDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Track focus state to control dropdown visibility when async results return.
-  const locIsFocusedRef = useRef(false);
   const [locationLabel, setLocationLabel] = useState('GPS');
   const currentLocation = useRef<GeoLocation | null>(null);
 
@@ -122,83 +119,74 @@ export default function StationsScreen() {
     }
   }
 
-  // ── Location search (PLZ or address) ─────────────────────────────────────
-  // Accepts both PLZ (5 digits → geocodePLZ) and free text (address → cascade).
-  // textOverride: pass raw input text directly to avoid stale closures in debounce callbacks.
-  async function triggerLocationSearch(textOverride?: string) {
-    const q = (textOverride ?? locQuery).trim();
-    if (!q) { fetchViaGPS(); return; }
+  // ── Location search helpers ─────────────────────────────────────────────
+  function cancelLocPending() {
+    if (locDebounceRef.current) { clearTimeout(locDebounceRef.current); locDebounceRef.current = null; }
+    if (locAbortRef.current)    { locAbortRef.current.abort();          locAbortRef.current    = null; }
+  }
 
-    if (locAbortRef.current) { locAbortRef.current.abort(); locAbortRef.current = null; }
-    Keyboard.dismiss();
-    setLocSearchState('loading');
-    setLocOpen(false);
-    setLocSuggestions([]);
+  async function startLocSearch(q: string) {
+    cancelLocPending();
+    setLocLoading(true);
+    setLocResults([]);
+    setLocNoResult(false);
 
-    // Fast path: exactly 5-digit German PLZ (4-digit would pick partial/Austrian codes)
+    // Fast path: exactly 5-digit German PLZ
     if (/^\d{5}$/.test(q)) {
-      // AbortController so in-flight PLZ geocode can be cancelled if user types again.
-      const plzAc = new AbortController();
-      locAbortRef.current = plzAc;
+      const ac = new AbortController();
+      locAbortRef.current = ac;
       try {
         const loc = await geocodePLZ(q);
-        if (plzAc.signal.aborted) return;
+        if (ac.signal.aborted) return;
         locAbortRef.current = null;
-        if (!loc) {
-          setLocSearchState('no_results');
-          return;
+        setLocLoading(false);
+        if (loc) {
+          currentLocation.current = loc;
+          setLocationLabel(`PLZ ${q}`);
+          refresh(loc, true, localFuelType);
+        } else {
+          setLocNoResult(true);
         }
-        currentLocation.current = loc;
-        setLocationLabel(`PLZ ${q}`);
-        setLocSearchState('idle');
-        await refresh(loc, true, localFuelType);
-      } catch {
-        if (!plzAc.signal.aborted) setLocSearchState('error');
-      }
+      } catch { if (!locAbortRef.current?.signal.aborted) setLocLoading(false); }
       return;
     }
 
     // Slow path: free-text address → cascade Nominatim → Photon
     const ac = new AbortController();
     locAbortRef.current = ac;
-    const { results, failed } = await searchAddressWithFallback(q, ac.signal);
-    if (ac.signal.aborted) return;
-    locAbortRef.current = null;
-
-    if (results.length === 1) {
-      // Single unambiguous result — auto-pick regardless of focus state.
-      pickLocSuggestion(results[0]);
-    } else if (results.length > 1) {
-      setLocSuggestions(results);
-      // Only open dropdown if still focused; prevents phantom dropdown after blur.
-      if (locIsFocusedRef.current) setLocOpen(true);
-      setLocSearchState('idle');
-    } else {
-      setLocSearchState(failed ? 'error' : 'no_results');
-    }
+    try {
+      const { results } = await searchAddressWithFallback(q, ac.signal);
+      if (ac.signal.aborted) return;
+      locAbortRef.current = null;
+      setLocLoading(false);
+      if (results.length === 1) {
+        pickLocResult(results[0]);
+      } else if (results.length > 1) {
+        setLocResults(results);
+      } else {
+        setLocNoResult(true);
+      }
+    } catch { if (!locAbortRef.current?.signal.aborted) setLocLoading(false); }
   }
 
-  function pickLocSuggestion(s: AddressSuggestion) {
+  function pickLocResult(s: AddressSuggestion) {
     if (!s.loc) return;
+    cancelLocPending();
     currentLocation.current = s.loc;
     setLocationLabel(s.shortName);
     setLocQuery(s.shortName);
-    setLocSuggestions([]);
-    setLocOpen(false);
-    setLocSearchState('idle');
+    setLocResults([]);
+    setLocLoading(false);
     Keyboard.dismiss();
     refresh(s.loc, true, localFuelType);
   }
 
   function clearLocSearch() {
-    // Cancel pending debounce AND in-flight request; otherwise the ghost search
-    // fires 800ms later with the already-cleared text.
-    if (locDebounceRef.current) { clearTimeout(locDebounceRef.current); locDebounceRef.current = null; }
-    if (locAbortRef.current) { locAbortRef.current.abort(); locAbortRef.current = null; }
+    cancelLocPending();
     setLocQuery('');
-    setLocSuggestions([]);
-    setLocOpen(false);
-    setLocSearchState('idle');
+    setLocResults([]);
+    setLocLoading(false);
+    setLocNoResult(false);
   }
 
 
@@ -329,40 +317,29 @@ export default function StationsScreen() {
             value={locQuery}
             onChangeText={(t) => {
               setLocQuery(t);
-              setLocSearchState('idle');
-              if (locAbortRef.current) { locAbortRef.current.abort(); locAbortRef.current = null; }
-              setLocSuggestions([]);
-              setLocOpen(false);
-              // Auto-search debounce: fire 800ms after user stops typing.
-              if (locDebounceRef.current) clearTimeout(locDebounceRef.current);
-              if (t.trim().length >= 3) {
-                locDebounceRef.current = setTimeout(() => triggerLocationSearch(t.trim()), 800);
+              setLocResults([]);
+              setLocNoResult(false);
+              cancelLocPending();
+              const q = t.trim();
+              if (q.length >= 3) {
+                setLocLoading(true);
+                // 400ms debounce — fires even after keyboard dismiss
+                locDebounceRef.current = setTimeout(() => startLocSearch(q), 400);
+              } else {
+                setLocLoading(false);
               }
             }}
             returnKeyType="search"
-            onSubmitEditing={() => triggerLocationSearch()}
-            onFocus={() => {
-              locIsFocusedRef.current = true;
-              if (locSuggestions.length > 0) setLocOpen(true);
+            onSubmitEditing={() => {
+              const q = locQuery.trim();
+              if (q.length >= 3) startLocSearch(q);
             }}
-            onBlur={() => {
-              locIsFocusedRef.current = false;
-              // ── KEY DESIGN DECISION ────────────────────────────────────────────
-              // Do NOT cancel the debounce timer. The 800ms auto-search fires
-              // naturally even if the user dismisses the keyboard before 800ms.
-              // locIsFocusedRef gates dropdown display — single results still
-              // auto-pick silently even when blurred.
-              // ──────────────────────────────────────────────────────────────────
-              // Abort any already-running HTTP request to free resources, and reset
-              // loading state so the spinner doesn't get stuck if search was in-flight.
-              if (locAbortRef.current) { locAbortRef.current.abort(); locAbortRef.current = null; }
-              setLocSearchState('idle'); // prevents stuck spinner after abort
-              setTimeout(() => setLocOpen(false), 200);
-            }}
+            // onBlur: 200ms delay lets suggestion taps register; does NOT cancel debounce
+            onBlur={() => setTimeout(() => setLocResults([]), 200)}
             accessibilityLabel="Location or postal code search"
           />
           {/* Clear button */}
-          {locQuery.length > 0 && locSearchState !== 'loading' && (
+          {locQuery.length > 0 && !locLoading && (
             <TouchableOpacity
               onPress={clearLocSearch}
               style={styles.locClearBtn}
@@ -374,11 +351,11 @@ export default function StationsScreen() {
         </View>
         <TouchableOpacity
           style={styles.searchBtn}
-          onPress={locQuery.trim() ? () => triggerLocationSearch() : () => fetchViaGPS()}
-          disabled={locSearchState === 'loading' || isLoading}
+          onPress={locQuery.trim() ? () => startLocSearch(locQuery.trim()) : () => fetchViaGPS()}
+          disabled={locLoading || isLoading}
           accessibilityLabel={locQuery.trim() ? 'Search location' : 'Use GPS location'}
         >
-          {locSearchState === 'loading' ? (
+          {locLoading ? (
             <ActivityIndicator size="small" color="#A5B4FC" />
           ) : (
             <Text style={styles.searchBtnText}>{locQuery.trim() ? '🔍' : '📍 GPS'}</Text>
@@ -387,13 +364,13 @@ export default function StationsScreen() {
       </View>
 
       {/* ── Address suggestion dropdown ──────────────────────────────────── */}
-      {locOpen && locSuggestions.length > 0 && (
+      {locResults.length > 0 && (
         <View style={styles.locDropdown}>
-          {locSuggestions.map((s, i) => (
+          {locResults.map((s, i) => (
             <TouchableOpacity
               key={i}
               style={[styles.locSuggestion, i > 0 && styles.locSuggestionBorder]}
-              onPress={() => pickLocSuggestion(s)}
+              onPress={() => pickLocResult(s)}
               activeOpacity={0.7}
             >
               <Text style={styles.locSuggestionShort} numberOfLines={1}>{s.shortName}</Text>
@@ -403,13 +380,11 @@ export default function StationsScreen() {
         </View>
       )}
 
-      {/* ── Search error/no-result feedback ──────────────────────────────── */}
-      {(locSearchState === 'error' || locSearchState === 'no_results') && (
+      {/* ── No-result feedback ─────────────────────────────────────────────── */}
+      {locNoResult && (
         <View style={styles.locStatusBanner}>
           <Text style={styles.locStatusText}>
-            {locSearchState === 'error'
-              ? '⚠️ Netzwerkfehler — GPS verwenden'
-              : `Kein Ergebnis für "${locQuery}"`}
+            {`Kein Ergebnis für \u201e${locQuery}\u201c`}
           </Text>
           <TouchableOpacity onPress={() => fetchViaGPS()} style={styles.locGpsBtn}>
             <Text style={styles.locGpsBtnText}>📍 GPS</Text>

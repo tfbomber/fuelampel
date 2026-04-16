@@ -6,10 +6,10 @@
 // Reset: Full Reset only (top of page)
 // ====================================================
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Alert, Pressable, ActivityIndicator, FlatList, Keyboard,
+  TextInput, Alert, Pressable,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useUserStore } from '../src/store/userStore';
@@ -17,7 +17,8 @@ import { formatFuelType } from '../src/utils/formatters';
 import {
   FuelType, RefuelingStyle, CarType, LastRefuelAmount, CommonArea,
 } from '../src/utils/types';
-import { searchAddress, AddressSuggestion } from '../src/utils/geocoding';
+import { LiveAddressInput } from '../src/components/LiveAddressInput';
+
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -76,111 +77,6 @@ function OptionRow<T extends string>({
   );
 }
 
-// ── Address Autocomplete Input ────────────────────────────────────────────────
-
-function AddressAutocompleteInput({
-  label, icon, placeholder, selectedArea, onSelect, onClear,
-}: {
-  label: string;
-  icon: string;
-  placeholder: string;
-  selectedArea: CommonArea | null;
-  onSelect: (area: CommonArea) => void;
-  onClear: () => void;
-}) {
-  const [query,       setQuery]       = useState(selectedArea?.displayName ?? '');
-  const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
-  const [loading,     setLoading]     = useState(false);
-  const [open,        setOpen]        = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleChange = useCallback((text: string) => {
-    setQuery(text);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (text.length < 3) { setSuggestions([]); setOpen(false); return; }
-    setLoading(true);
-    debounceRef.current = setTimeout(async () => {
-      const results = await searchAddress(text);
-      setSuggestions(results);
-      setOpen(results.length > 0);
-      setLoading(false);
-    }, 250);
-  }, []);
-
-  function pick(s: AddressSuggestion) {
-    const area: CommonArea = { plz: '', displayName: s.shortName, loc: s.loc };
-    setQuery(s.shortName);
-    setSuggestions([]); setOpen(false);
-    Keyboard.dismiss();
-    onSelect(area);
-  }
-
-  function handleClear() {
-    setQuery(''); setSuggestions([]); setOpen(false); onClear();
-  }
-
-  const resolved = selectedArea !== null;
-
-  return (
-    <View style={ac.container}>
-      <Text style={ac.label}>{icon}  {label}</Text>
-      <View style={[ac.inputWrap, resolved && ac.inputWrapOk]}>
-        <TextInput
-          style={ac.input}
-          value={query}
-          onChangeText={handleChange}
-          placeholder={placeholder}
-          placeholderTextColor="#4B5563"
-          returnKeyType="search"
-          onFocus={() => { if (suggestions.length > 0) setOpen(true); }}
-          onBlur={() => setTimeout(() => setOpen(false), 200)}
-        />
-        <View style={ac.adornment}>
-          {loading   && <ActivityIndicator size="small" color="#6366F1" />}
-          {resolved && !loading && <Text style={ac.check}>✓</Text>}
-          {query.length > 0 && !loading && (
-            <TouchableOpacity onPress={handleClear} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={ac.clear}>✕</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-      {open && (
-        <View style={ac.dropdown}>
-          <FlatList
-            data={suggestions}
-            keyExtractor={(_, i) => i.toString()}
-            keyboardShouldPersistTaps="always"
-            scrollEnabled={false}
-            renderItem={({ item }) => (
-              <TouchableOpacity style={ac.row} onPress={() => pick(item)} activeOpacity={0.7}>
-                <Text style={ac.rowShort} numberOfLines={1}>{item.shortName}</Text>
-                <Text style={ac.rowFull}  numberOfLines={1}>{item.displayName}</Text>
-              </TouchableOpacity>
-            )}
-            ItemSeparatorComponent={() => <View style={ac.sep} />}
-          />
-        </View>
-      )}
-    </View>
-  );
-}
-
-const ac = StyleSheet.create({
-  container:   { zIndex: 10, gap: 6 },
-  label:       { color: '#9CA3AF', fontSize: 13, fontWeight: '600' },
-  inputWrap:   { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 12, paddingVertical: 2 },
-  inputWrapOk: { borderColor: '#22C55E' },
-  input:       { flex: 1, color: '#F9FAFB', fontSize: 14, paddingVertical: 10 },
-  adornment:   { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  check:       { color: '#22C55E', fontSize: 16, fontWeight: '700' },
-  clear:       { color: '#4B5563', fontSize: 13, fontWeight: '700' },
-  dropdown:    { marginTop: 4, backgroundColor: '#1E2130', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', overflow: 'hidden', elevation: 8, shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
-  row:         { paddingHorizontal: 14, paddingVertical: 10, gap: 2 },
-  rowShort:    { color: '#F9FAFB', fontSize: 13, fontWeight: '700' },
-  rowFull:     { color: '#6B7280', fontSize: 11 },
-  sep:         { height: 1, backgroundColor: 'rgba(255,255,255,0.05)' },
-});
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 
@@ -283,7 +179,7 @@ export default function SettingsScreen() {
 
       {/* Common Area */}
       <Section title="Areas (Home & Work)">
-        <AddressAutocompleteInput
+        <LiveAddressInput
           label="Home area"
           icon="🏠"
           placeholder="Address, city or postal code…"
@@ -291,7 +187,7 @@ export default function SettingsScreen() {
           onSelect={updateHome}
           onClear={clearHome}
         />
-        <AddressAutocompleteInput
+        <LiveAddressInput
           label="Work area  (optional)"
           icon="🏢"
           placeholder="Address, city or postal code…"
