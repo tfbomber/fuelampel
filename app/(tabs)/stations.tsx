@@ -66,6 +66,8 @@ export default function StationsScreen() {
   const [locOpen,        setLocOpen]        = useState(false);
   const locAbortRef    = useRef<AbortController | null>(null);
   const locDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Track focus state to control dropdown visibility when async results return.
+  const locIsFocusedRef = useRef(false);
   const [locationLabel, setLocationLabel] = useState('GPS');
   const currentLocation = useRef<GeoLocation | null>(null);
 
@@ -133,10 +135,15 @@ export default function StationsScreen() {
     setLocOpen(false);
     setLocSuggestions([]);
 
-    // Fast path: 5-digit PLZ
-    if (/^\d{4,5}$/.test(q)) {
+    // Fast path: exactly 5-digit German PLZ (4-digit would pick partial/Austrian codes)
+    if (/^\d{5}$/.test(q)) {
+      // AbortController so in-flight PLZ geocode can be cancelled if user types again.
+      const plzAc = new AbortController();
+      locAbortRef.current = plzAc;
       try {
         const loc = await geocodePLZ(q);
+        if (plzAc.signal.aborted) return;
+        locAbortRef.current = null;
         if (!loc) {
           setLocSearchState('no_results');
           return;
@@ -146,7 +153,7 @@ export default function StationsScreen() {
         setLocSearchState('idle');
         await refresh(loc, true, localFuelType);
       } catch {
-        setLocSearchState('error');
+        if (!plzAc.signal.aborted) setLocSearchState('error');
       }
       return;
     }
@@ -159,11 +166,12 @@ export default function StationsScreen() {
     locAbortRef.current = null;
 
     if (results.length === 1) {
-      // Single result — pick it immediately, no dropdown needed
+      // Single unambiguous result — auto-pick regardless of focus state.
       pickLocSuggestion(results[0]);
     } else if (results.length > 1) {
       setLocSuggestions(results);
-      setLocOpen(true);
+      // Only open dropdown if still focused; prevents phantom dropdown after blur.
+      if (locIsFocusedRef.current) setLocOpen(true);
       setLocSearchState('idle');
     } else {
       setLocSearchState(failed ? 'error' : 'no_results');
@@ -183,6 +191,9 @@ export default function StationsScreen() {
   }
 
   function clearLocSearch() {
+    // Cancel pending debounce AND in-flight request; otherwise the ghost search
+    // fires 800ms later with the already-cleared text.
+    if (locDebounceRef.current) { clearTimeout(locDebounceRef.current); locDebounceRef.current = null; }
     if (locAbortRef.current) { locAbortRef.current.abort(); locAbortRef.current = null; }
     setLocQuery('');
     setLocSuggestions([]);
@@ -330,11 +341,22 @@ export default function StationsScreen() {
             }}
             returnKeyType="search"
             onSubmitEditing={() => triggerLocationSearch()}
+            onFocus={() => {
+              locIsFocusedRef.current = true;
+              if (locSuggestions.length > 0) setLocOpen(true);
+            }}
             onBlur={() => {
-              // Cancel debounce + in-flight request on blur
-              if (locDebounceRef.current) { clearTimeout(locDebounceRef.current); locDebounceRef.current = null; }
+              locIsFocusedRef.current = false;
+              // ── KEY DESIGN DECISION ────────────────────────────────────────────
+              // Do NOT cancel the debounce timer. The 800ms auto-search fires
+              // naturally even if the user dismisses the keyboard before 800ms.
+              // locIsFocusedRef gates dropdown display — single results still
+              // auto-pick silently even when blurred.
+              // ──────────────────────────────────────────────────────────────────
+              // Abort any already-running HTTP request to free resources, and reset
+              // loading state so the spinner doesn't get stuck if search was in-flight.
               if (locAbortRef.current) { locAbortRef.current.abort(); locAbortRef.current = null; }
-              setLocSearchState('idle');
+              setLocSearchState('idle'); // prevents stuck spinner after abort
               setTimeout(() => setLocOpen(false), 200);
             }}
             accessibilityLabel="Location or postal code search"

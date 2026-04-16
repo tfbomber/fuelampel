@@ -122,6 +122,8 @@ function AddressAutocompleteInput({
   const [open,        setOpen]        = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Track real focus state so we know whether to show dropdown when async results return.
+  const isFocusedRef = useRef(false);
 
   const canSearch  = query.trim().length >= 3;
   const isLoading  = searchState === 'loading';
@@ -148,9 +150,13 @@ function AddressAutocompleteInput({
     if (ac.signal.aborted) return; // user cancelled — don't update state
     abortRef.current = null;
 
-    if (results.length > 0) {
+    if (results.length === 1 && !ac.signal.aborted) {
+      // Single unambiguous result — auto-pick regardless of focus state.
+      pickSuggestion(results[0]);
+    } else if (results.length > 1) {
       setSuggestions(results);
-      setOpen(true);
+      // Only open dropdown if the input is still focused; avoids phantom dropdown on blur.
+      if (isFocusedRef.current) setOpen(true);
       setSearchState('idle');
     } else {
       setSearchState(failed ? 'error' : 'no_results');
@@ -168,8 +174,9 @@ function AddressAutocompleteInput({
   }
 
   function handleClear() {
-    // Cancel any in-flight request before resetting — otherwise the request
-    // could complete and overwrite the cleared state.
+    // Cancel pending debounce AND any in-flight request before resetting.
+    // Without this, a ghost search fires 800ms later with the already-cleared text.
+    if (debounceTimerRef.current) { clearTimeout(debounceTimerRef.current); debounceTimerRef.current = null; }
     if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
     setQuery('');
     setSuggestions([]);
@@ -215,12 +222,23 @@ function AddressAutocompleteInput({
           placeholderTextColor="#4B5563"
           returnKeyType="search"
           onSubmitEditing={() => triggerSearch()}
-          onFocus={() => { if (suggestions.length > 0) setOpen(true); }}
+          onFocus={() => {
+            isFocusedRef.current = true;
+            if (suggestions.length > 0) setOpen(true);
+          }}
           onBlur={() => {
-            // Cancel debounce + in-flight request when the user moves focus away.
-            if (debounceTimerRef.current) { clearTimeout(debounceTimerRef.current); debounceTimerRef.current = null; }
+            isFocusedRef.current = false;
+            // ── KEY DESIGN DECISION ────────────────────────────────────────────
+            // Do NOT cancel the debounce timer here. The 800ms auto-search should
+            // fire naturally even if the user dismisses the keyboard before 800ms
+            // (e.g., by tapping elsewhere). isFocusedRef gates whether the dropdown
+            // opens when results arrive — preventing phantom dropdowns after blur,
+            // while still completing the search silently (single-result auto-picks).
+            // ──────────────────────────────────────────────────────────────────
+            // Abort any already-running HTTP request to free resources, and reset
+            // loading state so the spinner doesn't get stuck if search was in-flight.
             if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
-            setSearchState('idle');
+            setSearchState('idle'); // prevents stuck spinner after abort
             setTimeout(() => setOpen(false), 200);
           }}
           accessibilityLabel={label}
