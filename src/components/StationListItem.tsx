@@ -104,9 +104,7 @@ export function StationListItem({
           {station.brand || station.name}
         </Text>
         <Text style={styles.subLine} numberOfLines={1}>
-          {distLabel}
-          {closed ? '  ·  CLOSED' : ''}
-          <Text style={{ fontSize: 10, color: '#4B5563' }}>  ·  {station.street}, {station.place}</Text>
+          {`${distLabel}${closed ? '  ·  CLOSED' : ''}  ·  ${station.street}, ${station.place}`}
         </Text>
       </View>
 

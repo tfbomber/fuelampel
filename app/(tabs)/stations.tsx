@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { useFuelStore } from '../../src/store/fuelStore';
 import { useUserStore } from '../../src/store/userStore';
 import { StationListItem } from '../../src/components/StationListItem';
@@ -97,6 +98,22 @@ export default function StationsScreen() {
     return () => clearTimeout(timer);
   }, [smartTank, lastPromptedMs]);
 
+  // ── Sync fuel type when Stations tab gains focus ─────────────────────────
+  // Ensures the tab always reflects the global fuelType selection (e.g. user
+  // sets Diesel on the Decide tab — Stations auto-switches on next visit).
+  useFocusEffect(
+    useCallback(() => {
+      if (storedFuelType !== localFuelType) {
+        setLocalFuelType(storedFuelType);
+        if (stations.length > 0) {
+          switchFuelType(storedFuelType);
+        } else if (currentLocation.current) {
+          refresh(currentLocation.current, true, storedFuelType);
+        }
+      }
+    }, [storedFuelType, localFuelType, stations.length])
+  );
+
   // ── GPS fetch ─────────────────────────────────────────────────────────────
   async function fetchViaGPS(fuelType?: FuelType) {
     const ft = fuelType ?? localFuelType;
@@ -159,10 +176,8 @@ export default function StationsScreen() {
       if (ac.signal.aborted) return;
       locAbortRef.current = null;
       setLocLoading(false);
-      if (results.length === 1) {
-        pickLocResult(results[0]);
-      } else if (results.length > 1) {
-        setLocResults(results);
+      if (results.length > 0) {
+        setLocResults(results);          // Always show dropdown — user selects explicitly
       } else {
         setLocNoResult(true);
       }

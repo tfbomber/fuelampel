@@ -78,11 +78,7 @@ export function LiveAddressInput({
       if (ac.signal.aborted) return;
       abortRef.current = null;
       setLoading(false);
-      if (r.length === 1) {
-        pickResult(r[0]);           // Single unambiguous result — auto-pick
-      } else {
-        setResults(r);              // Show dropdown
-      }
+      setResults(r);              // Always show dropdown — user confirms selection explicitly
     } catch {
       if (!ac?.signal.aborted) setLoading(false);
     }
@@ -164,13 +160,13 @@ export function LiveAddressInput({
           accessibilityLabel={label ?? placeholder}
         />
         <View style={livStyles.adornment}>
-          {loading    && <ActivityIndicator size="small" color="#6366F1" />}
-          {resolved   && !loading && <Text style={livStyles.check}>✓</Text>}
-          {!resolved  && !loading && query.length > 0 && (
+          {loading && <ActivityIndicator size="small" color="#6366F1" />}
+          {!loading && resolved && <Text style={livStyles.check}>✓</Text>}
+          {!loading && query.length > 0 && (
             <TouchableOpacity
               onPress={handleClear}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              accessibilityLabel="Clear"
+              accessibilityLabel="Clear input"
             >
               <Text style={livStyles.clear}>✕</Text>
             </TouchableOpacity>

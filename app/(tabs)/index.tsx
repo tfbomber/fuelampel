@@ -413,7 +413,18 @@ export default function HomeScreen() {
             <Text style={styles.loadingText}>Checking prices...</Text>
           </View>
         ) : decision ? (
-          <TrafficLight recommendation={decision.recommendation} size={164} />
+          decision.recommendation === 'GO' ? (
+            <TouchableOpacity
+              onPress={() => router.push('/stations')}
+              activeOpacity={0.82}
+              accessibilityLabel="GO — tap to see nearby stations"
+            >
+              <TrafficLight recommendation={decision.recommendation} size={164} />
+              <Text style={styles.goHint}>↗  Tap to see stations</Text>
+            </TouchableOpacity>
+          ) : (
+            <TrafficLight recommendation={decision.recommendation} size={164} />
+          )
         ) : error ? (
           <View style={styles.errorBox}>
             <Text style={styles.errorEmoji}>⚠️</Text>
@@ -501,6 +512,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
     paddingHorizontal: 40,
+  },
+  goHint: {
+    color: '#818CF8',
+    fontSize: 10,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 4,
+    opacity: 0.7,
   },
   stationSection: { gap: 8 },
   sectionLabel: {
