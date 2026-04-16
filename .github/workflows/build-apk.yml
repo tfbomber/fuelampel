@@ -44,12 +44,6 @@ jobs:
 
       - name: Build Android APK (Release)
         working-directory: android
-        # NODE_BINARY: react-native-reanimated build.gradle calls `node` at
-        # Gradle evaluation time to resolve its own package path.
-        # Providing NODE_BINARY prevents the "Process 'command node' exit 1" error.
-        env:
-          NODE_BINARY: node
-          NODE_PATH: ${{ github.workspace }}/node_modules
         run: ./gradlew assembleRelease --no-daemon
 
       - name: Get version from app.json
