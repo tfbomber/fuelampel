@@ -352,7 +352,7 @@ export default function StationsScreen() {
         </View>
         <TouchableOpacity
           style={styles.searchBtn}
-          onPress={locQuery.trim() ? triggerLocationSearch : () => fetchViaGPS()}
+          onPress={locQuery.trim() ? () => triggerLocationSearch() : () => fetchViaGPS()}
           disabled={locSearchState === 'loading' || isLoading}
           accessibilityLabel={locQuery.trim() ? 'Search location' : 'Use GPS location'}
         >

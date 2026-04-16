@@ -133,7 +133,8 @@ function AddressAutocompleteInput({
   // queryOverride: pass the raw text value directly to avoid stale React state closure in debounce.
   async function triggerSearch(queryOverride?: string) {
     const q = (queryOverride ?? query).trim();
-    if (q.length < 3 || isLoading) return;
+    if (q.length < 3) return;
+    // Always cancel the previous in-flight request — no stale isLoading guard needed.
     if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
 
     Keyboard.dismiss();
@@ -235,7 +236,7 @@ function AddressAutocompleteInput({
           {/* 🔍 search button — only shown when there's enough text and not yet resolved */}
           {canSearch && !isLoading && !isResolved && (
             <TouchableOpacity
-              onPress={triggerSearch}
+              onPress={() => triggerSearch()}
               style={acStyles.searchBtn}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               accessibilityLabel="Search address"
