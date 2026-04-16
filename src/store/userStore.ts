@@ -102,6 +102,9 @@ interface UserState {
   adjustLevelManually: (newPercent: number) => void;
   recordNavigatedToStation: () => void;
   clearPendingRefuelConfirm: () => void;
+  /** Hard-restore SmartTankState to a snapshot saved before a refuel was recorded.
+   *  This is the correct Undo path — it removes ghost refuel events from history. */
+  restoreSmartTankSnapshot: (snapshot: SmartTankState) => void;
 
   // Tank range (optional — unlocks km display on TankBar)
   setTotalRangeKm: (rangeKm: number | null) => void;
@@ -369,6 +372,11 @@ export const useUserStore = create<UserState>()(
         const { smartTank } = get();
         if (!smartTank) return;
         set({ smartTank: { ...smartTank, pendingRefuelConfirm: false } });
+      },
+
+      restoreSmartTankSnapshot: (snapshot) => {
+        console.log(`[UserStore] SmartTank snapshot restored — level=${snapshot.levelPercent}%, refuelHistory.length=${snapshot.refuelHistory.length}`);
+        set({ smartTank: snapshot });
       },
 
       setTotalRangeKm: (rangeKm) => {

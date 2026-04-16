@@ -20,7 +20,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { View, StyleSheet, Text, Animated } from 'react-native';
 import Slider from '@react-native-community/slider';
 
-const THUMB = 32;  // emoji container diameter (dp)
+const THUMB = 40;  // emoji container diameter (dp) — increased from 32 for easier grab target
 
 interface Props {
   value: number;              // 0–100

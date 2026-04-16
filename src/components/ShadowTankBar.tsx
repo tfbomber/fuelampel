@@ -79,6 +79,7 @@ export function ShadowTankBar({ fuelLevelPercent, totalRangeKm, isEstimated, onL
         onPress={onPress}
         onLongPress={onLongPress}
         delayLongPress={250}
+        hitSlop={{ top: 16, bottom: 16, left: 0, right: 0 }}
       >
         {inner}
       </Pressable>

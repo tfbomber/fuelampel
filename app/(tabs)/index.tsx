@@ -16,6 +16,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { FuelSlider } from '../../src/components/FuelSlider';
+import { SmartTankState } from '../../src/utils/types';
 
 // ─── TankGaugeSlider ──────────────────────────────────────────────────────────
 // Single combined component: animated fill bar + thumb slider overlaid in one.
@@ -86,7 +87,7 @@ export default function HomeScreen() {
   const smartTank          = useUserStore(s => s.smartTank);
   const recordSmartRefuel  = useUserStore(s => s.recordSmartRefuel);
   const adjustLevelManually = useUserStore(s => s.adjustLevelManually);
-  const clearPendingRefuel  = useUserStore(s => s.clearPendingRefuelConfirm);
+  const restoreSmartTankSnapshot = useUserStore(s => s.restoreSmartTankSnapshot);
   const confirmTripPattern  = useUserStore(s => s.confirmTripPattern);
 
   // ─── Tank level ───────────────────────────────────────────────────────────
@@ -113,6 +114,8 @@ export default function HomeScreen() {
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** true = mode was triggered by "ich habe getankt"; false = manual long-press adjust */
   const isRefuelModeRef = useRef(false);
+  /** Deep-copy of smartTank captured just before a refuel is recorded — enables true state rollback. */
+  const smartTankSnapshotRef = useRef<SmartTankState | null>(null);
   /** Suppress low-tank banner for 10s after any manual level adjustment */
   const suppressBannerUntilRef = useRef(0);
   /** For double-tap detection on ShadowTankBar */
@@ -173,7 +176,9 @@ export default function HomeScreen() {
 
   function handleGetankt() {
     if (fuelPct >= 100) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // Save deep-copy snapshot BEFORE the refuel event is written — enables true rollback on Undo
+    smartTankSnapshotRef.current = smartTank ? JSON.parse(JSON.stringify(smartTank)) : null;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); // strong, felt on all Android devices
     prevFuelPctRef.current = fuelPct;
     isRefuelModeRef.current = true;
     recordSmartRefuel(0, 'user_tap');
@@ -193,15 +198,27 @@ export default function HomeScreen() {
   function handleUndo() {
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
     const prev = prevFuelPctRef.current;
-    // Only clear the pending refuel record if we actually recorded one
-    if (isRefuelModeRef.current) clearPendingRefuel();
-    adjustLevelManually(prev);
+
+    if (isRefuelModeRef.current && smartTankSnapshotRef.current) {
+      // True rollback: restore the exact state that existed before the refuel button was tapped.
+      // This eliminates the ghost refuel event from refuelHistory (important for EMA accuracy).
+      restoreSmartTankSnapshot(smartTankSnapshotRef.current);
+      smartTankSnapshotRef.current = null;
+      console.log(`[HomeScreen] Undo — full snapshot restored to ${prev}%`);
+    } else {
+      // Manual adjust undo — no refuel event recorded, just correct the level
+      adjustLevelManually(prev);
+      console.log(`[HomeScreen] Undo — manual adjust reverted to ${prev}%`);
+    }
+
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); // distinct from "success" tap
     Animated.timing(animatedPct, {
       toValue: prev, duration: 400, useNativeDriver: false,
     }).start();
     isRefuelModeRef.current = false;
     setMode('normal');
-    console.log(`[HomeScreen] Undo — reverted to ${prev}%`);
+    // Recompute decision with reverted level (no network call)
+    setTimeout(() => recomputeDecision(), 50);
   }
 
   function handleSliderCommit(val: number) {

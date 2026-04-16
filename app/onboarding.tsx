@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useUserStore } from '../src/store/userStore';
+import { useFuelStore } from '../src/store/fuelStore';
 import {
   FuelType, RefuelingStyle, CarType, LastRefuelAmount, CommonArea,
 } from '../src/utils/types';
@@ -120,16 +121,19 @@ function AddressAutocompleteInput({
   const [searchState, setSearchState] = useState<SearchState>('idle');
   const [open,        setOpen]        = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const canSearch  = query.trim().length >= 3;
   const isLoading  = searchState === 'loading';
   const isResolved = selectedArea !== null;
 
   // ─── Trigger search ───────────────────────────────────────────────────────
-  // Called on 🔍 button tap OR keyboard Search/Return key.
+  // Called on 🔍 button tap, keyboard Search/Return key, OR auto-debounce (800ms after stop typing).
   // Runs Plan A (Nominatim, 3 s) then Plan B (Photon, 3 s) automatically.
-  async function triggerSearch() {
-    if (!canSearch || isLoading) return;
+  // queryOverride: pass the raw text value directly to avoid stale React state closure in debounce.
+  async function triggerSearch(queryOverride?: string) {
+    const q = (queryOverride ?? query).trim();
+    if (q.length < 3 || isLoading) return;
     if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
 
     Keyboard.dismiss();
@@ -139,7 +143,7 @@ function AddressAutocompleteInput({
 
     const ac = new AbortController();
     abortRef.current = ac;
-    const { results, failed } = await searchAddressWithFallback(query.trim(), ac.signal);
+    const { results, failed } = await searchAddressWithFallback(q, ac.signal);
     if (ac.signal.aborted) return; // user cancelled — don't update state
     abortRef.current = null;
 
@@ -199,15 +203,21 @@ function AddressAutocompleteInput({
             if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
             setSuggestions([]);
             setOpen(false);
+            // Auto-search debounce: fire 800ms after user stops typing.
+            // Capture the raw text to avoid stale React state in the closure.
+            if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+            if (t.trim().length >= 3) {
+              debounceTimerRef.current = setTimeout(() => triggerSearch(t.trim()), 800);
+            }
           }}
           placeholder={placeholder}
           placeholderTextColor="#4B5563"
           returnKeyType="search"
-          onSubmitEditing={triggerSearch}
+          onSubmitEditing={() => triggerSearch()}
           onFocus={() => { if (suggestions.length > 0) setOpen(true); }}
           onBlur={() => {
-            // Cancel any in-flight request when the user moves focus away.
-            // Without this, the spinner persists even after the input loses focus.
+            // Cancel debounce + in-flight request when the user moves focus away.
+            if (debounceTimerRef.current) { clearTimeout(debounceTimerRef.current); debounceTimerRef.current = null; }
             if (abortRef.current) { abortRef.current.abort(); abortRef.current = null; }
             setSearchState('idle');
             setTimeout(() => setOpen(false), 200);
@@ -402,6 +412,8 @@ export default function OnboardingScreen() {
           const work = store.commonAreas[1];
           store.initSmartTank(home, work, pct);
           store.adjustLevelManually(pct);
+          // Sync decision engine so Home tab shows the correct recommendation immediately
+          useFuelStore.getState().recomputeDecision();
           router.replace('/(tabs)');
         }}
       />
@@ -443,6 +455,8 @@ export default function OnboardingScreen() {
     completeOnboarding({ fuelType, commonAreas: areas, refuelingStyle: refStyle, carType, lastRefuelAmount: refAmount });
     adjustLevelManually(tankPct);
     useUserStore.getState().skipSmartTankSetup();
+    // Sync decision engine immediately so Home tab shows correct state on arrival
+    useFuelStore.getState().recomputeDecision();
     console.log('[Onboarding] User skipped SmartTank setup');
     router.replace('/(tabs)');
   }
@@ -460,6 +474,8 @@ export default function OnboardingScreen() {
       // setTotalRangeKm is called post-commit via store
       useUserStore.getState().setTotalRangeKm(rangeNum);
     }
+    // Sync decision engine so Home tab shows the correct recommendation immediately
+    useFuelStore.getState().recomputeDecision();
     router.replace('/(tabs)');
   }
 

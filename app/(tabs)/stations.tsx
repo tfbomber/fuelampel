@@ -64,7 +64,8 @@ export default function StationsScreen() {
   const [locSuggestions, setLocSuggestions] = useState<AddressSuggestion[]>([]);
   const [locSearchState, setLocSearchState] = useState<SearchState>('idle');
   const [locOpen,        setLocOpen]        = useState(false);
-  const locAbortRef = useRef<AbortController | null>(null);
+  const locAbortRef    = useRef<AbortController | null>(null);
+  const locDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [locationLabel, setLocationLabel] = useState('GPS');
   const currentLocation = useRef<GeoLocation | null>(null);
 
@@ -121,9 +122,9 @@ export default function StationsScreen() {
 
   // ── Location search (PLZ or address) ─────────────────────────────────────
   // Accepts both PLZ (5 digits → geocodePLZ) and free text (address → cascade).
-  // Uses the same abort-on-change pattern as AddressAutocompleteInput.
-  async function triggerLocationSearch() {
-    const q = locQuery.trim();
+  // textOverride: pass raw input text directly to avoid stale closures in debounce callbacks.
+  async function triggerLocationSearch(textOverride?: string) {
+    const q = (textOverride ?? locQuery).trim();
     if (!q) { fetchViaGPS(); return; }
 
     if (locAbortRef.current) { locAbortRef.current.abort(); locAbortRef.current = null; }
@@ -321,10 +322,17 @@ export default function StationsScreen() {
               if (locAbortRef.current) { locAbortRef.current.abort(); locAbortRef.current = null; }
               setLocSuggestions([]);
               setLocOpen(false);
+              // Auto-search debounce: fire 800ms after user stops typing.
+              if (locDebounceRef.current) clearTimeout(locDebounceRef.current);
+              if (t.trim().length >= 3) {
+                locDebounceRef.current = setTimeout(() => triggerLocationSearch(t.trim()), 800);
+              }
             }}
             returnKeyType="search"
-            onSubmitEditing={triggerLocationSearch}
+            onSubmitEditing={() => triggerLocationSearch()}
             onBlur={() => {
+              // Cancel debounce + in-flight request on blur
+              if (locDebounceRef.current) { clearTimeout(locDebounceRef.current); locDebounceRef.current = null; }
               if (locAbortRef.current) { locAbortRef.current.abort(); locAbortRef.current = null; }
               setLocSearchState('idle');
               setTimeout(() => setLocOpen(false), 200);
