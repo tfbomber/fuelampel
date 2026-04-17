@@ -24,7 +24,7 @@ import { FuelSlider } from '../src/components/FuelSlider';
 // ── Option metadata ───────────────────────────────────────────────────────────
 
 const FUEL_TYPES: { value: FuelType; label: string }[] = [
-  { value: 'e5',     label: 'Super E5' },
+  { value: 'e5',     label: 'Super' },
   { value: 'e10',    label: 'Super E10' },
   { value: 'diesel', label: 'Diesel' },
 ];
@@ -110,23 +110,23 @@ function SmartTankInitScreen({ onDone }: { onDone: (pct: number) => void }) {
       >
         {/* Header */}
         <Text style={s.emoji}>🛢️</Text>
-        <Text style={s.title}>Ein kurzes Setup</Text>
+        <Text style={s.title}>Quick Setup</Text>
         <Text style={s.subtitle}>
-          Wir haben eine neue intelligente Tankschätzung.{'\n'}
-          Nur zwei kurze Fragen — dauert 20 Sekunden.
+          We've added a smart tank estimation.{'\n'}
+          Just two quick questions — takes 20 seconds.
         </Text>
 
         {/* Tank level slider */}
         <View style={{ gap: 12, marginTop: 8 }}>
-          <Text style={s.sectionLabel}>⛽ Wie voll ist dein Tank gerade?</Text>
+          <Text style={s.sectionLabel}>⛽ How full is your tank right now?</Text>
 
           <View style={levelS.box}>
             <Text style={levelS.pct}>{pct}%</Text>
             <Text style={levelS.label}>
-              {pct >= 75 ? '🟢 Gut gefüllt'
-                : pct >= 40 ? '🟡 Halb voll'
-                : pct >= 15 ? '🟠 Wird knapp'
-                : '🔴 Fast leer'}
+              {pct >= 75 ? '🟢 Mostly full'
+                : pct >= 40 ? '🟡 Half-tank'
+                : pct >= 15 ? '🟠 Getting low'
+                : '🔴 Nearly empty'}
             </Text>
           </View>
 
@@ -142,7 +142,7 @@ function SmartTankInitScreen({ onDone }: { onDone: (pct: number) => void }) {
 
         {/* Car type (reused for capacity estimate) */}
         <View style={{ gap: 10, marginTop: 8 }}>
-          <Text style={s.sectionLabel}>🚗 Fahrzeugtyp (für Tankgröße)</Text>
+          <Text style={s.sectionLabel}>🚗 Vehicle type (for tank size estimate)</Text>
           {CAR_TYPES.map(c => (
             <Pill
               key={c.value}
@@ -159,10 +159,10 @@ function SmartTankInitScreen({ onDone }: { onDone: (pct: number) => void }) {
           onPress={() => onDone(pct)}
           activeOpacity={0.8}
         >
-          <Text style={s.nextBtnText}>Fertig — Los geht's ✓</Text>
+          <Text style={s.nextBtnText}>Done — Let's go ✓</Text>
         </TouchableOpacity>
         <Text style={[s.hint, { marginTop: 8 }]}>
-          Du kannst alles jederzeit in den Einstellungen anpassen.
+          You can edit everything in Settings anytime.
         </Text>
       </ScrollView>
     </View>
@@ -292,7 +292,7 @@ export default function OnboardingScreen() {
           )}
           {(step === 1 || step === 2) && (
             <TouchableOpacity onPress={handleSkipAll} style={s.skipBtn}>
-              <Text style={s.skipText}>Überspringen</Text>
+              <Text style={s.skipText}>Skip</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -398,20 +398,20 @@ export default function OnboardingScreen() {
         {step === 4 && (
           <View style={s.stepWrap}>
             <Text style={s.emoji}>🛢️</Text>
-            <Text style={s.title}>Wie viel hat dein Tank gerade?</Text>
+            <Text style={s.title}>How full is your tank right now?</Text>
             <Text style={s.subtitle}>
-              So starten wir mit der richtigen Schätzung –{'\n'}
-              du kannst das jederzeit anpassen.
+              We'll start with the right estimate –{'\n'}
+              you can adjust this anytime.
             </Text>
 
             {/* Big % label */}
             <View style={levelS.box}>
               <Text style={levelS.pct}>{tankPct}%</Text>
               <Text style={levelS.label}>
-                {tankPct >= 75 ? '🟢 Gut gefüllt'
-                  : tankPct >= 40 ? '🟡 Halb voll'
-                  : tankPct >= 15 ? '🟠 Wird knapp'
-                  : '🔴 Fast leer'}
+                {tankPct >= 75 ? '🟢 Mostly full'
+                  : tankPct >= 40 ? '🟡 Half-tank'
+                  : tankPct >= 15 ? '🟠 Getting low'
+                  : '🔴 Nearly empty'}
               </Text>
             </View>
 
@@ -444,7 +444,7 @@ export default function OnboardingScreen() {
 
         {step === 1 && !homeArea && (
           <Text style={s.hint}>
-            Start typing to search automatically.{' '}Can't connect? Tap <Text style={{ color: '#9CA3AF', fontWeight: '600' }}>Überspringen</Text> to set up later.
+            Start typing to search automatically.{' '}Can't connect? Tap <Text style={{ color: '#9CA3AF', fontWeight: '600' }}>Skip</Text> to set up later.
           </Text>
         )}
 

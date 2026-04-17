@@ -59,7 +59,7 @@ export function formatRelativeTime(unixTimestampMs: number): string {
  */
 export function formatFuelType(type: 'e5' | 'e10' | 'diesel'): string {
   const labels: Record<string, string> = {
-    e5: 'Super E5',
+    e5: 'Super',
     e10: 'Super E10',
     diesel: 'Diesel',
   };

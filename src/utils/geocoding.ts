@@ -119,12 +119,15 @@ export async function searchAddress(
         const cityPart  = addr.city ?? addr.town ?? addr.village ?? addr.county ?? '';
         const subPart   = addr.suburb ?? addr.quarter ?? '';
         const plzPart   = addr.postcode ?? '';
-        const shortParts = [plzPart, cityPart, subPart].filter(Boolean);
-        const shortName  = shortParts.join(' ') || r.display_name.split(',')[0];
+        const roadPart  = addr.road ?? addr.pedestrian ?? addr.path ?? '';
+        // Street-first: show 'Am Muehlengweg, Neuss' not '41470 Neuss'
+        const shortName = roadPart
+          ? [roadPart, cityPart].filter(Boolean).join(', ')
+          : ([plzPart, cityPart, subPart].filter(Boolean).join(' ') || r.display_name.split(',')[0]);
         const displayName = r.display_name.length > 70
-          ? r.display_name.slice(0, 67) + '…'
+          ? r.display_name.slice(0, 67) + '...'
           : r.display_name;
-        return { displayName, shortName, loc: { lat: parseFloat(r.lat), lng: parseFloat(r.lon) } };
+                return { displayName, shortName, loc: { lat: parseFloat(r.lat), lng: parseFloat(r.lon) } };
       });
 
   } catch (err: any) {
@@ -193,9 +196,12 @@ async function searchAddressPhoton(
         const cityPart = p.city ?? p.county ?? p.state ?? '';
         const subPart  = p.suburb ?? p.district ?? '';
         const plzPart  = p.postcode ?? '';
-        const shortParts = [plzPart, cityPart, subPart].filter(Boolean);
-        const shortName  = shortParts.join(' ') || p.name || q;
-        const displayParts = [p.name, p.street, plzPart, cityPart].filter(Boolean);
+        const streetPart = p.street ?? p.name ?? '';
+        // Street-first: show 'Am Muehlengweg, Neuss' not '41470 Neuss'
+        const shortName = streetPart
+          ? [streetPart, cityPart].filter(Boolean).join(', ')
+          : ([plzPart, cityPart, subPart].filter(Boolean).join(' ') || p.name || q);
+                const displayParts = [p.name, p.street, plzPart, cityPart].filter(Boolean);
         const displayName  = displayParts.join(', ').slice(0, 70);
         return {
           displayName: displayName || shortName,

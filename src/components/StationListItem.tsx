@@ -27,6 +27,7 @@ interface Props {
   rank: number;
   displayMode: DisplayMode;
   distanceSource: 'road' | 'estimated';
+  highlighted?: boolean;      // true = scrolled-to from GO decision
 }
 
 // ── Price colouring (vs area median) ─────────────────────────────────────────
@@ -50,7 +51,7 @@ function rankDotColors(price: number | null, median: number) {
 
 export function StationListItem({
   station, regionMedian, nearest, fillUpLitres,
-  rank, displayMode, distanceSource,
+  rank, displayMode, distanceSource, highlighted = false,
 }: Props) {
   const closed = !station.isOpen;
   const price  = station.price;
@@ -91,7 +92,7 @@ export function StationListItem({
   }
 
   return (
-    <View style={[styles.card, closed && styles.cardClosed]}>
+    <View style={[styles.card, closed && styles.cardClosed, highlighted && styles.cardHighlighted]}>
 
       {/* ── Rank dot ──────────────────────────────────── */}
       <View style={[styles.rankDot, { backgroundColor: dot.bg }]}>
@@ -121,16 +122,21 @@ export function StationListItem({
         {valueBadge}
       </View>
 
-      {/* ── Map button ────────────────────────────────── */}
-      <TouchableOpacity
-        style={[styles.mapBtn, closed && styles.mapBtnClosed]}
-        onPress={onNavigate}
-        disabled={closed}
-        activeOpacity={0.7}
-        accessibilityLabel={`Navigate to ${station.brand || station.name}`}
-      >
-        <Text style={[styles.mapIcon, closed && { opacity: 0.2 }]}>🗺️</Text>
-      </TouchableOpacity>
+      {/* ── Map button (hidden for closed stations) */}
+      {closed ? (
+        <View style={[styles.mapBtn, styles.mapBtnClosed]}>
+          <Text style={styles.mapIconClosed}>—</Text>
+        </View>
+      ) : (
+        <TouchableOpacity
+          style={styles.mapBtn}
+          onPress={onNavigate}
+          activeOpacity={0.7}
+          accessibilityLabel={`Navigate to ${station.brand || station.name}`}
+        >
+          <Text style={styles.mapIcon}>🗺️</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -157,6 +163,11 @@ const styles = StyleSheet.create({
   },
   cardClosed: {
     opacity: 0.4,
+  },
+  cardHighlighted: {
+    backgroundColor: 'rgba(99,102,241,0.12)',
+    borderLeftWidth: 3,
+    borderLeftColor: '#6366F1',
   },
 
   // Rank
@@ -236,5 +247,10 @@ const styles = StyleSheet.create({
   },
   mapIcon: {
     fontSize: 17,
+  },
+  mapIconClosed: {
+    color: '#374151',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

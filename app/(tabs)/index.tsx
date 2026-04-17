@@ -413,14 +413,14 @@ export default function HomeScreen() {
             <Text style={styles.loadingText}>Checking prices...</Text>
           </View>
         ) : decision ? (
-          decision.recommendation === 'GO' ? (
+          decision.recommendation === 'Go' ? (
             <TouchableOpacity
-              onPress={() => router.push('/stations')}
+              onPress={() => router.push({ pathname: '/stations', params: { highlightId: decision.station?.id ?? '' } })}
               activeOpacity={0.82}
               accessibilityLabel="GO — tap to see nearby stations"
             >
               <TrafficLight recommendation={decision.recommendation} size={164} />
-              <Text style={styles.goHint}>↗  Tap to see stations</Text>
+              <Text style={styles.goHint}>→  Stationen ansehen</Text>
             </TouchableOpacity>
           ) : (
             <TrafficLight recommendation={decision.recommendation} size={164} />
@@ -443,10 +443,10 @@ export default function HomeScreen() {
       )}
 
       {/* ── Best Station ── */}
-      {decision?.station && (
+      {decision?.recommendation !== 'Skip' && decision?.station && (
         <View style={styles.stationSection}>
           <Text style={styles.sectionLabel}>Best Option Nearby</Text>
-          <TouchableOpacity onPress={() => router.push('/stations')} activeOpacity={0.7}>
+          <TouchableOpacity onPress={() => router.push({ pathname: '/stations', params: { highlightId: decision.station?.id ?? '' } })} activeOpacity={0.7}>
             <StationCard
               station={decision.station}
               saving={decision.saving_estimate}

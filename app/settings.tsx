@@ -1,12 +1,13 @@
 // ====================================================
-// FuelAmpel — Settings Screen (v2)
-// All UI in English.
-// Editable: Fuel Type, Home/Work Area (autocomplete),
-//           Refueling Style, Car Type, Last Refuel Amount, Shadow Tank
-// Reset: Full Reset only (top of page)
+// FuelAmpel — Settings Screen (v3)
+//
+// UX improvements:
+//  - Auto-save inputs on blur / submit (no Save button)
+//  - Inline "✓ Saved" feedback — no Alert pop-ups for saves
+//  - Full Reset moved to bottom "Danger Zone" section
 // ====================================================
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, Alert, Pressable,
@@ -95,6 +96,16 @@ export default function SettingsScreen() {
     smartTank?.totalRangeKm != null ? smartTank.totalRangeKm.toString() : ''
   );
 
+  // ── Inline "✓ Saved" feedback — no disruptive Alert pop-ups ──────────────
+  const [savedField, setSavedField] = useState<string | null>(null);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function showSaved(field: string) {
+    if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+    setSavedField(field);
+    savedTimerRef.current = setTimeout(() => setSavedField(null), 2000);
+  }
+
   // Local resolved areas (mirrors store, updated on pick)
   const [homeArea, setHomeArea] = useState<CommonArea | null>(commonAreas[0] ?? null);
   const [workArea, setWorkArea] = useState<CommonArea | null>(commonAreas[1] ?? null);
@@ -116,33 +127,38 @@ export default function SettingsScreen() {
     if (homeArea) setCommonAreas([homeArea]);
   }
 
-  function handleSaveConsumption() {
+  // ── Auto-save helpers: validate → save silently → show inline ✓ ──────────
+
+  function saveConsumption() {
     const val = parseFloat(consumptionInput);
-    if (isNaN(val) || val < 3 || val > 25) { Alert.alert('Invalid', '3–25 L/100km'); return; }
+    if (isNaN(val) || val < 3 || val > 25) { Alert.alert('Invalid value', '3–25 L/100km'); return; }
     setAvgConsumption(val);
-    Alert.alert('Saved', `Consumption: ${val} L/100km`);
+    showSaved('consumption');
   }
-  function handleSaveCapacity() {
+
+  function saveCapacity() {
     const val = parseFloat(capacityInput);
-    if (isNaN(val) || val < 20 || val > 120) { Alert.alert('Invalid', '20–120 L'); return; }
+    if (isNaN(val) || val < 20 || val > 120) { Alert.alert('Invalid value', '20–120 L'); return; }
     setTankCapacity(val);
-    Alert.alert('Saved', `Tank: ${val} L`);
+    showSaved('capacity');
   }
-  function handleSaveRange() {
-    if (rangeInput.trim() === '') {
+
+  function saveRange() {
+    if (rangeInput.trim() === '' || rangeInput.trim() === '0') {
       setTotalRangeKm(null);
-      Alert.alert('Cleared', 'Tank bar will show % instead of km.');
+      showSaved('range');
       return;
     }
     const val = parseFloat(rangeInput);
-    if (isNaN(val) || val < 50 || val > 2000) { Alert.alert('Invalid', '50–2000 km'); return; }
+    if (isNaN(val) || val < 50 || val > 2000) { Alert.alert('Invalid value', '50–2000 km'); return; }
     setTotalRangeKm(val);
-    Alert.alert('Saved', `Full tank range: ${val} km`);
+    showSaved('range');
   }
+
   function handleRefueled() {
     Alert.alert('Reset tank?', 'Mark tank as full?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Yes, refueled', onPress: () => { recordRefuel(); Alert.alert('Done', 'Shadow tank reset.'); }},
+      { text: 'Yes, refueled', onPress: () => { recordRefuel(); showSaved('refuel'); }},
     ]);
   }
 
@@ -157,14 +173,6 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-
-      {/* ── RESET ── Emergency exit — always at top ── */}
-      <Section title="Reset">
-        <TouchableOpacity style={[styles.resetBtn, styles.resetBtnDanger]} onPress={confirmFullReset}>
-          <Text style={[styles.resetBtnText, styles.resetBtnTextDanger]}>🔄  Full Reset / Start Over</Text>
-          <Text style={styles.resetBtnDesc}>Clears everything — returns to setup screen</Text>
-        </TouchableOpacity>
-      </Section>
 
       {/* Fuel Type */}
       <Section title="Fuel Type">
@@ -212,49 +220,82 @@ export default function SettingsScreen() {
         <OptionRow<LastRefuelAmount> options={AMOUNT_OPTIONS} value={lastRefuelAmount} onSelect={setLastRefuelAmount} />
       </Section>
 
-      {/* Shadow Tank */}
+      {/* Shadow Tank — auto-save inputs */}
       <Section title="Shadow Tank">
+
+        {/* Avg Consumption */}
         <View style={styles.settingRow}>
-          <Text style={styles.settingLabel}>Avg. Consumption (L/100km)</Text>
-          <View style={styles.inputRow}>
-            <TextInput style={styles.input} value={consumptionInput} onChangeText={setConsumptionInput} keyboardType="decimal-pad" placeholderTextColor="#4B5563" />
-            <TouchableOpacity style={styles.saveBtn} onPress={handleSaveConsumption}>
-              <Text style={styles.saveBtnText}>Save</Text>
-            </TouchableOpacity>
+          <View style={styles.settingLabelRow}>
+            <Text style={styles.settingLabel}>Avg. Consumption (L/100km)</Text>
+            {savedField === 'consumption' && <Text style={styles.savedHint}>✓ Saved</Text>}
           </View>
+          <TextInput
+            style={styles.input}
+            value={consumptionInput}
+            onChangeText={setConsumptionInput}
+            keyboardType="decimal-pad"
+            returnKeyType="done"
+            onEndEditing={saveConsumption}
+            onSubmitEditing={saveConsumption}
+            placeholderTextColor="#4B5563"
+            accessibilityLabel="Average consumption L per 100km"
+          />
         </View>
+
+        {/* Tank Capacity */}
         <View style={styles.settingRow}>
-          <Text style={styles.settingLabel}>Tank Capacity (litres)</Text>
-          <View style={styles.inputRow}>
-            <TextInput style={styles.input} value={capacityInput} onChangeText={setCapacityInput} keyboardType="decimal-pad" placeholderTextColor="#4B5563" />
-            <TouchableOpacity style={styles.saveBtn} onPress={handleSaveCapacity}>
-              <Text style={styles.saveBtnText}>Save</Text>
-            </TouchableOpacity>
+          <View style={styles.settingLabelRow}>
+            <Text style={styles.settingLabel}>Tank Capacity (litres)</Text>
+            {savedField === 'capacity' && <Text style={styles.savedHint}>✓ Saved</Text>}
           </View>
+          <TextInput
+            style={styles.input}
+            value={capacityInput}
+            onChangeText={setCapacityInput}
+            keyboardType="decimal-pad"
+            returnKeyType="done"
+            onEndEditing={saveCapacity}
+            onSubmitEditing={saveCapacity}
+            placeholderTextColor="#4B5563"
+            accessibilityLabel="Tank capacity in litres"
+          />
         </View>
-        {/* Range on full tank — unlocks km display on Tank Bar */}
+
+        {/* Range on full tank */}
         <View style={styles.settingRow}>
-          <Text style={styles.settingLabel}>Range on full tank (km)  <Text style={{ color: '#4B5563' }}>— optional</Text></Text>
+          <View style={styles.settingLabelRow}>
+            <Text style={styles.settingLabel}>
+              Range on full tank (km){'  '}<Text style={{ color: '#4B5563' }}>— optional</Text>
+            </Text>
+            {savedField === 'range' && <Text style={styles.savedHint}>✓ Saved</Text>}
+          </View>
           <Text style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>
-            Sets the Tank Bar to show "≈ ZZZ km" instead of "%". Enter 0 or leave blank to revert to %.
+            {'Sets the Tank Bar to show "\u2248 ZZZ km" instead of %. Enter 0 or leave blank to revert.'}
           </Text>
-          <View style={styles.inputRow}>
-            <TextInput
-              style={styles.input}
-              value={rangeInput}
-              onChangeText={setRangeInput}
-              keyboardType="numeric"
-              placeholder="e.g. 600"
-              placeholderTextColor="#4B5563"
-            />
-            <TouchableOpacity style={styles.saveBtn} onPress={handleSaveRange}>
-              <Text style={styles.saveBtnText}>Save</Text>
-            </TouchableOpacity>
-          </View>
+          <TextInput
+            style={styles.input}
+            value={rangeInput}
+            onChangeText={setRangeInput}
+            keyboardType="numeric"
+            placeholder="e.g. 600"
+            placeholderTextColor="#4B5563"
+            returnKeyType="done"
+            onEndEditing={saveRange}
+            onSubmitEditing={saveRange}
+            accessibilityLabel="Full tank range km"
+          />
         </View>
-        <Pressable style={({ pressed }) => [styles.refuelBtn, pressed && { opacity: 0.7 }]} onPress={handleRefueled}>
-          <Text style={styles.refuelBtnText}>⛽  I refueled — Reset Tank</Text>
+
+        {/* Refuel reset button */}
+        <Pressable
+          style={({ pressed }) => [styles.refuelBtn, pressed && { opacity: 0.7 }]}
+          onPress={handleRefueled}
+        >
+          <Text style={styles.refuelBtnText}>
+            {savedField === 'refuel' ? '✓ Tank reset!' : '⛽  I refueled — Reset Tank'}
+          </Text>
         </Pressable>
+
       </Section>
 
       {/* About */}
@@ -266,6 +307,14 @@ export default function SettingsScreen() {
           No GPS tracking is stored.
         </Text>
         <Text style={styles.creditText}>Data: tankerkoenig.de</Text>
+      </Section>
+
+      {/* ── DANGER ZONE — Full Reset always at bottom ── */}
+      <Section title="Danger Zone">
+        <TouchableOpacity style={[styles.resetBtn, styles.resetBtnDanger]} onPress={confirmFullReset}>
+          <Text style={[styles.resetBtnText, styles.resetBtnTextDanger]}>🔄  Full Reset / Start Over</Text>
+          <Text style={styles.resetBtnDesc}>Clears everything — returns to setup screen</Text>
+        </TouchableOpacity>
       </Section>
 
     </ScrollView>
@@ -288,20 +337,20 @@ const styles = StyleSheet.create({
   tabText:     { color: '#6B7280', fontSize: 13, fontWeight: '600' },
   tabTextA:    { color: '#A5B4FC' },
 
-  optionGrid:         { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  optPill:            { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.09)', backgroundColor: 'rgba(255,255,255,0.04)' },
-  optPillActive:      { backgroundColor: 'rgba(99,102,241,0.18)', borderColor: '#6366F1' },
-  optPillText:        { color: '#6B7280', fontSize: 12, fontWeight: '600' },
-  optPillTextActive:  { color: '#A5B4FC' },
+  optionGrid:        { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  optPill:           { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.09)', backgroundColor: 'rgba(255,255,255,0.04)' },
+  optPillActive:     { backgroundColor: 'rgba(99,102,241,0.18)', borderColor: '#6366F1' },
+  optPillText:       { color: '#6B7280', fontSize: 12, fontWeight: '600' },
+  optPillTextActive: { color: '#A5B4FC' },
 
-  settingRow:   { gap: 8 },
-  settingLabel: { color: '#9CA3AF', fontSize: 13 },
-  inputRow:     { flexDirection: 'row', gap: 8 },
-  input:        { flex: 1, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', color: '#F9FAFB', paddingHorizontal: 14, paddingVertical: 10, fontSize: 15 },
-  saveBtn:      { backgroundColor: 'rgba(99,102,241,0.2)', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10, justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(99,102,241,0.3)' },
-  saveBtnText:  { color: '#A5B4FC', fontWeight: '600', fontSize: 13 },
-  refuelBtn:    { backgroundColor: 'rgba(34,197,94,0.1)', borderRadius: 12, paddingVertical: 13, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(34,197,94,0.3)', marginTop: 4 },
-  refuelBtnText:{ color: '#22C55E', fontWeight: '700', fontSize: 14 },
+  settingRow:      { gap: 6 },
+  settingLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  settingLabel:    { color: '#9CA3AF', fontSize: 13 },
+  savedHint:       { color: '#22C55E', fontSize: 11, fontWeight: '700' },
+  input:           { backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', color: '#F9FAFB', paddingHorizontal: 14, paddingVertical: 10, fontSize: 15 },
+
+  refuelBtn:     { backgroundColor: 'rgba(34,197,94,0.1)', borderRadius: 12, paddingVertical: 13, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(34,197,94,0.3)', marginTop: 4 },
+  refuelBtnText: { color: '#22C55E', fontWeight: '700', fontSize: 14 },
 
   resetBtn:           { backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', gap: 3 },
   resetBtnDanger:     { borderColor: 'rgba(239,68,68,0.3)', backgroundColor: 'rgba(239,68,68,0.06)' },

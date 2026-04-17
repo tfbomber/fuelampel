@@ -42,7 +42,7 @@ const CONFIG: Record<Recommendation, {
     textColor: '#F59E0B',
   },
   Skip: {
-    emoji: '✅',
+    emoji: '💤',
     label: 'SKIP',
     color: '#6B7280',
     glow: 'rgba(107, 114, 128, 0.3)',

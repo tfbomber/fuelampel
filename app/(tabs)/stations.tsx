@@ -11,7 +11,7 @@ import {
   Keyboard, Modal,
 } from 'react-native';
 import * as Location from 'expo-location';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useFuelStore } from '../../src/store/fuelStore';
 import { useUserStore } from '../../src/store/userStore';
@@ -53,6 +53,8 @@ export default function StationsScreen() {
   // Tank capacity from user settings (fallback to DEFAULT_TANK_CAPACITY = 50L)
   const fillUpLitres = shadowTank.tankCapacityL;
   const router = useRouter();
+  const { highlightId } = useLocalSearchParams<{ highlightId: string }>();
+  const flatListRef = useRef<any>(null);
 
   const [sortMode, setSortMode] = useState<SortMode>('value');
   const [viewMode, setViewMode]  = useState<ViewMode>('list');
@@ -113,6 +115,22 @@ export default function StationsScreen() {
       }
     }, [storedFuelType, localFuelType, stations.length])
   );
+
+  // -- Scroll-to-highlighted when arriving from GO decision --
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!highlightId || stations.length === 0) return;
+    setHighlightedId(highlightId);
+    const idx = displayList.findIndex(s => s.id === highlightId);
+    if (idx >= 0 && flatListRef.current) {
+      setTimeout(() => {
+        flatListRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.15 });
+      }, 300);
+    }
+    const t = setTimeout(() => setHighlightedId(null), 3000);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlightId, stations.length]);
 
   // ── GPS fetch ─────────────────────────────────────────────────────────────
   async function fetchViaGPS(fuelType?: FuelType) {
@@ -213,7 +231,7 @@ export default function StationsScreen() {
 
   // ── Fuel type switch — zero network (re-picks from cached raw prices) ────
   function handleFuelTypeChange(newType: FuelType) {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setLocalFuelType(newType);
     if (stations.length > 0) {
       switchFuelType(newType);
@@ -277,8 +295,9 @@ export default function StationsScreen() {
       rank={index + 1}
       displayMode={sortMode}
       distanceSource={distanceSource}
+      highlighted={item.id === highlightedId}
     />
-  ), [regionMedian, nearestOpen, fillUpLitres, sortMode, distanceSource]);
+  ), [regionMedian, nearestOpen, fillUpLitres, sortMode, distanceSource, highlightedId]);
 
   // ── Summary bar (replaces stats row + column labels) ─────────────────────
   function ListHeader() {
@@ -447,7 +466,7 @@ export default function StationsScreen() {
         <View style={styles.viewToggle}>
           <TouchableOpacity
             style={[styles.viewToggleBtn, viewMode === 'list' && styles.viewToggleBtnActive]}
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setViewMode('list'); }}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setViewMode('list'); }}
             accessibilityLabel="List view"
           >
             <Text style={[styles.viewToggleBtnText, viewMode === 'list' && styles.viewToggleBtnTextActive]}>
@@ -456,7 +475,7 @@ export default function StationsScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.viewToggleBtn, viewMode === 'map' && styles.viewToggleBtnActive]}
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setViewMode('map'); }}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setViewMode('map'); }}
             accessibilityLabel="Map view"
           >
             <Text style={[styles.viewToggleBtnText, viewMode === 'map' && styles.viewToggleBtnTextActive]}>
@@ -503,9 +522,11 @@ export default function StationsScreen() {
       {/* ── Station FlatList (list mode only) ────────────────────────────── */}
       {viewMode === 'list' && (
         <FlatList
+          ref={flatListRef}
           data={displayList}
           keyExtractor={item => item.id}
           renderItem={renderItem}
+          onScrollToIndexFailed={() => {}}
           ListHeaderComponent={ListHeader}
           ListEmptyComponent={EmptyState}
           refreshControl={
