@@ -1,14 +1,18 @@
 // ====================================================
-// FuelAmpel — TrafficLight Component
-// The hero visual: Go / Wait / Skip with animation.
+// FuelAmpel — TrafficLight Component (v2)
+//
+// Animation changes:
+//  - Cross-fade on recommendation change (fade-out → swap → fade-in)
+//  - No setValue(0) flash: uses displayRec state to hold content during fade-out
+//  - Pulse animation unchanged for Go/Wait
 // ====================================================
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
   Animated,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
 import { Recommendation } from '../utils/types';
 
@@ -52,39 +56,59 @@ const CONFIG: Record<Recommendation, {
 };
 
 export function TrafficLight({ recommendation, size = 160 }: Props) {
-  const cfg = CONFIG[recommendation];
+  // displayRec: what's currently visible. Lags behind `recommendation`
+  // during the fade-out phase so the OLD content fades rather than the new.
+  const [displayRec, setDisplayRec] = useState<Recommendation>(recommendation);
+  const cfg = CONFIG[displayRec];
+
+  const isMounted = useRef(false);
+  const fadeAnim  = useRef(new Animated.Value(1)).current; // start visible
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
 
+  // ── Cross-fade on recommendation change ───────────────────────────────────
   useEffect(() => {
-    // Fade in on mount / recommendation change
-    fadeAnim.setValue(0);
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 400,
-      useNativeDriver: true,
-    }).start();
-
-    // Pulse only for Go and Wait
-    if (recommendation !== 'Skip') {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 1.06,
-            duration: 1200,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 1200,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-    } else {
-      pulseAnim.setValue(1);
+    // Skip on first mount — already visible
+    if (!isMounted.current) {
+      isMounted.current = true;
+      startPulse(recommendation);
+      return;
     }
-  }, [recommendation]);
+
+    // Phase 1: fade out the OLD content (displayRec hasn't changed yet)
+    Animated.timing(fadeAnim, {
+      toValue: 0,
+      duration: 160,
+      useNativeDriver: true,
+    }).start(() => {
+      // Swap content NOW (React re-renders with new cfg)
+      setDisplayRec(recommendation);
+      startPulse(recommendation);
+
+      // Phase 2: fade in the NEW content
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 220,
+        useNativeDriver: true,
+      }).start();
+    });
+  }, [recommendation]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Pulse loop for Go / Wait ───────────────────────────────────────────────
+  function startPulse(rec: Recommendation) {
+    // stopAnimation with callback: waits for stop, then resets scale to 1
+    // before starting new loop — prevents stuck mid-pulse scale on rec change
+    pulseAnim.stopAnimation(() => {
+      pulseAnim.setValue(1);
+      if (rec !== 'Skip') {
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(pulseAnim, { toValue: 1.06, duration: 1200, useNativeDriver: true }),
+            Animated.timing(pulseAnim, { toValue: 1,    duration: 1200, useNativeDriver: true }),
+          ])
+        ).start();
+      }
+    });
+  }
 
   return (
     <Animated.View

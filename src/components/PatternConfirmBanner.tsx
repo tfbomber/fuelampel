@@ -12,9 +12,9 @@ const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 interface PatternConfirmBannerProps {
   pattern: TripPattern;
-  onConfirm: () => void;    // user tapped "Ja"
-  onReject: () => void;     // user tapped "Nicht ganz"
-  onDismiss: () => void;    // user tapped "Ignorieren"
+  onConfirm: () => void;    // user tapped "Yes"
+  onReject: () => void;     // user tapped "Not quite"
+  onDismiss: () => void;    // user tapped "Ignore"
 }
 
 export function PatternConfirmBanner({
@@ -31,23 +31,23 @@ export function PatternConfirmBanner({
       <View style={s.topRow}>
         <Text style={s.icon}>📍</Text>
         <View style={s.textCol}>
-          <Text style={s.title}>Regelmäßige Fahrt entdeckt</Text>
+          <Text style={s.title}>Regular trip detected</Text>
           <Text style={s.body}>
-            Jeden <Text style={s.highlight}>{day}</Text> fährst du ca.{' '}
+            Every <Text style={s.highlight}>{day}</Text> you drive approx.{' '}
             <Text style={s.highlight}>{km} km</Text>.{'\n'}
-            Soll ich das in die Tankschätzung einrechnen?
+            Should I include this in your fuel estimate?
           </Text>
         </View>
       </View>
       <View style={s.btnRow}>
         <TouchableOpacity style={[s.btn, s.btnYes]} onPress={onConfirm} activeOpacity={0.8}>
-          <Text style={s.btnYesText}>✓ Ja</Text>
+          <Text style={s.btnYesText}>✓ Yes</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[s.btn, s.btnNo]} onPress={onReject} activeOpacity={0.8}>
-          <Text style={s.btnNoText}>Nicht ganz</Text>
+          <Text style={s.btnNoText}>Not quite</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[s.btn, s.btnIgnore]} onPress={onDismiss} activeOpacity={0.8}>
-          <Text style={s.btnIgnoreText}>Ignorieren</Text>
+          <Text style={s.btnIgnoreText}>Ignore</Text>
         </TouchableOpacity>
       </View>
     </View>

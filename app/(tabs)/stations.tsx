@@ -418,7 +418,7 @@ export default function StationsScreen() {
       {locNoResult && (
         <View style={styles.locStatusBanner}>
           <Text style={styles.locStatusText}>
-            {`Kein Ergebnis für \u201e${locQuery}\u201c`}
+            {`No results for “${locQuery}”`}
           </Text>
           <TouchableOpacity onPress={() => fetchViaGPS()} style={styles.locGpsBtn}>
             <Text style={styles.locGpsBtnText}>📍 GPS</Text>
@@ -428,7 +428,7 @@ export default function StationsScreen() {
 
       {/* ── Filter bar ─────────────────────────────────────────────────── */}
       <View style={styles.filterBar}>
-        {/* Fuel type pills — clickable, defaults to global setting */}
+        {/* Row 1: Fuel type pills */}
         <View style={styles.fuelRow}>
           {FUEL_TYPES.map(type => (
             <TouchableOpacity
@@ -444,44 +444,50 @@ export default function StationsScreen() {
           ))}
         </View>
 
-        {/* Sort tabs ─ hidden in map mode */}
-        {viewMode === 'list' && (
-          <View style={styles.sortGroup}>
-            {(['price', 'distance', 'value'] as SortMode[]).map(mode => (
-              <TouchableOpacity
-                key={mode}
-                style={[styles.sortBtn, sortMode === mode && styles.sortBtnActive]}
-                onPress={() => setSortMode(mode)}
-                accessibilityLabel={`Sort by ${mode}`}
-              >
-                <Text style={[styles.sortBtnText, sortMode === mode && styles.sortBtnTextActive]}>
-                  {mode === 'price' ? '💰 Price' : mode === 'distance' ? '📍 Dist' : '⭐ Value'}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
+        {/* Row 2: Sort tabs + List/Map toggle — always on ONE line */}
+        <View style={styles.controlRow}>
+          {/* Sort tabs — hidden in map mode but occupy no space */}
+          {viewMode === 'list' && (
+            <View style={styles.sortGroup}>
+              {(['price', 'distance', 'value'] as SortMode[]).map(mode => (
+                <TouchableOpacity
+                  key={mode}
+                  style={[styles.sortBtn, sortMode === mode && styles.sortBtnActive]}
+                  onPress={() => setSortMode(mode)}
+                  accessibilityLabel={`Sort by ${mode}`}
+                >
+                  <Text style={[styles.sortBtnText, sortMode === mode && styles.sortBtnTextActive]}>
+                    {mode === 'price' ? '💰 Price' : mode === 'distance' ? '📍 Dist' : '⭐ Value'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
-        {/* List / Map toggle */}
-        <View style={styles.viewToggle}>
-          <TouchableOpacity
-            style={[styles.viewToggleBtn, viewMode === 'list' && styles.viewToggleBtnActive]}
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setViewMode('list'); }}
-            accessibilityLabel="List view"
-          >
-            <Text style={[styles.viewToggleBtnText, viewMode === 'list' && styles.viewToggleBtnTextActive]}>
-              📋 List
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.viewToggleBtn, viewMode === 'map' && styles.viewToggleBtnActive]}
-            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setViewMode('map'); }}
-            accessibilityLabel="Map view"
-          >
-            <Text style={[styles.viewToggleBtnText, viewMode === 'map' && styles.viewToggleBtnTextActive]}>
-              🗺️ Map
-            </Text>
-          </TouchableOpacity>
+          {/* Spacer — pushes toggle to the right in map mode */}
+          {viewMode === 'map' && <View style={{ flex: 1 }} />}
+
+          {/* List / Map toggle — always visible, always right-aligned */}
+          <View style={styles.viewToggle}>
+            <TouchableOpacity
+              style={[styles.viewToggleBtn, viewMode === 'list' && styles.viewToggleBtnActive]}
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setViewMode('list'); }}
+              accessibilityLabel="List view"
+            >
+              <Text style={[styles.viewToggleBtnText, viewMode === 'list' && styles.viewToggleBtnTextActive]}>
+                📋 List
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.viewToggleBtn, viewMode === 'map' && styles.viewToggleBtnActive]}
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setViewMode('map'); }}
+              accessibilityLabel="Map view"
+            >
+              <Text style={[styles.viewToggleBtnText, viewMode === 'map' && styles.viewToggleBtnTextActive]}>
+                🗺️ Map
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
@@ -506,7 +512,6 @@ export default function StationsScreen() {
           stations={stations}
           currentLocation={currentLocation.current}
           fuelType={localFuelType}
-          regionMedian={regionMedian}
           nearestStation={nearestOpen}
           cheapestStation={stations.find(s => s.isOpen && s.price === cheapestPrice) ?? null}
         />
@@ -514,8 +519,8 @@ export default function StationsScreen() {
       {viewMode === 'map' && stations.length === 0 && !isLoading && (
         <View style={styles.emptyBox}>
           <Text style={styles.emptyEmoji}>🗺️</Text>
-          <Text style={styles.emptyTitle}>Karte bereit</Text>
-          <Text style={styles.emptyText}>Zuerst GPS oder PLZ oben eingeben.</Text>
+          <Text style={styles.emptyTitle}>Map ready</Text>
+          <Text style={styles.emptyText}>Enter a PLZ or address above, or tap GPS.</Text>
         </View>
       )}
 
@@ -744,10 +749,12 @@ const styles = StyleSheet.create({
   fuelPillText: { color: '#9CA3AF', fontSize: 11, fontWeight: '600' },  // boosted
   fuelPillTextActive: { color: '#A5B4FC' },
 
+  // Row 2 of filter bar: sort tabs + view toggle on ONE line
   controlRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 6,
   },
   sortGroup: { flexDirection: 'row', gap: 5, flex: 1 },
   // List / Map view toggle

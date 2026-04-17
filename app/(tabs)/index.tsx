@@ -106,7 +106,7 @@ export default function HomeScreen() {
   // ─── Animated fill value ───────────────────────────────────────────────────
   const animatedPct = useRef(new Animated.Value(fuelPct)).current;
 
-  // ─── Post-refuel Mode state ─────────────────────────────────────────────
+  // Post-refuel Mode state
   type AppMode = 'normal' | 'animating' | 'adjusting' | 'soft_confirm';
   const [mode, setMode] = useState<AppMode>('normal');
   const [sliderValue, setSliderValue]   = useState(100);
@@ -120,6 +120,37 @@ export default function HomeScreen() {
   const suppressBannerUntilRef = useRef(0);
   /** For double-tap detection on ShadowTankBar */
   const lastTankTapRef = useRef(0);
+
+  // ── Rück button: spring in/out, never shifts layout ─────────────────────
+  const ruckAnim = useRef(new Animated.Value(0)).current;
+  const showUndo = mode === 'adjusting' || mode === 'soft_confirm';
+  useEffect(() => {
+    Animated.spring(ruckAnim, {
+      toValue: showUndo ? 1 : 0,
+      useNativeDriver: true,
+      damping: 18,
+      stiffness: 220,
+      mass: 0.7,
+    }).start();
+  }, [showUndo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Tank component crossfade (ShadowTankBar ↔ TankGaugeSlider) ──────────
+  // `displayedMode` lags behind real mode during the 120ms fade-out,
+  // ensuring the OLD component fades out before the NEW one appears.
+  const switchAnim = useRef(new Animated.Value(1)).current;
+  const [displayedMode, setDisplayedMode] = useState<AppMode>(mode);
+  const isSliderMode = (m: AppMode) => m === 'adjusting';
+  useEffect(() => {
+    // Only animate on ShadowTankBar ↔ Slider transitions (not animating→adjusting skips)
+    if (isSliderMode(mode) === isSliderMode(displayedMode)) {
+      setDisplayedMode(mode); // same visual type — update immediately without animation
+      return;
+    }
+    Animated.timing(switchAnim, { toValue: 0, duration: 120, useNativeDriver: true }).start(() => {
+      setDisplayedMode(mode);
+      Animated.timing(switchAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
+    });
+  }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useFocusEffect(
     useCallback(() => {
@@ -325,7 +356,7 @@ export default function HomeScreen() {
       {permissionDenied && (
         <View style={styles.refuelBanner}>
           <Text style={styles.refuelBannerText}>
-            📍 Keine Standortberechtigung. Bitte in den Einstellungen aktivieren.
+            📍 Location access denied. Please enable in system settings.
           </Text>
           <TouchableOpacity
             onPress={() => Linking.openSettings()}
@@ -345,9 +376,9 @@ export default function HomeScreen() {
           accessibilityLabel="Set up SmartTank"
         >
           <Text style={styles.setupBannerText}>
-            💡 SmartTank nicht konfiguriert — Tippe hier, um Heimatregion einzurichten und smarte Tankvorhersagen zu aktivieren.
+            💡 SmartTank not configured — tap here to set your home region and enable smart fuel predictions.
           </Text>
-          <Text style={styles.setupBannerCta}>Jetzt ›</Text>
+          <Text style={styles.setupBannerCta}>Set up ›</Text>
         </TouchableOpacity>
       )}
 
@@ -356,52 +387,66 @@ export default function HomeScreen() {
         && Date.now() > suppressBannerUntilRef.current && (
         <View style={styles.refuelBanner}>
           <Text style={styles.refuelBannerText}>
-            🔄  Schätzung möglicherweise veraltet — aufgetankt?
+            🔄  Estimate may be outdated — did you refuel?
           </Text>
           <TouchableOpacity
             onPress={() => recordSmartRefuel(0, 'low_alert')}
             style={styles.refuelBannerBtn}
           >
-            <Text style={styles.refuelBannerBtnText}>Ja, zurücksetzen</Text>
+            <Text style={styles.refuelBannerBtnText}>Yes, reset</Text>
           </TouchableOpacity>
         </View>
       )}
 
-      {/* ── Tank area (fixed-height wrapper to prevent any layout shift) ── */}
+      {/* ── Tank area ──────────────────────────────────────────────── */}
       <Animated.View style={[
-        styles.tankArea, 
+        styles.tankArea,
         (mode === 'adjusting' || mode === 'soft_confirm') ? { zIndex: 20 } : undefined,
         { backgroundColor: tankBgColor, borderColor: tankBorderColor, borderWidth: 1, borderRadius: 16, marginHorizontal: -12, paddingHorizontal: 12, paddingVertical: 8 }
       ]}>
-        {mode === 'normal' || mode === 'animating' || mode === 'soft_confirm' ? (
-          <ShadowTankBar
-            fuelLevelPercent={fuelPct}
-            totalRangeKm={totalRangeKm}
-            isEstimated={isEstimated}
-            onLongPress={mode === 'normal' ? handleManualAdjust : undefined}
-            onPress={mode === 'normal' ? handleTankTap : undefined}
-          />
-        ) : (
-          <TankGaugeSlider
-            value={sliderValue}
-            onValueChange={setSliderValue}
-            onSlidingComplete={handleSliderCommit}
-            totalRangeKm={totalRangeKm}
-            animatedPct={animatedPct}
-            isEstimated={isEstimated}
-          />
-        )}
-        {/* Undo row — fixed height, always rendered, visible only in adjusting */}
+        {/* Tank component: crossfades between ShadowTankBar and TankGaugeSlider */}
+        <Animated.View style={{ opacity: switchAnim }}>
+          {isSliderMode(displayedMode) ? (
+            <TankGaugeSlider
+              value={sliderValue}
+              onValueChange={setSliderValue}
+              onSlidingComplete={handleSliderCommit}
+              totalRangeKm={totalRangeKm}
+              animatedPct={animatedPct}
+              isEstimated={isEstimated}
+            />
+          ) : (
+            <ShadowTankBar
+              fuelLevelPercent={fuelPct}
+              totalRangeKm={totalRangeKm}
+              isEstimated={isEstimated}
+              onLongPress={mode === 'normal' ? handleManualAdjust : undefined}
+              onPress={mode === 'normal' ? handleTankTap : undefined}
+            />
+          )}
+        </Animated.View>
+
+        {/* Undo row — FIXED height 34px, always in flow — never shifts layout */}
+        {/* Rück fades in/out via spring animation, pointerEvents disable when hidden */}
         <View style={styles.undoRow}>
-          {(mode === 'adjusting' || mode === 'soft_confirm') && (
+          <Animated.View
+            style={[
+              styles.undoFloating,
+              {
+                opacity: ruckAnim,
+                transform: [{ scale: ruckAnim.interpolate({ inputRange: [0, 1], outputRange: [0.75, 1] }) }],
+              },
+            ]}
+            pointerEvents={showUndo ? 'auto' : 'none'}
+          >
             <Pressable
-              style={({ pressed }) => [styles.undoFloating, pressed && { opacity: 0.6 }]}
               onPress={handleUndo}
+              style={({ pressed }) => pressed ? { opacity: 0.65 } : undefined}
               accessibilityLabel="Undo refuel"
             >
-              <Text style={styles.undoFloatingText}>↺ Rück</Text>
+              <Text style={styles.undoFloatingText}>↺ Undo</Text>
             </Pressable>
-          )}
+          </Animated.View>
         </View>
       </Animated.View>
 
@@ -420,7 +465,7 @@ export default function HomeScreen() {
               accessibilityLabel="GO — tap to see nearby stations"
             >
               <TrafficLight recommendation={decision.recommendation} size={164} />
-              <Text style={styles.goHint}>→  Stationen ansehen</Text>
+              <Text style={styles.goHint}>→  View stations</Text>
             </TouchableOpacity>
           ) : (
             <TrafficLight recommendation={decision.recommendation} size={164} />
@@ -472,11 +517,10 @@ export default function HomeScreen() {
               styles.refuelBtnText, 
               (fuelPct >= 100 || mode !== 'normal') && styles.refuelBtnTextDisabled
             ]}>
-              ⛽  Ich habe getankt
+              ⛽  I refueled
             </Text>
           </Pressable>
         </View>
-        <Text style={styles.pullHint}>↓  Pull to refresh</Text>
       </View>
     </ScrollView>
   );
@@ -568,19 +612,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(99,102,241,0.05)',
   },
   refuelBtnTextDisabled: { color: '#4B5563' },
-  undoInlineBtn: {
-    marginTop: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(239,68,68,0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(239,68,68,0.3)',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  undoInlineBtnText: { color: '#FCA5A5', fontSize: 13, fontWeight: '700', letterSpacing: 0.3 },
-  pullHint: { color: '#374151', fontSize: 11 },
+  // (undoInlineBtn removed — no longer used)
+  // (pullHint removed — pull-to-refresh text removed)
 
   // Refuel confirm inline banner
   refuelBanner: {
@@ -643,10 +676,10 @@ const styles = StyleSheet.create({
   tankArea: {},
   // Fixed-height row below the tank bar for the undo button (right-aligned, never shifts layout)
   undoRow: {
-    height: 28,
+    height: 34,             // Fixed — never causes layout shift
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    paddingRight: 20,
+    paddingRight: 4,
     alignItems: 'center',
   },
 });

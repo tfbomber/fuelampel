@@ -1,23 +1,27 @@
 // ====================================================
-// FuelAmpel — StationMapView Component
+// FuelAmpel — StationMapView Component (v2)
 //
-// Map view for the Stations tab.
-// Uses MapLibre GL + CARTO Dark Matter tiles (free, no API key).
-// Renders price bubble markers per station.
-// Tap a marker → shows bottom detail card.
+// Changes vs v1:
+//  - Station markers redesigned: dot (●) + price label side-by-side
+//    Dot = precise geo anchor, label = dark pill with 3-decimal price
+//    Cheapest dot: 12px green with glow; Nearest: 12px indigo; Others: 10px gray
+//    Closed stations: entire marker at 40% opacity
+//  - Bottom detail card height compressed (~110px → was ~148px)
+//  - attributionPosition.bottom updated to match new card height
+//  - All German text translated to English
 // ====================================================
 
 import React, { useRef, useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Dimensions, Animated,
+  View, Text, StyleSheet, TouchableOpacity,
+  Animated,
 } from 'react-native';
 import MapLibreGL from '@maplibre/maplibre-react-native';
 import { Station, GeoLocation } from '../utils/types';
 import { formatFuelType } from '../utils/formatters';
 import type { FuelType } from '../utils/types';
 
-// ─── CARTO Dark Matter — free, no API key ─────────────────────────────────────
+// ─── CARTO Dark Matter — free, no API key ────────────────────────────────────
 const CARTO_DARK_STYLE = {
   version: 8,
   sources: {
@@ -39,8 +43,21 @@ const CARTO_DARK_STYLE = {
   }],
 } as const;
 
-// ─── Price bubble marker ───────────────────────────────────────────────────────
-function PriceBubble({
+// ─── Station Marker: dot ● + price label ──────────────────────────────────────
+//
+// Layout:  [●]─[dark pill: "1.234"]
+//
+// anchor: { x: 0, y: 0.5 } → dot left-edge = geo-coordinate
+// At zoom 12, 5px offset ≈ 5–8m real distance (within GPS accuracy tolerance).
+//
+// Sizing rationale:
+//   - Dot: 10px (regular) / 12px (cheapest+nearest) → compact, low overlap
+//   - Pill: ~43px wide, 16px tall → 40% smaller than previous block markers
+//   - Letter-spacing -0.3 on "1.234" to squeeze width without sacrificing readability
+//   - Closed stations: full component at 40% opacity, no pill (dot only)
+//     → removes clutter for irrelevant stations, keeps them visible for reference
+
+function StationMarker({
   price, isOpen, isCheapest, isNearest,
 }: {
   price: number | null;
@@ -48,71 +65,105 @@ function PriceBubble({
   isCheapest: boolean;
   isNearest: boolean;
 }) {
-  const bgColor =
-    !isOpen           ? '#374151'     :
-    isCheapest        ? '#22C55E'     :
-    isNearest         ? '#6366F1'     :
-                        '#1E2130'     ;
+  const dotSize    = (isCheapest || isNearest) ? 12 : 10;
+  const dotRadius  = dotSize / 2;
 
-  const borderColor =
-    isCheapest ? '#4ADE80' :
-    isNearest  ? '#818CF8' :
-    isOpen     ? 'rgba(255,255,255,0.18)' :
-                 'rgba(255,255,255,0.06)';
+  const dotColor =
+    !isOpen    ? '#4B5563'   :
+    isCheapest ? '#22C55E'   :
+    isNearest  ? '#6366F1'   :
+                 '#94A3B8'   ; // light blue-gray for regular open
+
+  const pillBorderColor =
+    isCheapest ? 'rgba(34,197,94,0.5)'  :
+    isNearest  ? 'rgba(99,102,241,0.5)' :
+                 'rgba(255,255,255,0.12)';
+
+  const glowColor =
+    isCheapest ? '#22C55E' :
+    isNearest  ? '#6366F1' :
+                 undefined;
+
+  const dotStyle: any = {
+    width: dotSize,
+    height: dotSize,
+    borderRadius: dotRadius,
+    backgroundColor: dotColor,
+  };
+  if (glowColor && isOpen) {
+    dotStyle.shadowColor   = glowColor;
+    dotStyle.shadowOpacity = 0.7;
+    dotStyle.shadowRadius  = 4;
+    dotStyle.elevation     = 4;
+  }
+
+  // Closed: show just a faded dot, no price label
+  if (!isOpen) {
+    return (
+      <View style={[markerStyles.root, { opacity: 0.4 }]}>
+        <View style={dotStyle} />
+      </View>
+    );
+  }
 
   return (
-    <View style={[bubbleStyles.root, { backgroundColor: bgColor, borderColor }]}>
-      <Text style={[bubbleStyles.price, !isOpen && bubbleStyles.priceClosed]}>
-        {price !== null ? price.toFixed(3) : '—'}
-      </Text>
-      {!isOpen && <Text style={bubbleStyles.closedTag}>closed</Text>}
+    <View style={markerStyles.root}>
+      <View style={dotStyle} />
+      <View style={[markerStyles.pill, { borderColor: pillBorderColor }]}>
+        <Text style={markerStyles.priceText}>
+          {price !== null ? price.toFixed(3) : '—'}
+        </Text>
+      </View>
     </View>
   );
 }
 
-const bubbleStyles = StyleSheet.create({
+const markerStyles = StyleSheet.create({
   root: {
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 5,
-    borderWidth: 1.5,
+    flexDirection: 'row',
     alignItems: 'center',
-    minWidth: 52,
-    shadowColor: '#000',
-    shadowOpacity: 0.4,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 4,
+    gap: 3,
   },
-  price:       { color: '#F9FAFB', fontSize: 11, fontWeight: '800', letterSpacing: 0.3 },
-  priceClosed: { color: '#6B7280' },
-  closedTag:   { color: '#4B5563', fontSize: 8, fontWeight: '600', marginTop: 1 },
+  pill: {
+    backgroundColor: 'rgba(8,10,18,0.86)',
+    borderRadius: 5,
+    borderWidth: 1,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
+  priceText: {
+    color: '#F9FAFB',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
 });
 
-// ─── Bottom detail card ───────────────────────────────────────────────────────
+// ─── Bottom detail card (compressed) ─────────────────────────────────────────
 function StationDetailCard({
-  station,
-  fuelType,
-  onClose,
+  station, fuelType, onClose,
 }: {
   station: Station;
   fuelType: FuelType;
   onClose: () => void;
 }) {
-  const slideAnim = useRef(new Animated.Value(120)).current;
+  const slideAnim = useRef(new Animated.Value(110)).current;
 
   React.useEffect(() => {
     Animated.spring(slideAnim, {
       toValue: 0,
       useNativeDriver: true,
-      damping: 18,
-      stiffness: 160,
+      damping: 20,
+      stiffness: 180,
     }).start();
   }, [station.id]);
 
   return (
     <Animated.View style={[cardStyles.card, { transform: [{ translateY: slideAnim }] }]}>
+      {/* Drag handle */}
       <View style={cardStyles.handle} />
+
+      {/* Header */}
       <View style={cardStyles.header}>
         <View style={{ flex: 1 }}>
           <Text style={cardStyles.name} numberOfLines={1}>{station.brand || station.name}</Text>
@@ -120,11 +171,16 @@ function StationDetailCard({
             {station.street} · {station.place}
           </Text>
         </View>
-        <TouchableOpacity onPress={onClose} style={cardStyles.closeBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+        <TouchableOpacity
+          onPress={onClose}
+          style={cardStyles.closeBtn}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
           <Text style={cardStyles.closeBtnText}>✕</Text>
         </TouchableOpacity>
       </View>
 
+      {/* Stats row */}
       <View style={cardStyles.row}>
         <View style={cardStyles.stat}>
           <Text style={cardStyles.statVal}>
@@ -135,12 +191,12 @@ function StationDetailCard({
         <View style={cardStyles.divider} />
         <View style={cardStyles.stat}>
           <Text style={cardStyles.statVal}>{station.dist.toFixed(1)} km</Text>
-          <Text style={cardStyles.statLbl}>Entfernung</Text>
+          <Text style={cardStyles.statLbl}>Distance</Text>
         </View>
         <View style={cardStyles.divider} />
         <View style={cardStyles.stat}>
           <Text style={[cardStyles.statVal, { color: station.isOpen ? '#22C55E' : '#EF4444' }]}>
-            {station.isOpen ? 'Offen' : 'Geschlossen'}
+            {station.isOpen ? 'Open' : 'Closed'}
           </Text>
           <Text style={cardStyles.statLbl}>Status</Text>
         </View>
@@ -149,6 +205,7 @@ function StationDetailCard({
   );
 }
 
+// Compressed card: total height ~108px (was ~148px)
 const cardStyles = StyleSheet.create({
   card: {
     position: 'absolute',
@@ -161,8 +218,8 @@ const cardStyles = StyleSheet.create({
     borderTopWidth: 1,
     borderColor: 'rgba(255,255,255,0.09)',
     paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 24,
+    paddingTop: 8,        // was 12
+    paddingBottom: 16,    // was 24
     shadowColor: '#000',
     shadowOpacity: 0.5,
     shadowRadius: 16,
@@ -170,50 +227,52 @@ const cardStyles = StyleSheet.create({
     elevation: 16,
   },
   handle: {
-    width: 36,
-    height: 4,
+    width: 32,
+    height: 3,            // was 4
     backgroundColor: 'rgba(255,255,255,0.15)',
     borderRadius: 2,
     alignSelf: 'center',
-    marginBottom: 14,
+    marginBottom: 8,      // was 14
   },
-  header:       { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 16 },
-  name:         { color: '#F9FAFB', fontSize: 15, fontWeight: '800' },
-  address:      { color: '#6B7280', fontSize: 12, marginTop: 2 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 10,     // was 16
+  },
+  name:         { color: '#F9FAFB', fontSize: 14, fontWeight: '800' },
+  address:      { color: '#6B7280', fontSize: 11, marginTop: 1 },
   closeBtn:     { padding: 4 },
-  closeBtnText: { color: '#4B5563', fontSize: 16, fontWeight: '700' },
+  closeBtnText: { color: '#4B5563', fontSize: 15, fontWeight: '700' },
   row:    { flexDirection: 'row', alignItems: 'center' },
-  stat:   { flex: 1, alignItems: 'center', gap: 3 },
-  statVal:{ color: '#F9FAFB', fontSize: 14, fontWeight: '800' },
+  stat:   { flex: 1, alignItems: 'center', gap: 2 },
+  statVal:{ color: '#F9FAFB', fontSize: 13, fontWeight: '800' },
   statLbl:{ color: '#4B5563', fontSize: 10 },
-  divider:{ width: 1, height: 28, backgroundColor: 'rgba(255,255,255,0.07)' },
+  divider:{ width: 1, height: 24, backgroundColor: 'rgba(255,255,255,0.07)' },
 });
 
 // ─── Main map component ────────────────────────────────────────────────────────
-const { height: SCREEN_H } = Dimensions.get('window');
-
 interface StationMapViewProps {
   stations: Station[];
   currentLocation: GeoLocation | null;
   fuelType: FuelType;
-  regionMedian: number;
+  // regionMedian removed — not used after v2 marker redesign
   nearestStation: Station | null;
   cheapestStation: Station | null;
 }
 
 export function StationMapView({
-  stations, currentLocation, fuelType, regionMedian, nearestStation, cheapestStation,
+  stations, currentLocation, fuelType, nearestStation, cheapestStation,
 }: StationMapViewProps) {
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const cameraRef = useRef<MapLibreGL.CameraRef | null>(null);
 
   const center: [number, number] = currentLocation
     ? [currentLocation.lng, currentLocation.lat]
-    : [10.0, 51.1635]; // Germany center fallback
+    : [10.0, 51.1635];
 
   const handleMarkerPress = useCallback((station: Station) => {
     setSelectedStation(station);
-    // Pan map to give space for the bottom card
     if (cameraRef.current) {
       cameraRef.current.setCamera({
         centerCoordinate: [station.lng, station.lat],
@@ -223,6 +282,9 @@ export function StationMapView({
     }
   }, []);
 
+  // attributionPosition.bottom matches compressed card height (~110px)
+  const attrBottom = selectedStation ? 112 : 8;
+
   return (
     <View style={mapStyles.container}>
       <MapLibreGL.MapView
@@ -230,7 +292,7 @@ export function StationMapView({
         mapStyle={CARTO_DARK_STYLE}
         logoEnabled={false}
         attributionEnabled={true}
-        attributionPosition={{ bottom: selectedStation ? 148 : 8, right: 8 }}
+        attributionPosition={{ bottom: attrBottom, right: 8 }}
         compassEnabled={true}
       >
         <MapLibreGL.Camera
@@ -244,7 +306,7 @@ export function StationMapView({
         {/* User location dot */}
         <MapLibreGL.UserLocation visible={true} />
 
-        {/* Station markers */}
+        {/* Station markers — dot + label design */}
         {stations.map(station => {
           const isCheapest = cheapestStation?.id === station.id;
           const isNearest  = nearestStation?.id  === station.id;
@@ -252,13 +314,13 @@ export function StationMapView({
             <MapLibreGL.MarkerView
               key={station.id}
               coordinate={[station.lng, station.lat]}
-              anchor={{ x: 0.5, y: 1 }}
+              anchor={{ x: 0, y: 0.5 }}
             >
               <TouchableOpacity
-                activeOpacity={0.85}
+                activeOpacity={0.8}
                 onPress={() => handleMarkerPress(station)}
               >
-                <PriceBubble
+                <StationMarker
                   price={station.price}
                   isOpen={station.isOpen}
                   isCheapest={isCheapest}
@@ -270,19 +332,19 @@ export function StationMapView({
         })}
       </MapLibreGL.MapView>
 
-      {/* Legend */}
+      {/* Legend — top-right */}
       <View style={mapStyles.legend}>
         <View style={mapStyles.legendItem}>
           <View style={[mapStyles.legendDot, { backgroundColor: '#22C55E' }]} />
-          <Text style={mapStyles.legendText}>Günstigste</Text>
+          <Text style={mapStyles.legendText}>Cheapest</Text>
         </View>
         <View style={mapStyles.legendItem}>
           <View style={[mapStyles.legendDot, { backgroundColor: '#6366F1' }]} />
-          <Text style={mapStyles.legendText}>Nächste</Text>
+          <Text style={mapStyles.legendText}>Nearest</Text>
         </View>
         <View style={mapStyles.legendItem}>
-          <View style={[mapStyles.legendDot, { backgroundColor: '#374151' }]} />
-          <Text style={mapStyles.legendText}>Geschlossen</Text>
+          <View style={[mapStyles.legendDot, { backgroundColor: '#4B5563' }]} />
+          <Text style={mapStyles.legendText}>Closed</Text>
         </View>
       </View>
 
