@@ -42,18 +42,12 @@ jobs:
         working-directory: android
         run: chmod +x gradlew
 
-      - name: Generate debug keystore for signing
-        run: |
-          keytool -genkeypair -v \
-            -keystore android/app/debug.keystore \
-            -alias androiddebugkey \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=Android Debug,O=Android,C=US" \
-            -storepass android -keypass android
-
       - name: Build Android APK (Release)
         working-directory: android
-        run: ./gradlew assembleRelease --no-daemon
+        env:
+          # Fix: JVM Metaspace OOM caused packageRelease to crash (512MB default is insufficient)
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError"
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Get version from app.json
         id: version
