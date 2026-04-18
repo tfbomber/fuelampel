@@ -18,7 +18,7 @@ export const MAX_DATA_AGE_HOURS = 6;         // Filter: ignore stale data older 
 
 // New mode thresholds
 export const NEAREMPTY_THRESHOLD_PCT      = 15;   // %
-export const CHEAPEST_LEVEL_CEILING_PCT   = 50;   // %
+export const CHEAPEST_LEVEL_CEILING_PCT   = 60;   // %  (>60% → ignore good deals)
 export const CHEAPEST_MIN_SAVING_GO_EUR   = 2.0;  // €
 export const CHEAPEST_MIN_SAVING_WAIT_EUR = 1.0;  // €
 export const GOOD_DEAL_PCT_THRESHOLD      = 0.03; // 3% cheaper than median is a GOOD DEAL

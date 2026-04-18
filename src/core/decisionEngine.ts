@@ -27,12 +27,12 @@ import {
   URGENCY_ACTION_DAYS,
   URGENCY_MONITOR_DAYS,
   NEAREMPTY_THRESHOLD_PCT,
-  CHEAPEST_LEVEL_CEILING_PCT,
   CHEAPEST_MIN_SAVING_GO_EUR,
   CHEAPEST_MIN_SAVING_WAIT_EUR,
   CONFIDENCE_HIGH,
   CONFIDENCE_MED,
   GOOD_DEAL_PCT_THRESHOLD,
+  CHEAPEST_LEVEL_CEILING_PCT,
 } from '../utils/constants';
 import { computeRefuelUrgency, classifyZone } from './smartTank';
 
@@ -246,14 +246,22 @@ export function computeDecision(
   const isGoodDeal = (station.price as number) <= cheapThreshold;
   const currentHour = new Date().getHours();
   const isGoodWindow = currentHour >= 16 && currentHour < 19;
-  
+
+  // ── Effective ceiling: how high can the tank be before we ignore a good deal?
+  // 'nearEmpty' users only want alerts when genuinely low (30%).
+  // All others (cheapest / null) use the global ceiling (60%).
+  const effectiveCeiling =
+    refuelingStyle === 'nearEmpty' ? 30 : CHEAPEST_LEVEL_CEILING_PCT;
+
   if (levelPercent < 30) {
     if (isGoodWindow || isGoodDeal) {
       return {
         recommendation: 'Go',
         station,
         saving_estimate: savingVsMedian,
-        reason: isGoodDeal ? `🟢 Great price today! Fill up on your way.` : `🟡 Evening hours (16–19h) — fuel prices tend to dip now.`,
+        reason: isGoodDeal
+          ? `🟢 Great price today! Fill up on your way.`
+          : `🟡 Evening hours (16–19h) — fuel prices tend to dip now.`,
         readiness: 'Action',
         zone: 'Low',
         confidenceLevel,
@@ -270,6 +278,18 @@ export function computeDecision(
       };
     }
   } else if (isGoodDeal) {
+    // ── Ceiling Gate: suppress good-deal Go if tank is above effective ceiling ──
+    if (levelPercent > effectiveCeiling) {
+      return {
+        recommendation: 'Skip',
+        station,
+        saving_estimate: savingVsMedian,
+        reason: `Tank at ${Math.round(levelPercent)}% — great price, but no need to refuel yet.`,
+        readiness: 'NotNeeded',
+        zone,
+        confidenceLevel,
+      };
+    }
     return {
       recommendation: 'Go',
       station,

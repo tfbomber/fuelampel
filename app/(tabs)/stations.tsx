@@ -59,6 +59,10 @@ export default function StationsScreen() {
   const [sortMode, setSortMode] = useState<SortMode>('value');
   const [viewMode, setViewMode]  = useState<ViewMode>('list');
   const [localFuelType, setLocalFuelType] = useState<FuelType>(storedFuelType);
+  // Tracks the last globally-stored fuelType that was synced into localFuelType.
+  // Using a Ref (not state) avoids adding localFuelType to useFocusEffect deps,
+  // which would re-trigger the sync every time the user taps a Pill.
+  const lastSyncedStoredFuelType = useRef<FuelType>(storedFuelType);
   const [showValueInfo, setShowValueInfo] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   // ── Location / address search state ──────────────────────────────────────
@@ -101,11 +105,14 @@ export default function StationsScreen() {
   }, [smartTank, lastPromptedMs]);
 
   // ── Sync fuel type when Stations tab gains focus ─────────────────────────
-  // Ensures the tab always reflects the global fuelType selection (e.g. user
-  // sets Diesel on the Decide tab — Stations auto-switches on next visit).
+  // Only overwrites the local pill selection when the GLOBAL setting has changed
+  // (e.g. user switched to Diesel in the Decide tab) since the last visit.
+  // Comparing against a Ref (not state) means this effect does NOT re-fire when
+  // the user taps a Pill locally, preventing the selection from being overwritten.
   useFocusEffect(
     useCallback(() => {
-      if (storedFuelType !== localFuelType) {
+      if (storedFuelType !== lastSyncedStoredFuelType.current) {
+        lastSyncedStoredFuelType.current = storedFuelType;
         setLocalFuelType(storedFuelType);
         if (stations.length > 0) {
           switchFuelType(storedFuelType);
@@ -113,7 +120,7 @@ export default function StationsScreen() {
           refresh(currentLocation.current, true, storedFuelType);
         }
       }
-    }, [storedFuelType, localFuelType, stations.length])
+    }, [storedFuelType, stations.length])  // localFuelType intentionally excluded
   );
 
   // -- Scroll-to-highlighted when arriving from GO decision --
@@ -649,6 +656,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#111318',
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.06)',
+    zIndex: 10,
+    elevation: 10,  // Android: lifts above native MapLibre layer
   },
   plzInput: {
     flex: 1,
@@ -728,6 +737,8 @@ const styles = StyleSheet.create({
     gap: 8,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.06)',
+    zIndex: 10,
+    elevation: 10,  // Android: lifts above native MapLibre layer
   },
   fuelRow: {
     flexDirection: 'row',

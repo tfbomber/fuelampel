@@ -1,14 +1,16 @@
 // ====================================================
-// FuelAmpel — StationMapView Component (v2)
+// FuelAmpel — StationMapView Component (v3)
 //
-// Changes vs v1:
-//  - Station markers redesigned: dot (●) + price label side-by-side
-//    Dot = precise geo anchor, label = dark pill with 3-decimal price
-//    Cheapest dot: 12px green with glow; Nearest: 12px indigo; Others: 10px gray
-//    Closed stations: entire marker at 40% opacity
-//  - Bottom detail card height compressed (~110px → was ~148px)
-//  - attributionPosition.bottom updated to match new card height
-//  - All German text translated to English
+// Changes vs v2:
+//  - Issue #2: TouchableOpacity hitSlop + style padding on every Marker
+//    → reliable 44pt touch zone per iOS HIG / Material Design guidelines
+//  - Issue #3 (visual): Cheapest/Nearest markers get a glowing ring effect.
+//    Regular open dots upgraded to a more vibrant blue-gray.
+//    Legend panel upgraded with glassmorphism border + category icons.
+//    Detail card gets a colored accent top-border.
+//  - Issue #4: "Locate Me" FAB button (target icon).
+//    Appears after user pans the map. Tapping flies back to currentLocation.
+//    Automatically hides on any programmatic flyTo.
 // ====================================================
 
 import React, { useRef, useState, useCallback } from 'react';
@@ -21,41 +23,21 @@ import { Station, GeoLocation } from '../utils/types';
 import { formatFuelType } from '../utils/formatters';
 import type { FuelType } from '../utils/types';
 
-// ─── CARTO Dark Matter — free, no API key ────────────────────────────────────
-const CARTO_DARK_STYLE = {
-  version: 8,
-  sources: {
-    'carto-dark': {
-      type: 'raster',
-      tiles: [
-        'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-        'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-        'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-      ],
-      tileSize: 256,
-      attribution: '\u00a9 OpenStreetMap contributors \u00a9 CARTO',
-    },
-  },
-  layers: [{
-    id: 'carto-dark-tiles',
-    type: 'raster',
-    source: 'carto-dark',
-  }],
-} as const;
+// ─── CARTO Dark Matter GL (vector) — free, no API key ───────────────────────
+// Vector tiles: crisp at any zoom/DPI, customisable via MapLibre style spec.
+// Replaces the previous hand-written raster JSON (PNG tiles were blurry on
+// high-DPI screens and not customisable).
+const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
 
 // ─── Station Marker: dot ● + price label ──────────────────────────────────────
 //
-// Layout:  [●]─[dark pill: "1.234"]
+// v3 visual upgrades:
+//   - Cheapest:  green dot (14px) + green glow ring + green-bordered pill
+//   - Nearest:   indigo dot (14px) + indigo glow ring + indigo-bordered pill
+//   - Open:      upgraded to #60A5FA (vivid blue-gray, was pale #94A3B8)
+//   - Closed:    unchanged (faded gray dot, no pill)
 //
-// anchor: { x: 0, y: 0.5 } → dot left-edge = geo-coordinate
-// At zoom 12, 5px offset ≈ 5–8m real distance (within GPS accuracy tolerance).
-//
-// Sizing rationale:
-//   - Dot: 10px (regular) / 12px (cheapest+nearest) → compact, low overlap
-//   - Pill: ~43px wide, 16px tall → 40% smaller than previous block markers
-//   - Letter-spacing -0.3 on "1.234" to squeeze width without sacrificing readability
-//   - Closed stations: full component at 40% opacity, no pill (dot only)
-//     → removes clutter for irrelevant stations, keeps them visible for reference
+// Touch target: 8px padding on all sides + hitSlop 20/20/16/16 = ~46pt tappable area
 
 function StationMarker({
   price, isOpen, isCheapest, isNearest,
@@ -65,19 +47,19 @@ function StationMarker({
   isCheapest: boolean;
   isNearest: boolean;
 }) {
-  const dotSize    = (isCheapest || isNearest) ? 12 : 10;
-  const dotRadius  = dotSize / 2;
+  const dotSize   = (isCheapest || isNearest) ? 14 : 10;
+  const dotRadius = dotSize / 2;
 
   const dotColor =
     !isOpen    ? '#4B5563'   :
     isCheapest ? '#22C55E'   :
     isNearest  ? '#6366F1'   :
-                 '#94A3B8'   ; // light blue-gray for regular open
+                 '#60A5FA'   ; // vivid blue for regular open (was pale #94A3B8)
 
   const pillBorderColor =
-    isCheapest ? 'rgba(34,197,94,0.5)'  :
-    isNearest  ? 'rgba(99,102,241,0.5)' :
-                 'rgba(255,255,255,0.12)';
+    isCheapest ? 'rgba(34,197,94,0.65)'  :
+    isNearest  ? 'rgba(99,102,241,0.65)' :
+                 'rgba(255,255,255,0.14)';
 
   const glowColor =
     isCheapest ? '#22C55E' :
@@ -90,17 +72,20 @@ function StationMarker({
     borderRadius: dotRadius,
     backgroundColor: dotColor,
   };
+
+  // Glow ring: outer halo simulated via boxShadow-equivalent (elevation + shadow*)
   if (glowColor && isOpen) {
     dotStyle.shadowColor   = glowColor;
-    dotStyle.shadowOpacity = 0.7;
-    dotStyle.shadowRadius  = 4;
-    dotStyle.elevation     = 4;
+    dotStyle.shadowOpacity = 0.85;
+    dotStyle.shadowRadius  = 6;
+    dotStyle.shadowOffset  = { width: 0, height: 0 };
+    dotStyle.elevation     = 6;
   }
 
   // Closed: show just a faded dot, no price label
   if (!isOpen) {
     return (
-      <View style={[markerStyles.root, { opacity: 0.4 }]}>
+      <View style={[markerStyles.root, { opacity: 0.38 }]}>
         <View style={dotStyle} />
       </View>
     );
@@ -124,8 +109,12 @@ const markerStyles = StyleSheet.create({
     alignItems: 'center',
     gap: 3,
   },
+  // 8px padding expands the real rendered area so Android hitSlop has a surface to work on
+  touchTarget: {
+    padding: 8,
+  },
   pill: {
-    backgroundColor: 'rgba(8,10,18,0.86)',
+    backgroundColor: 'rgba(8,10,18,0.90)',
     borderRadius: 5,
     borderWidth: 1,
     paddingHorizontal: 5,
@@ -139,15 +128,17 @@ const markerStyles = StyleSheet.create({
   },
 });
 
-// ─── Bottom detail card (compressed) ─────────────────────────────────────────
+// ─── Bottom detail card ────────────────────────────────────────────────────────
 function StationDetailCard({
-  station, fuelType, onClose,
+  station, fuelType, isCheapest, isNearest, onClose,
 }: {
   station: Station;
   fuelType: FuelType;
+  isCheapest: boolean;
+  isNearest: boolean;
   onClose: () => void;
 }) {
-  const slideAnim = useRef(new Animated.Value(110)).current;
+  const slideAnim = useRef(new Animated.Value(120)).current;
 
   React.useEffect(() => {
     Animated.spring(slideAnim, {
@@ -158,10 +149,33 @@ function StationDetailCard({
     }).start();
   }, [station.id]);
 
+  // Accent color for the top border of the card
+  const accentColor =
+    isCheapest ? '#22C55E' :
+    isNearest  ? '#6366F1' :
+                 'rgba(255,255,255,0.09)';
+
   return (
     <Animated.View style={[cardStyles.card, { transform: [{ translateY: slideAnim }] }]}>
+      {/* Accent top border */}
+      <View style={[cardStyles.accentBar, { backgroundColor: accentColor }]} />
+
       {/* Drag handle */}
       <View style={cardStyles.handle} />
+
+      {/* Badge row */}
+      <View style={cardStyles.badgeRow}>
+        {isCheapest && (
+          <View style={[cardStyles.badge, { backgroundColor: 'rgba(34,197,94,0.15)', borderColor: 'rgba(34,197,94,0.4)' }]}>
+            <Text style={[cardStyles.badgeText, { color: '#4ADE80' }]}>💰 Cheapest</Text>
+          </View>
+        )}
+        {isNearest && (
+          <View style={[cardStyles.badge, { backgroundColor: 'rgba(99,102,241,0.15)', borderColor: 'rgba(99,102,241,0.4)' }]}>
+            <Text style={[cardStyles.badgeText, { color: '#A5B4FC' }]}>📍 Nearest</Text>
+          </View>
+        )}
+      </View>
 
       {/* Header */}
       <View style={cardStyles.header}>
@@ -195,7 +209,7 @@ function StationDetailCard({
         </View>
         <View style={cardStyles.divider} />
         <View style={cardStyles.stat}>
-          <Text style={[cardStyles.statVal, { color: station.isOpen ? '#22C55E' : '#EF4444' }]}>
+          <Text style={[cardStyles.statVal, { color: station.isOpen ? '#4ADE80' : '#EF4444' }]}>
             {station.isOpen ? 'Open' : 'Closed'}
           </Text>
           <Text style={cardStyles.statLbl}>Status</Text>
@@ -205,7 +219,6 @@ function StationDetailCard({
   );
 }
 
-// Compressed card: total height ~108px (was ~148px)
 const cardStyles = StyleSheet.create({
   card: {
     position: 'absolute',
@@ -215,30 +228,50 @@ const cardStyles = StyleSheet.create({
     backgroundColor: '#1A1D26',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    borderTopWidth: 1,
-    borderColor: 'rgba(255,255,255,0.09)',
+    borderTopWidth: 0,  // replaced by accentBar
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
     paddingHorizontal: 20,
-    paddingTop: 8,        // was 12
-    paddingBottom: 16,    // was 24
+    paddingTop: 0,
+    paddingBottom: 18,
     shadowColor: '#000',
-    shadowOpacity: 0.5,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: -4 },
-    elevation: 16,
+    shadowOpacity: 0.6,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: -6 },
+    elevation: 20,
+  },
+  accentBar: {
+    height: 3,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    marginBottom: 6,
   },
   handle: {
     width: 32,
-    height: 3,            // was 4
+    height: 3,
     backgroundColor: 'rgba(255,255,255,0.15)',
     borderRadius: 2,
     alignSelf: 'center',
-    marginBottom: 8,      // was 14
+    marginBottom: 8,
   },
+  badgeRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 8,
+  },
+  badge: {
+    borderRadius: 6,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  badgeText: { fontSize: 10, fontWeight: '700' },
   header: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
-    marginBottom: 10,     // was 16
+    marginBottom: 10,
   },
   name:         { color: '#F9FAFB', fontSize: 14, fontWeight: '800' },
   address:      { color: '#6B7280', fontSize: 11, marginTop: 1 },
@@ -256,7 +289,6 @@ interface StationMapViewProps {
   stations: Station[];
   currentLocation: GeoLocation | null;
   fuelType: FuelType;
-  // regionMedian removed — not used after v2 marker redesign
   nearestStation: Station | null;
   cheapestStation: Station | null;
 }
@@ -265,7 +297,11 @@ export function StationMapView({
   stations, currentLocation, fuelType, nearestStation, cheapestStation,
 }: StationMapViewProps) {
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
+  // showLocateFAB: true after user pans map away from currentLocation
+  const [showLocateFAB, setShowLocateFAB] = useState(false);
   const cameraRef = useRef<MapLibreGL.CameraRef | null>(null);
+  // Track whether a programmatic flyTo is in progress to ignore the resulting region-change event
+  const isProgrammaticMoveRef = useRef(false);
 
   const center: [number, number] = currentLocation
     ? [currentLocation.lng, currentLocation.lat]
@@ -273,6 +309,7 @@ export function StationMapView({
 
   const handleMarkerPress = useCallback((station: Station) => {
     setSelectedStation(station);
+    isProgrammaticMoveRef.current = true;
     if (cameraRef.current) {
       cameraRef.current.setCamera({
         centerCoordinate: [station.lng, station.lat],
@@ -280,20 +317,47 @@ export function StationMapView({
         animationDuration: 400,
       });
     }
+    // After animation finishes, re-enable user-pan detection
+    setTimeout(() => { isProgrammaticMoveRef.current = false; }, 500);
   }, []);
 
-  // attributionPosition.bottom matches compressed card height (~110px)
-  const attrBottom = selectedStation ? 112 : 8;
+  // Called after any camera movement (user pan or programmatic)
+  const handleRegionDidChange = useCallback((feature: any) => {
+    // feature.properties.isUserInteraction is true only for gesture-driven moves
+    const isGesture = feature?.properties?.isUserInteraction === true;
+    if (isGesture && !isProgrammaticMoveRef.current) {
+      setShowLocateFAB(true);
+    }
+  }, []);
+
+  const handleLocateMe = useCallback(() => {
+    if (!currentLocation || !cameraRef.current) return;
+    isProgrammaticMoveRef.current = true;
+    setShowLocateFAB(false);
+    cameraRef.current.setCamera({
+      centerCoordinate: [currentLocation.lng, currentLocation.lat],
+      zoomLevel: 13,
+      animationDuration: 600,
+    });
+    setTimeout(() => { isProgrammaticMoveRef.current = false; }, 700);
+  }, [currentLocation]);
+
+  // attributionPosition.bottom rises when the detail card is open (~130px card height)
+  const attrBottom = selectedStation ? 134 : 8;
+
+  // FAB position: rises above the detail card when it's open
+  const fabBottom = selectedStation ? 150 : 24;
 
   return (
     <View style={mapStyles.container}>
       <MapLibreGL.MapView
         style={mapStyles.map}
-        mapStyle={CARTO_DARK_STYLE}
+        mapStyle={MAP_STYLE}
         logoEnabled={false}
         attributionEnabled={true}
         attributionPosition={{ bottom: attrBottom, right: 8 }}
         compassEnabled={true}
+        onRegionDidChange={handleRegionDidChange}
       >
         <MapLibreGL.Camera
           ref={cameraRef}
@@ -316,9 +380,16 @@ export function StationMapView({
               coordinate={[station.lng, station.lat]}
               anchor={{ x: 0, y: 0.5 }}
             >
+              {/*
+                hitSlop expands the tap detection area beyond rendered bounds.
+                style.padding provides real render area (required on Android for hitSlop to work).
+                Together: ~46pt touch target regardless of marker size.
+              */}
               <TouchableOpacity
-                activeOpacity={0.8}
+                activeOpacity={0.75}
                 onPress={() => handleMarkerPress(station)}
+                hitSlop={{ top: 20, bottom: 20, left: 16, right: 16 }}
+                style={markerStyles.touchTarget}
               >
                 <StationMarker
                   price={station.price}
@@ -332,15 +403,19 @@ export function StationMapView({
         })}
       </MapLibreGL.MapView>
 
-      {/* Legend — top-right */}
+      {/* ── Legend — top-right ─────────────────────────────────────────────── */}
       <View style={mapStyles.legend}>
         <View style={mapStyles.legendItem}>
-          <View style={[mapStyles.legendDot, { backgroundColor: '#22C55E' }]} />
+          <View style={[mapStyles.legendDot, { backgroundColor: '#22C55E', shadowColor: '#22C55E', shadowOpacity: 0.7, shadowRadius: 4, elevation: 4 }]} />
           <Text style={mapStyles.legendText}>Cheapest</Text>
         </View>
         <View style={mapStyles.legendItem}>
-          <View style={[mapStyles.legendDot, { backgroundColor: '#6366F1' }]} />
+          <View style={[mapStyles.legendDot, { backgroundColor: '#6366F1', shadowColor: '#6366F1', shadowOpacity: 0.7, shadowRadius: 4, elevation: 4 }]} />
           <Text style={mapStyles.legendText}>Nearest</Text>
+        </View>
+        <View style={mapStyles.legendItem}>
+          <View style={[mapStyles.legendDot, { backgroundColor: '#60A5FA' }]} />
+          <Text style={mapStyles.legendText}>Open</Text>
         </View>
         <View style={mapStyles.legendItem}>
           <View style={[mapStyles.legendDot, { backgroundColor: '#4B5563' }]} />
@@ -348,11 +423,26 @@ export function StationMapView({
         </View>
       </View>
 
-      {/* Bottom detail card */}
+      {/* ── Locate Me FAB — appears after user pans ────────────────────────── */}
+      {showLocateFAB && (
+        <TouchableOpacity
+          style={[mapStyles.locateFAB, { bottom: fabBottom }]}
+          onPress={handleLocateMe}
+          activeOpacity={0.8}
+          accessibilityLabel="Return to my location"
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Text style={mapStyles.locateFABIcon}>⊕</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* ── Bottom detail card ─────────────────────────────────────────────── */}
       {selectedStation && (
         <StationDetailCard
           station={selectedStation}
           fuelType={fuelType}
+          isCheapest={cheapestStation?.id === selectedStation.id}
+          isNearest={nearestStation?.id === selectedStation.id}
           onClose={() => setSelectedStation(null)}
         />
       )}
@@ -363,18 +453,50 @@ export function StationMapView({
 const mapStyles = StyleSheet.create({
   container: { flex: 1 },
   map:       { flex: 1 },
+
+  // Legend (glassmorphism style)
   legend: {
     position: 'absolute',
     top: 12,
     right: 12,
     backgroundColor: 'rgba(13,15,20,0.88)',
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.09)',
+    borderColor: 'rgba(255,255,255,0.11)',
     padding: 10,
-    gap: 6,
+    gap: 7,
+    shadowColor: '#000',
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 8,
   },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   legendDot:  { width: 10, height: 10, borderRadius: 5 },
   legendText: { color: '#9CA3AF', fontSize: 11, fontWeight: '600' },
+
+  // Locate Me FAB
+  locateFAB: {
+    position: 'absolute',
+    right: 14,
+    backgroundColor: 'rgba(13,15,20,0.92)',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(99,102,241,0.45)',
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#6366F1',
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 8,
+  },
+  locateFABIcon: {
+    color: '#A5B4FC',
+    fontSize: 22,
+    fontWeight: '300',
+    lineHeight: 26,
+  },
 });
