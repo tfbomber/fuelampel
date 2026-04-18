@@ -42,6 +42,15 @@ jobs:
         working-directory: android
         run: chmod +x gradlew
 
+      - name: Generate debug keystore for signing
+        run: |
+          keytool -genkeypair -v \
+            -keystore android/app/debug.keystore \
+            -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US" \
+            -storepass android -keypass android
+
       - name: Build Android APK (Release)
         working-directory: android
         run: ./gradlew assembleRelease --no-daemon
@@ -58,17 +67,17 @@ jobs:
           body: |
             ## ⛽ FuelAmpel v${{ steps.version.outputs.VERSION }}
 
-            ### 本次更新 (What's New)
-            - 🗺️ Stations 地图视图 — MapLibre + CARTO 深色地图，价格气泡，点击弹出详情
-            - ⚡ 油价三合一缓存 — E5/E10/Diesel 一次 API 全拉取，切换类型 < 1ms 零延迟
-            - 📍 Stations 搜索升级 — 支持城市名/地址（自动降级 Nominatim→Photon），含 abort 保护
-            - 📳 Haptics 触感反馈 — 油价切换、Getankt 确认、TankConfirm 按钮
-            - ✨ 油量条 Reanimated 动画 — withSpring 平滑过渡
-            - 🐛 修复地址搜索 spinner 在 onBlur/onClear 时未取消的问题
+            ### 🆕 本次更新 (What's New)
+            - 🗺️ **地图视图全面升级** — Marker 发光环效果（最便宜=绿色, 最近=靛蓝），Legend 玻璃质感，Detail Card 彩色顶栏
+            - 📍 **Locate Me FAB** — 拖拽地图后右下角出现定位按钮，点击一键飞回当前位置
+            - 💡 **决策引擎修复** — 好价格 Ceiling 从 50% 提升至 60%（油箱充足时不再过早提醒），`refuelingStyle` 策略现已真正生效
+            - 🔧 **燃油类型选择修复** — 切换到 Stations Tab 后，手动选择的油品类型不再被重置
+            - 🏗️ **FilterBar 层级修复** — FilterBar 和 LocBar 添加 `zIndex/elevation`，地图 Marker 不再穿透到搜索栏上方
+            - 👆 **Marker 点击热区扩大** — 加油站 Marker 触控区域从 ~16px 扩展到 44pt+（iOS/Android HIG 标准）
 
             ### 安装方法 (Installation)
             1. 下载附件中的 `app-release.apk`
-            2. 手机允许"安装未知来源应用"
+            2. 手机允许「安装未知来源应用」
             3. 点开 APK 直接安装
           files: android/app/build/outputs/apk/release/app-release.apk
           make_latest: true
