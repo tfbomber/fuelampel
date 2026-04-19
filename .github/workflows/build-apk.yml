@@ -62,12 +62,12 @@ jobs:
             ## ⛽ FuelAmpel v${{ steps.version.outputs.VERSION }}
 
             ### 🆕 本次更新 (What's New)
-            - 🗺️ **地图视图全面升级** — Marker 发光环效果（最便宜=绿色, 最近=靛蓝），Legend 玻璃质感，Detail Card 彩色顶栏
-            - 📍 **Locate Me FAB** — 拖拽地图后右下角出现定位按钮，点击一键飞回当前位置
-            - 💡 **决策引擎修复** — 好价格 Ceiling 从 50% 提升至 60%（油箱充足时不再过早提醒），`refuelingStyle` 策略现已真正生效
-            - 🔧 **燃油类型选择修复** — 切换到 Stations Tab 后，手动选择的油品类型不再被重置
-            - 🏗️ **FilterBar 层级修复** — FilterBar 和 LocBar 添加 `zIndex/elevation`，地图 Marker 不再穿透到搜索栏上方
-            - 👆 **Marker 点击热区扩大** — 加油站 Marker 触控区域从 ~16px 扩展到 44pt+（iOS/Android HIG 标准）
+            - 📌 **Settings 固定右上角** — 设置齿轮按钮不再随页面滚动，始终固定在右上角
+            - 🌍 **德/英双语支持** — Settings 顶部新增语言切换（Deutsch 默认），所有 UI 文字即时切换
+            - ✨ **消除油量动画闪烁** — 加油后 ShadowTankBar↔TankGaugeSlider 过渡改为双层叠加淡入淡出，彻底告别闪烁感
+            - 📐 **消除 Undo 布局跳动** — Undo/Skip 等按钮不再因 Undo 行出现而位移
+            - 🗺️ **地图相机修复** — 点击加油站 Marker 后地图不再弹回用户位置
+            - 👆 **Marker 点击区域扩大** — 加油站 Marker 触控区域确保 ≥44×44pt（Android Material 标准）
 
             ### 安装方法 (Installation)
             1. 下载附件中的 `app-release.apk`

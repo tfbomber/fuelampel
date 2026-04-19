@@ -18,6 +18,8 @@ import { formatFuelType } from '../src/utils/formatters';
 import {
   FuelType, RefuelingStyle, CarType, LastRefuelAmount, CommonArea,
 } from '../src/utils/types';
+import { Language } from '../src/utils/i18n';
+import { t } from '../src/utils/i18n';
 import { LiveAddressInput } from '../src/components/LiveAddressInput';
 
 
@@ -25,25 +27,14 @@ import { LiveAddressInput } from '../src/components/LiveAddressInput';
 
 const FUEL_TYPES: FuelType[] = ['e5', 'e10', 'diesel'];
 
-const REFUELING_STYLE_OPTIONS: { value: RefuelingStyle; label: string }[] = [
-  { value: 'nearEmpty',  label: 'When nearly empty' },
-  { value: 'cheapest',   label: 'Best price always' },
+const LANGUAGE_OPTIONS: { value: Language; label: string; sublabel: string }[] = [
+  { value: 'de', label: 'Deutsch', sublabel: 'Standard' },
+  { value: 'en', label: 'English', sublabel: 'English' },
 ];
 
-const CAR_TYPE_OPTIONS: { value: CarType; label: string }[] = [
-  { value: 'small',   label: 'Small  (< 45 L)' },
-  { value: 'regular', label: 'Family  (45–65 L)' },
-  { value: 'large',   label: 'Large / SUV  (65L+)' },
-  { value: 'unknown', label: 'Not sure' },
-];
-
-const AMOUNT_OPTIONS: { value: LastRefuelAmount; label: string }[] = [
-  { value: '<40',     label: '< 40 €' },
-  { value: '40-60',   label: '40 – 60 €' },
-  { value: '60-80',   label: '60 – 80 €' },
-  { value: '80+',     label: '80 € +' },
-  { value: 'unknown', label: "Don't remember" },
-];
+const REFUELING_STYLE_VALUES: RefuelingStyle[] = ['nearEmpty', 'cheapest'];
+const CAR_TYPE_VALUES: CarType[] = ['small', 'regular', 'large', 'unknown'];
+const AMOUNT_VALUES: LastRefuelAmount[] = ['<40', '40-60', '60-80', '80+', 'unknown'];
 
 // ── Section wrapper ───────────────────────────────────────────────────────────
 
@@ -85,7 +76,9 @@ export default function SettingsScreen() {
   const router = useRouter();
   const {
     fuelType, commonAreas, refuelingStyle, carType, lastRefuelAmount, shadowTank, smartTank,
+    language,
     setFuelType, setCommonAreas, setRefuelingStyle, setCarType, setLastRefuelAmount,
+    setLanguage,
     recordRefuel, setAvgConsumption, setTankCapacity, setTotalRangeKm,
     fullReset,
   } = useUserStore();
@@ -95,6 +88,25 @@ export default function SettingsScreen() {
   const [rangeInput,       setRangeInput]       = useState(
     smartTank?.totalRangeKm != null ? smartTank.totalRangeKm.toString() : ''
   );
+
+  // Translated options — re-computed on each render (language reactive via store subscription)
+  const REFUELING_STYLE_OPTIONS = [
+    { value: 'nearEmpty'  as RefuelingStyle, label: t('whenNearlyEmpty') },
+    { value: 'cheapest'   as RefuelingStyle, label: t('bestPriceAlways') },
+  ];
+  const CAR_TYPE_OPTIONS = [
+    { value: 'small'   as CarType, label: t('carSmall') },
+    { value: 'regular' as CarType, label: t('carFamily') },
+    { value: 'large'   as CarType, label: t('carLarge') },
+    { value: 'unknown' as CarType, label: t('carUnknown') },
+  ];
+  const AMOUNT_OPTIONS = [
+    { value: '<40'     as LastRefuelAmount, label: t('below40') },
+    { value: '40-60'   as LastRefuelAmount, label: t('from40to60') },
+    { value: '60-80'   as LastRefuelAmount, label: t('from60to80') },
+    { value: '80+'     as LastRefuelAmount, label: t('above80') },
+    { value: 'unknown' as LastRefuelAmount, label: t('dontRemember') },
+  ];
 
   // ── Inline "✓ Saved" feedback — no disruptive Alert pop-ups ──────────────
   const [savedField, setSavedField] = useState<string | null>(null);
@@ -174,31 +186,49 @@ export default function SettingsScreen() {
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
 
-      {/* Fuel Type */}
-      <Section title="Fuel Type">
+      {/* Language / Sprache */}
+      <Section title="Sprache / Language">
         <View style={styles.tabRow}>
-          {FUEL_TYPES.map(t => (
-            <TouchableOpacity key={t} style={[styles.tab, fuelType === t && styles.tabActive]} onPress={() => setFuelType(t)}>
-              <Text style={[styles.tabText, fuelType === t && styles.tabTextA]}>{formatFuelType(t)}</Text>
+          {LANGUAGE_OPTIONS.map(o => (
+            <TouchableOpacity
+              key={o.value}
+              style={[styles.tab, language === o.value && styles.tabActive]}
+              onPress={() => setLanguage(o.value)}
+              accessibilityLabel={`Switch language to ${o.label}`}
+            >
+              <Text style={[styles.tabText, language === o.value && styles.tabTextA]}>
+                {o.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </Section>
+
+      {/* Fuel Type */}
+      <Section title={t('fuelType')}>
+        <View style={styles.tabRow}>
+          {FUEL_TYPES.map(ft => (
+            <TouchableOpacity key={ft} style={[styles.tab, fuelType === ft && styles.tabActive]} onPress={() => setFuelType(ft)}>
+              <Text style={[styles.tabText, fuelType === ft && styles.tabTextA]}>{formatFuelType(ft)}</Text>
             </TouchableOpacity>
           ))}
         </View>
       </Section>
 
       {/* Common Area */}
-      <Section title="Areas (Home & Work)">
+      <Section title={t('areas')}>
         <LiveAddressInput
-          label="Home area"
+          label={t('homeArea')}
           icon="🏠"
-          placeholder="Address, city or postal code…"
+          placeholder={t('addrPlaceholder')}
           selectedArea={homeArea}
           onSelect={updateHome}
           onClear={clearHome}
         />
         <LiveAddressInput
-          label="Work area  (optional)"
+          label={t('workArea')}
           icon="🏢"
-          placeholder="Address, city or postal code…"
+          placeholder={t('addrPlaceholder')}
           selectedArea={workArea}
           onSelect={updateWork}
           onClear={clearWork}
@@ -206,28 +236,28 @@ export default function SettingsScreen() {
       </Section>
 
       {/* Refueling Style */}
-      <Section title="Refueling Style">
+      <Section title={t('refuelingStyle')}>
         <OptionRow<RefuelingStyle> options={REFUELING_STYLE_OPTIONS} value={refuelingStyle} onSelect={setRefuelingStyle} />
       </Section>
 
       {/* Car Type */}
-      <Section title="Vehicle Type">
+      <Section title={t('vehicleType')}>
         <OptionRow<CarType> options={CAR_TYPE_OPTIONS} value={carType} onSelect={setCarType} />
       </Section>
 
       {/* Full Tank Cost */}
-      <Section title="Full Tank Cost">
+      <Section title={t('fullTankCost')}>
         <OptionRow<LastRefuelAmount> options={AMOUNT_OPTIONS} value={lastRefuelAmount} onSelect={setLastRefuelAmount} />
       </Section>
 
       {/* Shadow Tank — auto-save inputs */}
-      <Section title="Shadow Tank">
+      <Section title={t('shadowTank')}>
 
         {/* Avg Consumption */}
         <View style={styles.settingRow}>
           <View style={styles.settingLabelRow}>
-            <Text style={styles.settingLabel}>Avg. Consumption (L/100km)</Text>
-            {savedField === 'consumption' && <Text style={styles.savedHint}>✓ Saved</Text>}
+            <Text style={styles.settingLabel}>{t('avgConsumption')}</Text>
+            {savedField === 'consumption' && <Text style={styles.savedHint}>{t('saved')}</Text>}
           </View>
           <TextInput
             style={styles.input}
@@ -245,8 +275,8 @@ export default function SettingsScreen() {
         {/* Tank Capacity */}
         <View style={styles.settingRow}>
           <View style={styles.settingLabelRow}>
-            <Text style={styles.settingLabel}>Tank Capacity (litres)</Text>
-            {savedField === 'capacity' && <Text style={styles.savedHint}>✓ Saved</Text>}
+            <Text style={styles.settingLabel}>{t('tankCapacity')}</Text>
+            {savedField === 'capacity' && <Text style={styles.savedHint}>{t('saved')}</Text>}
           </View>
           <TextInput
             style={styles.input}
@@ -265,12 +295,12 @@ export default function SettingsScreen() {
         <View style={styles.settingRow}>
           <View style={styles.settingLabelRow}>
             <Text style={styles.settingLabel}>
-              Range on full tank (km){'  '}<Text style={{ color: '#4B5563' }}>— optional</Text>
+              {t('fullTankRange')}{'  '}<Text style={{ color: '#4B5563' }}>— optional</Text>
             </Text>
-            {savedField === 'range' && <Text style={styles.savedHint}>✓ Saved</Text>}
+            {savedField === 'range' && <Text style={styles.savedHint}>{t('saved')}</Text>}
           </View>
           <Text style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>
-            {'Sets the Tank Bar to show "\u2248 ZZZ km" instead of %. Enter 0 or leave blank to revert.'}
+            {t('fullTankRangeHint')}
           </Text>
           <TextInput
             style={styles.input}
@@ -292,14 +322,14 @@ export default function SettingsScreen() {
           onPress={handleRefueled}
         >
           <Text style={styles.refuelBtnText}>
-            {savedField === 'refuel' ? '✓ Tank reset!' : '⛽  I refueled — Reset Tank'}
+            {savedField === 'refuel' ? t('tankReset') : t('refuelReset')}
           </Text>
         </Pressable>
 
       </Section>
 
       {/* About */}
-      <Section title="About">
+      <Section title={t('about')}>
         <Text style={styles.aboutText}>
           FuelAmpel uses the Tankerkönig API (CC BY 4.0).{'\n'}
           Fuel price data: © MTS-K / Bundeskartellamt.{'\n\n'}
@@ -310,10 +340,10 @@ export default function SettingsScreen() {
       </Section>
 
       {/* ── DANGER ZONE — Full Reset always at bottom ── */}
-      <Section title="Danger Zone">
+      <Section title={t('dangerZone')}>
         <TouchableOpacity style={[styles.resetBtn, styles.resetBtnDanger]} onPress={confirmFullReset}>
-          <Text style={[styles.resetBtnText, styles.resetBtnTextDanger]}>🔄  Full Reset / Start Over</Text>
-          <Text style={styles.resetBtnDesc}>Clears everything — returns to setup screen</Text>
+          <Text style={[styles.resetBtnText, styles.resetBtnTextDanger]}>{t('fullReset')}</Text>
+          <Text style={styles.resetBtnDesc}>{t('fullResetDesc')}</Text>
         </TouchableOpacity>
       </Section>
 

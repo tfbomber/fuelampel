@@ -13,7 +13,7 @@
 //    Automatically hides on any programmatic flyTo.
 // ====================================================
 
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Animated,
@@ -22,6 +22,8 @@ import MapLibreGL from '@maplibre/maplibre-react-native';
 import { Station, GeoLocation } from '../utils/types';
 import { formatFuelType } from '../utils/formatters';
 import type { FuelType } from '../utils/types';
+import { t } from '../utils/i18n';
+import { useUserStore } from '../store/userStore';
 
 // ─── CARTO Dark Matter GL (vector) — free, no API key ───────────────────────
 // Vector tiles: crisp at any zoom/DPI, customisable via MapLibre style spec.
@@ -109,9 +111,14 @@ const markerStyles = StyleSheet.create({
     alignItems: 'center',
     gap: 3,
   },
-  // 8px padding expands the real rendered area so Android hitSlop has a surface to work on
+  // Minimum 44x44pt touch target — satisfies Android Material + iOS HIG guidelines.
+  // Padding provides real rendered area (hitSlop alone can be clipped by MarkerView bounds).
   touchTarget: {
     padding: 8,
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
   },
   pill: {
     backgroundColor: 'rgba(8,10,18,0.90)',
@@ -167,12 +174,12 @@ function StationDetailCard({
       <View style={cardStyles.badgeRow}>
         {isCheapest && (
           <View style={[cardStyles.badge, { backgroundColor: 'rgba(34,197,94,0.15)', borderColor: 'rgba(34,197,94,0.4)' }]}>
-            <Text style={[cardStyles.badgeText, { color: '#4ADE80' }]}>💰 Cheapest</Text>
+            <Text style={[cardStyles.badgeText, { color: '#4ADE80' }]}>💰 {t('cheapest')}</Text>
           </View>
         )}
         {isNearest && (
           <View style={[cardStyles.badge, { backgroundColor: 'rgba(99,102,241,0.15)', borderColor: 'rgba(99,102,241,0.4)' }]}>
-            <Text style={[cardStyles.badgeText, { color: '#A5B4FC' }]}>📍 Nearest</Text>
+            <Text style={[cardStyles.badgeText, { color: '#A5B4FC' }]}>📍 {t('nearest')}</Text>
           </View>
         )}
       </View>
@@ -205,14 +212,14 @@ function StationDetailCard({
         <View style={cardStyles.divider} />
         <View style={cardStyles.stat}>
           <Text style={cardStyles.statVal}>{station.dist.toFixed(1)} km</Text>
-          <Text style={cardStyles.statLbl}>Distance</Text>
+          <Text style={cardStyles.statLbl}>{t('distance')}</Text>
         </View>
         <View style={cardStyles.divider} />
         <View style={cardStyles.stat}>
           <Text style={[cardStyles.statVal, { color: station.isOpen ? '#4ADE80' : '#EF4444' }]}>
-            {station.isOpen ? 'Open' : 'Closed'}
+            {station.isOpen ? t('open') : t('closed')}
           </Text>
-          <Text style={cardStyles.statLbl}>Status</Text>
+          <Text style={cardStyles.statLbl}>{t('status')}</Text>
         </View>
       </View>
     </Animated.View>
@@ -297,15 +304,35 @@ export function StationMapView({
   stations, currentLocation, fuelType, nearestStation, cheapestStation,
 }: StationMapViewProps) {
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
-  // showLocateFAB: true after user pans map away from currentLocation
   const [showLocateFAB, setShowLocateFAB] = useState(false);
   const cameraRef = useRef<MapLibreGL.CameraRef | null>(null);
-  // Track whether a programmatic flyTo is in progress to ignore the resulting region-change event
   const isProgrammaticMoveRef = useRef(false);
+  // i18n reactive dependency — re-renders map when language changes
+  const _lang = useUserStore(s => s.language); // eslint-disable-line @typescript-eslint/no-unused-vars
 
-  const center: [number, number] = currentLocation
-    ? [currentLocation.lng, currentLocation.lat]
-    : [10.0, 51.1635];
+  // Freeze initial map center — computed ONCE on mount from the currentLocation
+  // prop. Using useMemo([]) prevents re-binding the Camera on every re-render,
+  // which was the root cause of the map snapping back to the user's location
+  // whenever selectedStation state changed and triggered a re-render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const initialCenter = useMemo<[number, number]>(() =>
+    currentLocation ? [currentLocation.lng, currentLocation.lat] : [10.0, 51.1635],
+  []); // Empty deps intentional — read currentLocation only at mount time
+
+  // Imperatively initialise camera after mount (avoids declarative re-binding)
+  // Small timeout ensures MapLibre Camera ref is fully bound before setCamera() call.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (cameraRef.current) {
+        cameraRef.current.setCamera({
+          centerCoordinate: initialCenter,
+          zoomLevel: 12,
+          animationDuration: 0, // instant on first load
+        });
+      }
+    }, 100);
+    return () => clearTimeout(t);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleMarkerPress = useCallback((station: Station) => {
     setSelectedStation(station);
@@ -361,10 +388,12 @@ export function StationMapView({
       >
         <MapLibreGL.Camera
           ref={cameraRef}
-          centerCoordinate={center}
-          zoomLevel={12}
           animationMode="flyTo"
           animationDuration={600}
+          // NOTE: No declarative centerCoordinate — camera is driven imperatively
+          // via useEffect (initial) and setCamera() (on marker press / locate-me).
+          // Declarative binding caused the map to snap back to user location on
+          // every re-render (e.g. when selectedStation state changed).
         />
 
         {/* User location dot */}
@@ -407,19 +436,19 @@ export function StationMapView({
       <View style={mapStyles.legend}>
         <View style={mapStyles.legendItem}>
           <View style={[mapStyles.legendDot, { backgroundColor: '#22C55E', shadowColor: '#22C55E', shadowOpacity: 0.7, shadowRadius: 4, elevation: 4 }]} />
-          <Text style={mapStyles.legendText}>Cheapest</Text>
+          <Text style={mapStyles.legendText}>{t('cheapest')}</Text>
         </View>
         <View style={mapStyles.legendItem}>
           <View style={[mapStyles.legendDot, { backgroundColor: '#6366F1', shadowColor: '#6366F1', shadowOpacity: 0.7, shadowRadius: 4, elevation: 4 }]} />
-          <Text style={mapStyles.legendText}>Nearest</Text>
+          <Text style={mapStyles.legendText}>{t('nearest')}</Text>
         </View>
         <View style={mapStyles.legendItem}>
           <View style={[mapStyles.legendDot, { backgroundColor: '#60A5FA' }]} />
-          <Text style={mapStyles.legendText}>Open</Text>
+          <Text style={mapStyles.legendText}>{t('open')}</Text>
         </View>
         <View style={mapStyles.legendItem}>
           <View style={[mapStyles.legendDot, { backgroundColor: '#4B5563' }]} />
-          <Text style={mapStyles.legendText}>Closed</Text>
+          <Text style={mapStyles.legendText}>{t('closed')}</Text>
         </View>
       </View>
 
@@ -429,7 +458,7 @@ export function StationMapView({
           style={[mapStyles.locateFAB, { bottom: fabBottom }]}
           onPress={handleLocateMe}
           activeOpacity={0.8}
-          accessibilityLabel="Return to my location"
+          accessibilityLabel={t('returnToLoc')}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           <Text style={mapStyles.locateFABIcon}>⊕</Text>

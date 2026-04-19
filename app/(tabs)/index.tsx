@@ -11,8 +11,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, RefreshControl, TouchableOpacity,
-  ActivityIndicator, StyleSheet, Pressable, Animated, Linking
+  ActivityIndicator, StyleSheet, Pressable, Animated, Linking,
+  Platform, StatusBar,
 } from 'react-native';
+
+const FIXED_TOP = (Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 44) + 4;
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { FuelSlider } from '../../src/components/FuelSlider';
@@ -75,6 +78,7 @@ import { ShadowTankBar } from '../../src/components/ShadowTankBar';
 import { PatternConfirmBanner } from '../../src/components/PatternConfirmBanner';
 import { useRefuelConfirm } from '../../src/hooks/useRefuelConfirm';
 import { formatFuelType } from '../../src/utils/formatters';
+import { t } from '../../src/utils/i18n';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -89,6 +93,8 @@ export default function HomeScreen() {
   const adjustLevelManually = useUserStore(s => s.adjustLevelManually);
   const restoreSmartTankSnapshot = useUserStore(s => s.restoreSmartTankSnapshot);
   const confirmTripPattern  = useUserStore(s => s.confirmTripPattern);
+  // i18n reactive dependency — re-renders this component when language changes
+  const _lang = useUserStore(s => s.language); // eslint-disable-line @typescript-eslint/no-unused-vars
 
   // ─── Tank level ───────────────────────────────────────────────────────────
   const isSmartActive = smartTank !== null;
@@ -121,9 +127,9 @@ export default function HomeScreen() {
   /** For double-tap detection on ShadowTankBar */
   const lastTankTapRef = useRef(0);
 
-  // ── Rück button: spring in/out, never shifts layout ─────────────────────
+  // ── Rück button: spring in/out ────────────────────────────────────────────
   const ruckAnim = useRef(new Animated.Value(0)).current;
-  const showUndo = mode === 'adjusting' || mode === 'soft_confirm';
+  const showUndo = mode === 'animating' || mode === 'adjusting' || mode === 'soft_confirm';
   useEffect(() => {
     Animated.spring(ruckAnim, {
       toValue: showUndo ? 1 : 0,
@@ -134,22 +140,19 @@ export default function HomeScreen() {
     }).start();
   }, [showUndo]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Tank component crossfade (ShadowTankBar ↔ TankGaugeSlider) ──────────
-  // `displayedMode` lags behind real mode during the 120ms fade-out,
-  // ensuring the OLD component fades out before the NEW one appears.
-  const switchAnim = useRef(new Animated.Value(1)).current;
-  const [displayedMode, setDisplayedMode] = useState<AppMode>(mode);
+  // ── Tank crossfade: dual-opacity, both components always in tree ──────────
+  // barOpacity=1 / sliderOpacity=0 → ShadowTankBar visible (normal mode)
+  // barOpacity=0 / sliderOpacity=1 → TankGaugeSlider visible (adjusting mode)
+  // Animated in parallel → zero flicker, zero layout shift
   const isSliderMode = (m: AppMode) => m === 'adjusting';
+  const barOpacity    = useRef(new Animated.Value(1)).current;
+  const sliderOpacity = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    // Only animate on ShadowTankBar ↔ Slider transitions (not animating→adjusting skips)
-    if (isSliderMode(mode) === isSliderMode(displayedMode)) {
-      setDisplayedMode(mode); // same visual type — update immediately without animation
-      return;
-    }
-    Animated.timing(switchAnim, { toValue: 0, duration: 120, useNativeDriver: true }).start(() => {
-      setDisplayedMode(mode);
-      Animated.timing(switchAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
-    });
+    const toSlider = isSliderMode(mode);
+    Animated.parallel([
+      Animated.timing(barOpacity,    { toValue: toSlider ? 0 : 1, duration: 180, useNativeDriver: true }),
+      Animated.timing(sliderOpacity, { toValue: toSlider ? 1 : 0, duration: 180, useNativeDriver: true }),
+    ]).start();
   }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useFocusEffect(
@@ -309,37 +312,36 @@ export default function HomeScreen() {
     : `${Math.round(sliderValue)}%`;
 
   return (
-    <ScrollView
-      style={styles.screen}
-      contentContainerStyle={styles.content}
-      // Disable scroll while the tank slider is active — prevents ScrollView from
-      // stealing horizontal PanResponder gesture events from FuelSlider.
-      scrollEnabled={mode !== 'adjusting'}
-      refreshControl={
-        <RefreshControl
-          refreshing={isLoading}
-          onRefresh={onRefresh}
-          tintColor="#6366F1"
-          colors={['#6366F1']}
-        />
-      }
-    >
+    <View style={styles.screen}>
+      {/* ── Fixed settings gear — always visible top-right ── */}
+      <TouchableOpacity
+        style={styles.settingsBtnFixed}
+        onPress={() => router.push('/settings')}
+        accessibilityLabel="Open settings"
+      >
+        <Text style={styles.settingsIcon}>⚙️</Text>
+      </TouchableOpacity>
+
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.content}
+        scrollEnabled={mode !== 'adjusting'}
+        refreshControl={
+          <RefreshControl
+            refreshing={isLoading}
+            onRefresh={onRefresh}
+            tintColor="#6366F1"
+            colors={['#6366F1']}
+          />
+        }
+      >
       {mode === 'adjusting' && (
         <Pressable style={styles.absoluteOverlay} onPress={handleBlankTap} />
       )}
 
-      {/* ── Header row ── */}
+      {/* ── Fuel type subtitle (scrollable) ── */}
       <View style={styles.headerRow}>
-        <View>
-          <Text style={styles.subtitle}>{formatFuelType(fuelType)}</Text>
-        </View>
-        <TouchableOpacity
-          style={styles.settingsBtn}
-          onPress={() => router.push('/settings')}
-          accessibilityLabel="Open settings"
-        >
-          <Text style={styles.settingsIcon}>⚙️</Text>
-        </TouchableOpacity>
+        <Text style={styles.subtitle}>{formatFuelType(fuelType)}</Text>
       </View>
 
       {/* ── Pattern Confirm Banner ── */}
@@ -356,13 +358,13 @@ export default function HomeScreen() {
       {permissionDenied && (
         <View style={styles.refuelBanner}>
           <Text style={styles.refuelBannerText}>
-            📍 Location access denied. Please enable in system settings.
+            {t('locationDenied')}
           </Text>
           <TouchableOpacity
             onPress={() => Linking.openSettings()}
             style={styles.refuelBannerBtn}
           >
-            <Text style={styles.refuelBannerBtnText}>❯ System</Text>
+            <Text style={styles.refuelBannerBtnText}>{t('systemSettings')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -376,9 +378,9 @@ export default function HomeScreen() {
           accessibilityLabel="Set up SmartTank"
         >
           <Text style={styles.setupBannerText}>
-            💡 SmartTank not configured — tap here to set your home region and enable smart fuel predictions.
+            {t('setupSmartTank')}
           </Text>
-          <Text style={styles.setupBannerCta}>Set up ›</Text>
+          <Text style={styles.setupBannerCta}>{t('setupCta')}</Text>
         </TouchableOpacity>
       )}
 
@@ -387,26 +389,44 @@ export default function HomeScreen() {
         && Date.now() > suppressBannerUntilRef.current && (
         <View style={styles.refuelBanner}>
           <Text style={styles.refuelBannerText}>
-            🔄  Estimate may be outdated — did you refuel?
+            {t('estimateOutdated')}
           </Text>
           <TouchableOpacity
             onPress={() => recordSmartRefuel(0, 'low_alert')}
             style={styles.refuelBannerBtn}
           >
-            <Text style={styles.refuelBannerBtnText}>Yes, reset</Text>
+            <Text style={styles.refuelBannerBtnText}>{t('yesReset')}</Text>
           </TouchableOpacity>
         </View>
       )}
 
-      {/* ── Tank area ──────────────────────────────────────────────── */}
+      {/* ── Tank area — fixed height, dual-opacity overlay ─────────────── */}
       <Animated.View style={[
         styles.tankArea,
         (mode === 'adjusting' || mode === 'soft_confirm') ? { zIndex: 20 } : undefined,
         { backgroundColor: tankBgColor, borderColor: tankBorderColor, borderWidth: 1, borderRadius: 16, marginHorizontal: -12, paddingHorizontal: 12, paddingVertical: 8 }
       ]}>
-        {/* Tank component: crossfades between ShadowTankBar and TankGaugeSlider */}
-        <Animated.View style={{ opacity: switchAnim }}>
-          {isSliderMode(displayedMode) ? (
+        {/* Fixed-height container — both components rendered, opacity crossfade */}
+        <View style={styles.tankLayerContainer}>
+          {/* ShadowTankBar layer — visible when NOT in slider mode */}
+          <Animated.View
+            style={[StyleSheet.absoluteFillObject, { opacity: barOpacity }]}
+            pointerEvents={isSliderMode(mode) ? 'none' : 'auto'}
+          >
+            <ShadowTankBar
+              fuelLevelPercent={fuelPct}
+              totalRangeKm={totalRangeKm}
+              isEstimated={isEstimated}
+              onLongPress={mode === 'normal' ? handleManualAdjust : undefined}
+              onPress={mode === 'normal' ? handleTankTap : undefined}
+            />
+          </Animated.View>
+
+          {/* TankGaugeSlider layer — visible when in slider mode */}
+          <Animated.View
+            style={[StyleSheet.absoluteFillObject, { opacity: sliderOpacity }]}
+            pointerEvents={isSliderMode(mode) ? 'auto' : 'none'}
+          >
             <TankGaugeSlider
               value={sliderValue}
               onValueChange={setSliderValue}
@@ -415,19 +435,10 @@ export default function HomeScreen() {
               animatedPct={animatedPct}
               isEstimated={isEstimated}
             />
-          ) : (
-            <ShadowTankBar
-              fuelLevelPercent={fuelPct}
-              totalRangeKm={totalRangeKm}
-              isEstimated={isEstimated}
-              onLongPress={mode === 'normal' ? handleManualAdjust : undefined}
-              onPress={mode === 'normal' ? handleTankTap : undefined}
-            />
-          )}
-        </Animated.View>
+          </Animated.View>
+        </View>
 
-        {/* Undo row — FIXED height 34px, always in flow — never shifts layout */}
-        {/* Rück fades in/out via spring animation, pointerEvents disable when hidden */}
+        {/* Undo row — fixed height, spring in/out, no layout shift */}
         <View style={styles.undoRow}>
           <Animated.View
             style={[
@@ -444,7 +455,7 @@ export default function HomeScreen() {
               style={({ pressed }) => pressed ? { opacity: 0.65 } : undefined}
               accessibilityLabel="Undo refuel"
             >
-              <Text style={styles.undoFloatingText}>↺ Undo</Text>
+              <Text style={styles.undoFloatingText}>{t('undoLabel')}</Text>
             </Pressable>
           </Animated.View>
         </View>
@@ -455,7 +466,7 @@ export default function HomeScreen() {
         {isLoading && !decision ? (
           <View style={styles.loadingBox}>
             <ActivityIndicator size="large" color="#6366F1" />
-            <Text style={styles.loadingText}>Checking prices...</Text>
+            <Text style={styles.loadingText}>{t('checkingPrices')}</Text>
           </View>
         ) : decision ? (
           decision.recommendation === 'Go' ? (
@@ -465,7 +476,7 @@ export default function HomeScreen() {
               accessibilityLabel="GO — tap to see nearby stations"
             >
               <TrafficLight recommendation={decision.recommendation} size={164} />
-              <Text style={styles.goHint}>→  View stations</Text>
+              <Text style={styles.goHint}>{t('viewStations')}</Text>
             </TouchableOpacity>
           ) : (
             <TrafficLight recommendation={decision.recommendation} size={164} />
@@ -473,7 +484,7 @@ export default function HomeScreen() {
         ) : error ? (
           <View style={styles.errorBox}>
             <Text style={styles.errorEmoji}>⚠️</Text>
-            <Text style={styles.errorText}>Could not load data</Text>
+            <Text style={styles.errorText}>{t('couldNotLoad')}</Text>
             <Text style={styles.errorDetail}>{error}</Text>
           </View>
         ) : null}
@@ -490,7 +501,7 @@ export default function HomeScreen() {
       {/* ── Best Station ── */}
       {decision?.recommendation !== 'Skip' && decision?.station && (
         <View style={styles.stationSection}>
-          <Text style={styles.sectionLabel}>Best Option Nearby</Text>
+          <Text style={styles.sectionLabel}>{t('bestOptionNearby')}</Text>
           <TouchableOpacity onPress={() => router.push({ pathname: '/stations', params: { highlightId: decision.station?.id ?? '' } })} activeOpacity={0.7}>
             <StationCard
               station={decision.station}
@@ -517,29 +528,43 @@ export default function HomeScreen() {
               styles.refuelBtnText, 
               (fuelPct >= 100 || mode !== 'normal') && styles.refuelBtnTextDisabled
             ]}>
-              ⛽  I refueled
+              {t('iRefueled')}
             </Text>
           </Pressable>
         </View>
       </View>
     </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen:  { flex: 1, backgroundColor: '#0D0F14' },
-  content: { paddingBottom: 48, gap: 16 },
+  screen:     { flex: 1, backgroundColor: '#0D0F14' },
+  scrollView: { flex: 1 },
+  content:    { paddingBottom: 48, gap: 16 },
   headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 4,
+    paddingRight: 52, // leave room for fixed settings gear
   },
   subtitle:    { fontSize: 13, color: '#6B7280' },
-  settingsBtn: { padding: 8 },
+  // Fixed settings gear — always visible, top-right
+  settingsBtnFixed: {
+    position: 'absolute',
+    top: FIXED_TOP,
+    right: 12,
+    zIndex: 200,
+    padding: 8,
+    backgroundColor: 'rgba(13,15,20,0.6)',
+    borderRadius: 20,
+  },
   settingsIcon: { fontSize: 22 },
+  // Fixed-height tank layer container — gives both overlay components a stable size
+  tankLayerContainer: {
+    height: 82, // ShadowTankBar ≈ 68px + TankGaugeSlider ≈ 76px → 82 fits both
+    position: 'relative',
+  },
   lightContainer: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -672,11 +697,9 @@ const styles = StyleSheet.create({
   },
   undoFloatingText: { color: '#FCA5A5', fontSize: 12, fontWeight: '700' },
 
-  // Unified tank wrapper — holds both ShadowTankBar and TankGaugeSlider at same layout size
   tankArea: {},
-  // Fixed-height row below the tank bar for the undo button (right-aligned, never shifts layout)
   undoRow: {
-    height: 34,             // Fixed — never causes layout shift
+    height: 34,
     flexDirection: 'row',
     justifyContent: 'flex-end',
     paddingRight: 4,

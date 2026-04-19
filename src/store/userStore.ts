@@ -11,6 +11,7 @@ import {
   RefuelingStyle, CarType, LastRefuelAmount, CommonArea,
   RefuelEvent, DaySnapshot,
 } from '../utils/types';
+import { Language, setAppLanguage } from '../utils/i18n';
 import {
   createDefaultShadowTank,
   resetShadowTank,
@@ -31,6 +32,9 @@ import { fetchRoadMetrics } from '../utils/routingDistance';
 // ─── State Shape ──────────────────────────────────────────────────────────────
 
 interface UserState {
+  // Language preference
+  language: Language;
+
   // Onboarding gate
   hasCompletedOnboarding: boolean;
   /** True when user explicitly tapped "Überspringen" on step 1/2 — prevents
@@ -77,6 +81,9 @@ interface UserState {
     carType: CarType | null;
     lastRefuelAmount: LastRefuelAmount | null;
   }) => void;
+
+  // Language
+  setLanguage: (lang: Language) => void;
 
   // Individual preference setters (used by Settings)
   setFuelType: (type: FuelType) => void;
@@ -128,6 +135,7 @@ export const useUserStore = create<UserState>()(
   persist(
     (set, get) => ({
       // --- Default values ---
+      language: 'de' as Language,
       hasCompletedOnboarding: false,
       hasSkippedSmartTankSetup: false,
 
@@ -185,6 +193,13 @@ export const useUserStore = create<UserState>()(
             }
           }).catch(err => console.warn('[UserStore] OSRM onboarding fetch failed:', err));
         }
+      },
+
+      // --- Language ---
+      setLanguage: (lang) => {
+        console.log(`[UserStore] Language → ${lang}`);
+        setAppLanguage(lang);
+        set({ language: lang });
       },
 
       // --- Individual setters ---
@@ -464,6 +479,13 @@ export const useUserStore = create<UserState>()(
             (state as any).lastPromptedMs = 0;
             console.log('[UserStore] Migration v3: lastPromptedMs initialized to 0');
           }
+          // Migration: add language if missing — default to German
+          if ((state as any).language === undefined) {
+            (state as any).language = 'de';
+            console.log('[UserStore] Migration v4: language initialized to de');
+          }
+          // Sync i18n module with persisted language on boot
+          setAppLanguage((state as any).language ?? 'de');
         }
       },
     }
