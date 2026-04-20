@@ -242,10 +242,12 @@ export default function StationsScreen() {
 
 
   const onRefresh = useCallback(() => {
+    // Guard: ignore pull-to-refresh if a fetch is already in flight
+    if (isLoading) return;
     const loc = currentLocation.current;
     if (loc) refresh(loc, true, localFuelType);
     else fetchViaGPS(localFuelType);
-  }, [refresh, homeLocation, localFuelType]);
+  }, [isLoading, refresh, homeLocation, localFuelType]);
 
   // ── Fuel type switch — zero network (re-picks from cached raw prices) ────
   function handleFuelTypeChange(newType: FuelType) {
@@ -386,8 +388,9 @@ export default function StationsScreen() {
               const q = locQuery.trim();
               if (q.length >= 3) startLocSearch(q);
             }}
-            // onBlur: 200ms delay lets suggestion taps register; does NOT cancel debounce
-            onBlur={() => setTimeout(() => setLocResults([]), 200)}
+            // onBlur: 500ms delay — ensures tap on a suggestion item fires before the
+            // dropdown is hidden. 200ms was insufficient on slower Android devices.
+            onBlur={() => setTimeout(() => setLocResults([]), 500)}
             accessibilityLabel="Location or postal code search"
           />
           {/* Clear button */}

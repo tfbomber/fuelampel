@@ -498,6 +498,10 @@ export function StationMapView({
           ref={cameraRef}
           animationMode="flyTo"
           animationDuration={600}
+          // Clamp zoom range: prevents zoom-out to world view (9=city) and
+          // zoom-in beyond street-number level (17). Applied at Camera level.
+          minZoomLevel={9}
+          maxZoomLevel={17}
           // NOTE: No declarative centerCoordinate — camera is driven imperatively
           // via useEffect (initial) and setCamera() (on marker press / locate-me).
           // Declarative binding caused the map to snap back to user location on

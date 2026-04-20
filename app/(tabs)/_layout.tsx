@@ -65,7 +65,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'FuelAmpel',
-          tabBarLabel: 'Decide',
+          tabBarLabel: 'Entscheiden',
           tabBarIcon: ({ focused }) => (
             <TabIcon emoji="🚦" focused={focused} />
           ),
@@ -75,8 +75,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="stations"
         options={{
-          title: 'Stations',
-          tabBarLabel: 'Stations',
+          title: 'Tankstellen',
+          tabBarLabel: 'Tankstellen',
           tabBarIcon: ({ focused }) => (
             <TabIcon emoji="⛽" focused={focused} />
           ),
