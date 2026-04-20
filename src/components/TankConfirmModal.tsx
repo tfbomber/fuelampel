@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity, Pressable } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { t } from '../utils/i18n';
 
 interface Props {
   visible: boolean;
@@ -11,6 +12,9 @@ interface Props {
 }
 
 export function TankConfirmModal({ visible, estimatedPercent, onConfirm, onAdjust, onClose }: Props) {
+  const pct = Math.round(estimatedPercent);
+  const titleText = t('tankConfirmTitle').replace('{pct}', String(pct));
+
   return (
     <Modal
       visible={visible}
@@ -22,18 +26,16 @@ export function TankConfirmModal({ visible, estimatedPercent, onConfirm, onAdjus
         <Pressable style={styles.card} onPress={e => e.stopPropagation()}>
           <View style={styles.content}>
             <Text style={styles.emoji}>🚘</Text>
-            <Text style={styles.title}>
-              System estimates your tank is at ~<Text style={styles.highlight}>{Math.round(estimatedPercent)}%</Text>
-            </Text>
-            <Text style={styles.subtitle}>Is this roughly correct?</Text>
+            <Text style={styles.title}>{titleText}</Text>
+            <Text style={styles.subtitle}>{t('tankConfirmSubtitle')}</Text>
           </View>
           
           <View style={styles.actions}>
             <TouchableOpacity style={[styles.btn, styles.btnAdjust]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onAdjust(); }}>
-              <Text style={styles.btnAdjustText}>Adjust level</Text>
+              <Text style={styles.btnAdjustText}>{t('tankConfirmAdjust')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.btn, styles.btnConfirm]} onPress={() => { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); onConfirm(); }}>
-              <Text style={styles.btnConfirmText}>Looks right</Text>
+              <Text style={styles.btnConfirmText}>{t('tankConfirmOk')}</Text>
             </TouchableOpacity>
           </View>
         </Pressable>
@@ -62,10 +64,11 @@ const styles = StyleSheet.create({
   content: {
     padding: 24,
     alignItems: 'center',
+    gap: 8,
   },
   emoji: {
     fontSize: 32,
-    marginBottom: 12,
+    marginBottom: 4,
   },
   title: {
     color: '#E5E7EB',
@@ -74,14 +77,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 24,
   },
-  highlight: {
-    color: '#6366F1',
-    fontWeight: '800',
-  },
   subtitle: {
     color: '#9CA3AF',
     fontSize: 13,
-    marginTop: 6,
     textAlign: 'center',
   },
   actions: {

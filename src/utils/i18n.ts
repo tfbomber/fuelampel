@@ -60,6 +60,22 @@ const translations = {
     // Tank bar
     tankLabel:         '⛽ Tank',
     tankLabelEst:      '〜 Tank',
+    // Pattern Confirm Banner
+    patternDetectedTitle: 'Regelmäßige Fahrt erkannt',
+    patternDetectedBody: 'Jeden {day} fährst du ca. {km} km.\nSoll ich das in deine Tankprognose einbeziehen?',
+    patternBtnYes:     '✓ Ja',
+    patternBtnNo:      'Nicht ganz',
+    patternBtnIgnore:  'Ignorieren',
+    // TankConfirmModal
+    tankConfirmTitle:  'System schätzt deinen Tank auf ca. {pct}%',
+    tankConfirmSubtitle: 'Stimmt das ungefähr?',
+    tankConfirmAdjust: 'Anpassen',
+    tankConfirmOk:     'Sieht gut aus',
+    // Notifications
+    notifCriticalTitle: '🔴 Tank fast leer — Jetzt tanken!',
+    notifCriticalBody:  'Dein Tank wird auf ~{pct}% geschätzt. Bitte rechtzeitig tanken.',
+    notifLowTitle:      '🟡 Jetzt tanken?',
+    notifLowBody:       'Tank bei ~{pct}% — App öffnen für die besten Preise in der Nähe.',
     // Map
     cheapest:          'Günstigster',
     nearest:           'Nächster',
@@ -87,6 +103,9 @@ const translations = {
     // Language names
     langDe:            'Deutsch',
     langEn:            'English',
+    // Tab navigation
+    tabDecide:         'Entscheiden',
+    tabStations:       'Tankstellen',
   },
   en: {
     language:          'Language',
@@ -136,6 +155,22 @@ const translations = {
     // Tank bar
     tankLabel:         '⛽ Tank',
     tankLabelEst:      '〜 Tank',
+    // Pattern Confirm Banner
+    patternDetectedTitle: 'Regular trip detected',
+    patternDetectedBody: 'Every {day} you drive approx {km} km.\nShould I include this in your fuel estimate?',
+    patternBtnYes:     '✓ Yes',
+    patternBtnNo:      'Not quite',
+    patternBtnIgnore:  'Ignore',
+    // TankConfirmModal
+    tankConfirmTitle:  'System estimates your tank is at ~{pct}%',
+    tankConfirmSubtitle: 'Is this roughly correct?',
+    tankConfirmAdjust: 'Adjust level',
+    tankConfirmOk:     'Looks right',
+    // Notifications
+    notifCriticalTitle: '🔴 Tank almost empty — Refuel now!',
+    notifCriticalBody:  'Your tank is estimated at ~{pct}%. Please refuel before it runs out.',
+    notifLowTitle:      '🟡 Good time to refuel?',
+    notifLowBody:       'Tank at ~{pct}% — open the app to see the best prices nearby.',
     // Map
     cheapest:          'Cheapest',
     nearest:           'Nearest',
@@ -163,6 +198,9 @@ const translations = {
     // Language names
     langDe:            'Deutsch',
     langEn:            'English',
+    // Tab navigation
+    tabDecide:         'Decide',
+    tabStations:       'Stations',
   },
 } as const;
 

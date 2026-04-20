@@ -9,6 +9,8 @@
 import { Tabs, useRouter } from 'expo-router';
 import { Text, View, StyleSheet, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useUserStore } from '../../src/store/userStore';
+import { t } from '../../src/utils/i18n';
 
 function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
   return (
@@ -33,9 +35,11 @@ function SettingsBtn() {
 }
 
 export default function TabLayout() {
-  // Bottom inset = height of Android navigation bar / iOS home indicator.
-  // Adding it to paddingBottom ensures the tab bar clears the system UI.
   const { bottom } = useSafeAreaInsets();
+  // Subscribe to language — triggers re-render when user switches DE↔EN,
+  // so tabBarLabel strings returned by t() update immediately.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _lang = useUserStore(s => s.language);
 
   return (
     <Tabs
@@ -65,7 +69,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'FuelAmpel',
-          tabBarLabel: 'Entscheiden',
+          tabBarLabel: t('tabDecide'),
           tabBarIcon: ({ focused }) => (
             <TabIcon emoji="🚦" focused={focused} />
           ),
@@ -75,8 +79,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="stations"
         options={{
-          title: 'Tankstellen',
-          tabBarLabel: 'Tankstellen',
+          title: t('tabStations'),
+          tabBarLabel: t('tabStations'),
           tabBarIcon: ({ focused }) => (
             <TabIcon emoji="⛽" focused={focused} />
           ),

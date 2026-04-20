@@ -63,16 +63,16 @@ function buildContent(
 
   if (zone === 'Critical') {
     return {
-      title: '🔴 Tank almost empty — Refuel now!',
-      body: `Your tank is estimated at ~${pct}%. Please refuel before it runs out.`,
+      title: '🔴 Tank fast leer — Jetzt tanken!',
+      body: `Dein Tank wird auf ~${pct}% geschätzt. Bitte rechtzeitig tanken.`,
       data: { type: 'daily_check', zone: 'Critical' },
       sound: true,
     };
   }
 
   return {
-    title: '🟡 Good time to refuel?',
-    body: `Tank at ~${pct}% — open the app to see the best prices nearby.`,
+    title: '🟡 Jetzt tanken?',
+    body: `Tank bei ~${pct}% — App öffnen für die besten Preise in der Nähe.`,
     data: { type: 'daily_check', zone: 'Low' },
     sound: false,
   };

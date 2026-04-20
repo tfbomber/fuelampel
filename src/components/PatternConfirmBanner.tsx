@@ -7,8 +7,10 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { TripPattern } from '../utils/types';
+import { t } from '../utils/i18n';
 
-const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DOW_LABELS_DE = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+const DOW_LABELS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 interface PatternConfirmBannerProps {
   pattern: TripPattern;
@@ -23,31 +25,35 @@ export function PatternConfirmBanner({
   onReject,
   onDismiss,
 }: PatternConfirmBannerProps) {
+  // Determine language to pick day label
+  const bodyTemplate = t('patternDetectedBody');
+  const isDE = bodyTemplate.startsWith('Jeden');
+  const DOW_LABELS = isDE ? DOW_LABELS_DE : DOW_LABELS_EN;
   const day = DOW_LABELS[pattern.dayOfWeek] ?? '—';
   const km  = Math.round(pattern.approxRoundTripKm);
+
+  const bodyText = bodyTemplate
+    .replace('{day}', day)
+    .replace('{km}', String(km));
 
   return (
     <View style={s.card}>
       <View style={s.topRow}>
         <Text style={s.icon}>📍</Text>
         <View style={s.textCol}>
-          <Text style={s.title}>Regular trip detected</Text>
-          <Text style={s.body}>
-            Every <Text style={s.highlight}>{day}</Text> you drive approx.{' '}
-            <Text style={s.highlight}>{km} km</Text>.{'\n'}
-            Should I include this in your fuel estimate?
-          </Text>
+          <Text style={s.title}>{t('patternDetectedTitle')}</Text>
+          <Text style={s.body}>{bodyText}</Text>
         </View>
       </View>
       <View style={s.btnRow}>
         <TouchableOpacity style={[s.btn, s.btnYes]} onPress={onConfirm} activeOpacity={0.8}>
-          <Text style={s.btnYesText}>✓ Yes</Text>
+          <Text style={s.btnYesText}>{t('patternBtnYes')}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[s.btn, s.btnNo]} onPress={onReject} activeOpacity={0.8}>
-          <Text style={s.btnNoText}>Not quite</Text>
+          <Text style={s.btnNoText}>{t('patternBtnNo')}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[s.btn, s.btnIgnore]} onPress={onDismiss} activeOpacity={0.8}>
-          <Text style={s.btnIgnoreText}>Ignore</Text>
+          <Text style={s.btnIgnoreText}>{t('patternBtnIgnore')}</Text>
         </TouchableOpacity>
       </View>
     </View>
