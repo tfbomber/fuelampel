@@ -8,7 +8,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   RefreshControl, ActivityIndicator, TextInput, Pressable,
-  Keyboard, Modal,
+  Keyboard, Modal, Animated,
 } from 'react-native';
 import * as Location from 'expo-location';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -59,6 +59,28 @@ export default function StationsScreen() {
 
   const [sortMode, setSortMode] = useState<SortMode>('value');
   const [viewMode, setViewMode]  = useState<ViewMode>('list');
+
+  // ── FAB Auto-Hide State & Animation ──────────────────────────────
+  const [isMapCardOpen, setIsMapCardOpen] = useState(false);
+  const fabTranslateY = useRef(new Animated.Value(0)).current;
+  const fabOpacity = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(fabTranslateY, {
+        toValue: isMapCardOpen ? 100 : 0,
+        useNativeDriver: true,
+        speed: 16,
+        bounciness: 4,
+      }),
+      Animated.timing(fabOpacity, {
+        toValue: isMapCardOpen ? 0 : 1,
+        duration: 250,
+        useNativeDriver: true,
+      })
+    ]).start();
+  }, [isMapCardOpen, fabTranslateY, fabOpacity]);
+
   const [localFuelType, setLocalFuelType] = useState<FuelType>(storedFuelType);
   // Tracks the last globally-stored fuelType that was synced into localFuelType.
   // Using a Ref (not state) avoids adding localFuelType to useFocusEffect deps,
@@ -372,16 +394,30 @@ export default function StationsScreen() {
         </TouchableOpacity>
       )}
 
-      {/* View Mode FAB: floats bottom-center, switches List <-> Map */}
+      {/* ── View Mode FAB (Auto-Hide with Animated.View) ──────────────────── */}
+      {/* Only shown when stations are loaded so the user has something to toggle between */}
       {stations.length > 0 && (
-        <TouchableOpacity
-          style={styles.viewModeFAB}
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setViewMode(viewMode === 'list' ? 'map' : 'list'); }}
-          activeOpacity={0.85}
-          accessibilityLabel={viewMode === 'list' ? 'Switch to map view' : 'Switch to list view'}
-        >
-          <Text style={styles.viewModeFABText}>{viewMode === 'list' ? t('viewMap') : t('viewList')}</Text>
-        </TouchableOpacity>
+        <Animated.View style={[
+          styles.viewModeFABContainer,
+          { 
+            transform: [{ translateY: fabTranslateY }],
+            opacity: fabOpacity,
+          }
+        ]} pointerEvents={isMapCardOpen ? 'none' : 'box-none'}>
+          <TouchableOpacity
+            style={styles.viewModeFAB}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              setViewMode(viewMode === 'list' ? 'map' : 'list');
+            }}
+            activeOpacity={0.85}
+            accessibilityLabel={viewMode === 'list' ? 'Switch to map view' : 'Switch to list view'}
+          >
+            <Text style={styles.viewModeFABText}>
+              {viewMode === 'list' ? t('viewMap') : t('viewList')}
+            </Text>
+          </TouchableOpacity>
+        </Animated.View>
       )}
 
     </View>
@@ -564,6 +600,7 @@ export default function StationsScreen() {
             nearestStation={nearestOpen}
             cheapestStation={stations.find(s => s.isOpen && s.price === cheapestPrice) ?? null}
             locationLabel={locationLabel}
+            onSelectionChange={setIsMapCardOpen}
           />
         </View>
       )}
@@ -833,23 +870,28 @@ const styles = StyleSheet.create({
   },
   sortGroup: { flexDirection: 'row', gap: 5, flex: 1 },
   // View Mode FAB (replaces inline toggle to prevent DE label overflow)
-  viewModeFAB: {
+  viewModeFABContainer: {
     position: 'absolute',
     bottom: 24,
     left: '50%' as any,
     marginLeft: -65,
+    zIndex: 999,
+    elevation: 12,
+  },
+  viewModeFAB: {
     width: 130,
     height: 44,
-    backgroundColor: 'rgba(99,102,241,0.92)',
+    // Glassmorphism styling: 75% opacity Indigo + subtle white border
+    backgroundColor: 'rgba(99, 102, 241, 0.75)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#6366F1',
-    shadowOpacity: 0.5,
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
     shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 12,
-    zIndex: 999,
+    shadowOffset: { width: 0, height: 6 },
   },
   viewModeFABText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   sortBtn: {

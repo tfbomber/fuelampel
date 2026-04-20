@@ -340,10 +340,12 @@ interface StationMapViewProps {
   cheapestStation: Station | null;
   /** Label shown in map overlay (e.g. "GPS", "PLZ 40210", "Home") */
   locationLabel?: string;
+  /** Callback fired when a station card is opened or closed */
+  onSelectionChange?: (hasSelection: boolean) => void;
 }
 
 export function StationMapView({
-  stations, currentLocation, fuelType, nearestStation, cheapestStation, locationLabel,
+  stations, currentLocation, fuelType, nearestStation, cheapestStation, locationLabel, onSelectionChange,
 }: StationMapViewProps) {
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const [showLocateFAB, setShowLocateFAB] = useState(false);
@@ -366,6 +368,12 @@ export function StationMapView({
   const recordNavigatedToStation = useUserStore(s => s.recordNavigatedToStation);
   // i18n reactive dependency — re-renders map when language changes
   const _lang = useUserStore(s => s.language); // eslint-disable-line @typescript-eslint/no-unused-vars
+
+  // Notify parent when card opens/closes (used for FAB auto-hide)
+  useEffect(() => {
+    onSelectionChange?.(selectedStation !== null);
+  }, [selectedStation, onSelectionChange]);
+
 
   // ── Dual GeoJSON sources for zero-flicker selection highlight ──────────────
   // mainGeoJSON: ALL stations with cheapest/nearest/open/closed state.
