@@ -12,10 +12,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, RefreshControl, TouchableOpacity,
   ActivityIndicator, StyleSheet, Pressable, Animated, Linking,
-  Platform, StatusBar,
 } from 'react-native';
-
-const FIXED_TOP = (Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 44) + 4;
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { FuelSlider } from '../../src/components/FuelSlider';
@@ -313,14 +310,6 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.screen}>
-      {/* ── Fixed settings gear — always visible top-right ── */}
-      <TouchableOpacity
-        style={styles.settingsBtnFixed}
-        onPress={() => router.push('/settings')}
-        accessibilityLabel="Open settings"
-      >
-        <Text style={styles.settingsIcon}>⚙️</Text>
-      </TouchableOpacity>
 
       <ScrollView
         style={styles.scrollView}
@@ -546,20 +535,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 4,
-    paddingRight: 52, // leave room for fixed settings gear
   },
   subtitle:    { fontSize: 13, color: '#6B7280' },
-  // Fixed settings gear — always visible, top-right
-  settingsBtnFixed: {
-    position: 'absolute',
-    top: FIXED_TOP,
-    right: 12,
-    zIndex: 200,
-    padding: 8,
-    backgroundColor: 'rgba(13,15,20,0.6)',
-    borderRadius: 20,
-  },
-  settingsIcon: { fontSize: 22 },
+  // (settingsBtnFixed removed — settings now in tab header right)
   // Fixed-height tank layer container — gives both overlay components a stable size
   tankLayerContainer: {
     height: 82, // ShadowTankBar ≈ 68px + TankGaugeSlider ≈ 76px → 82 fits both

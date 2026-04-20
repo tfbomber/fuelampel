@@ -178,7 +178,7 @@ export default function StationsScreen() {
       const ac = new AbortController();
       locAbortRef.current = ac;
       try {
-        const loc = await geocodePLZ(q);
+        const loc = await geocodePLZ(q, ac.signal);
         if (ac.signal.aborted) return;
         locAbortRef.current = null;
         setLocLoading(false);
@@ -189,7 +189,12 @@ export default function StationsScreen() {
         } else {
           setLocNoResult(true);
         }
-      } catch { if (!locAbortRef.current?.signal.aborted) setLocLoading(false); }
+      } catch {
+        if (!locAbortRef.current?.signal.aborted) {
+          setLocLoading(false);
+          setLocNoResult(true); // Network error — show feedback, not silent spinner
+        }
+      }
       return;
     }
 
@@ -206,7 +211,12 @@ export default function StationsScreen() {
       } else {
         setLocNoResult(true);
       }
-    } catch { if (!locAbortRef.current?.signal.aborted) setLocLoading(false); }
+    } catch {
+      if (!locAbortRef.current?.signal.aborted) {
+        setLocLoading(false);
+        setLocNoResult(true); // Network error — show feedback, not silent spinner
+      }
+    }
   }
 
   function pickLocResult(s: AddressSuggestion) {
@@ -393,7 +403,7 @@ export default function StationsScreen() {
         <TouchableOpacity
           style={styles.searchBtn}
           onPress={locQuery.trim() ? () => startLocSearch(locQuery.trim()) : () => fetchViaGPS()}
-          disabled={locLoading || isLoading}
+          disabled={locLoading}
           accessibilityLabel={locQuery.trim() ? 'Search location' : 'Use GPS location'}
         >
           {locLoading ? (
@@ -513,15 +523,19 @@ export default function StationsScreen() {
         </View>
       )}
 
-      {/* ── Map view ───────────────────────────────────────────────── */}
-      {viewMode === 'map' && stations.length > 0 && (
-        <StationMapView
-          stations={stations}
-          currentLocation={currentLocation.current}
-          fuelType={localFuelType}
-          nearestStation={nearestOpen}
-          cheapestStation={stations.find(s => s.isOpen && s.price === cheapestPrice) ?? null}
-        />
+      {/* ── Map view — always mounted when stations exist ──────────────────── */}
+      {/* display:'none' hides without unmounting: MapLibre tiles & camera preserved */}
+      {stations.length > 0 && (
+        <View style={{ flex: 1, display: viewMode === 'map' ? 'flex' : 'none' }}>
+          <StationMapView
+            stations={stations}
+            currentLocation={currentLocation.current}
+            fuelType={localFuelType}
+            nearestStation={nearestOpen}
+            cheapestStation={stations.find(s => s.isOpen && s.price === cheapestPrice) ?? null}
+            locationLabel={locationLabel}
+          />
+        </View>
       )}
       {viewMode === 'map' && stations.length === 0 && !isLoading && (
         <View style={styles.emptyBox}>

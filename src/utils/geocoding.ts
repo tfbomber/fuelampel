@@ -38,25 +38,38 @@ export interface AddressSuggestion {
  * Geocode a German PLZ (Postleitzahl) to coordinates.
  * @param plz  5-digit German postal code
  */
-export async function geocodePLZ(plz: string): Promise<GeoLocation | null> {
+export async function geocodePLZ(
+  plz: string,
+  callerSignal?: AbortSignal,
+): Promise<GeoLocation | null> {
   const cleaned = plz.trim().replace(/\s+/g, '');
   if (!/^\d{4,5}$/.test(cleaned)) return null;
 
   const url = `${NOMINATIM_BASE}/search?postalcode=${cleaned}&country=DE&format=json&limit=1`;
   console.log(`[Geocoding] PLZ lookup: ${cleaned}`);
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  // Own timeout — aborts after FETCH_TIMEOUT_MS regardless of caller signal
+  const timeoutController = new AbortController();
+  const timeout = setTimeout(() => timeoutController.abort(), FETCH_TIMEOUT_MS);
+
+  // Mirror caller abort into timeout controller (same pattern as searchAddress)
+  let callerListener: (() => void) | null = null;
+  if (callerSignal) {
+    callerListener = () => timeoutController.abort();
+    callerSignal.addEventListener('abort', callerListener);
+  }
 
   try {
-    const res = await fetch(url, { headers: NOMINATIM_HEADERS, signal: controller.signal });
+    const res = await fetch(url, { headers: NOMINATIM_HEADERS, signal: timeoutController.signal });
     clearTimeout(timeout);
+    if (callerListener && callerSignal) callerSignal.removeEventListener('abort', callerListener);
     if (!res.ok) return null;
     const data = await res.json();
     if (!Array.isArray(data) || data.length === 0) return null;
     return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
   } catch {
     clearTimeout(timeout);
+    if (callerListener && callerSignal) callerSignal.removeEventListener('abort', callerListener);
     return null;
   }
 }

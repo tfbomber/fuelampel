@@ -183,7 +183,8 @@ export const useFuelStore = create<FuelStoreState>()(
       name: 'fuelampel-fuel-store',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
-        stations: state.stations,
+        // stations NOT persisted — real-time price data; schema drift causes switchFuelType to break
+        // (old cache lacks priceE5/priceE10/priceDiesel → switchFuelType returns null prices)
         lastFetchMs: state.lastFetchMs,
         lastFetchLoc: state.lastFetchLoc,
         decision: state.decision,

@@ -6,8 +6,8 @@
 // sits ABOVE Android's gesture navigation bar / virtual buttons.
 // ====================================================
 
-import { Tabs } from 'expo-router';
-import { Text, View, StyleSheet } from 'react-native';
+import { Tabs, useRouter } from 'expo-router';
+import { Text, View, StyleSheet, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
@@ -15,6 +15,20 @@ function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
     <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>
       <Text style={[styles.emoji, focused && styles.emojiActive]}>{emoji}</Text>
     </View>
+  );
+}
+
+function SettingsBtn() {
+  const router = useRouter();
+  return (
+    <TouchableOpacity
+      onPress={() => router.push('/settings')}
+      style={styles.settingsHeaderBtn}
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      accessibilityLabel="Open settings"
+    >
+      <Text style={styles.settingsHeaderIcon}>⚙️</Text>
+    </TouchableOpacity>
   );
 }
 
@@ -55,6 +69,7 @@ export default function TabLayout() {
           tabBarIcon: ({ focused }) => (
             <TabIcon emoji="🚦" focused={focused} />
           ),
+          headerRight: () => <SettingsBtn />,
         }}
       />
       <Tabs.Screen
@@ -65,6 +80,7 @@ export default function TabLayout() {
           tabBarIcon: ({ focused }) => (
             <TabIcon emoji="⛽" focused={focused} />
           ),
+          headerRight: () => <SettingsBtn />,
         }}
       />
     </Tabs>
@@ -88,5 +104,13 @@ const styles = StyleSheet.create({
   },
   emojiActive: {
     opacity: 1,
+  },
+  // Settings button in header right
+  settingsHeaderBtn: {
+    marginRight: 12,
+    padding: 4,
+  },
+  settingsHeaderIcon: {
+    fontSize: 20,
   },
 });

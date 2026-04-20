@@ -16,7 +16,7 @@
 import React, { useRef, useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Animated,
+  Animated, ActivityIndicator,
 } from 'react-native';
 import MapLibreGL from '@maplibre/maplibre-react-native';
 import { Station, GeoLocation } from '../utils/types';
@@ -298,13 +298,18 @@ interface StationMapViewProps {
   fuelType: FuelType;
   nearestStation: Station | null;
   cheapestStation: Station | null;
+  /** Label shown in map overlay (e.g. "GPS", "PLZ 40210", "Home") */
+  locationLabel?: string;
 }
 
 export function StationMapView({
-  stations, currentLocation, fuelType, nearestStation, cheapestStation,
+  stations, currentLocation, fuelType, nearestStation, cheapestStation, locationLabel,
 }: StationMapViewProps) {
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const [showLocateFAB, setShowLocateFAB] = useState(false);
+  // Map loading overlay: shown until tiles finish loading (covers the blank grey flash)
+  const [mapReady, setMapReady] = useState(false);
+  const mapOverlayOpacity = useRef(new Animated.Value(1)).current;
   const cameraRef = useRef<MapLibreGL.CameraRef | null>(null);
   const isProgrammaticMoveRef = useRef(false);
   // i18n reactive dependency — re-renders map when language changes
@@ -333,6 +338,34 @@ export function StationMapView({
     }, 100);
     return () => clearTimeout(t);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Camera: follow currentLocation changes (e.g. user searches new PLZ) ──
+  // prevLocationRef skips the very first run (already handled by initialCenter above).
+  // Subsequent changes fly the camera to the new area and hide the Locate Me FAB.
+  const prevLocationRef = useRef<GeoLocation | null>(null);
+
+  useEffect(() => {
+    if (!currentLocation) return;
+    // First call after mount: record initial location, no camera move
+    if (!prevLocationRef.current) {
+      prevLocationRef.current = currentLocation;
+      return;
+    }
+    // Skip re-renders where location hasn't actually changed
+    const prev = prevLocationRef.current;
+    if (prev.lat === currentLocation.lat && prev.lng === currentLocation.lng) return;
+
+    // Location changed — fly camera to new area; Locate Me FAB not needed
+    prevLocationRef.current = currentLocation;
+    isProgrammaticMoveRef.current = true;
+    setShowLocateFAB(false);
+    cameraRef.current?.setCamera({
+      centerCoordinate: [currentLocation.lng, currentLocation.lat],
+      zoomLevel: 12,
+      animationDuration: 600,
+    });
+    setTimeout(() => { isProgrammaticMoveRef.current = false; }, 700);
+  }, [currentLocation]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleMarkerPress = useCallback((station: Station) => {
     setSelectedStation(station);
@@ -369,6 +402,16 @@ export function StationMapView({
     setTimeout(() => { isProgrammaticMoveRef.current = false; }, 700);
   }, [currentLocation]);
 
+  // Fade out the loading overlay when map tiles are ready
+  const handleMapReady = useCallback(() => {
+    if (mapReady) return;
+    Animated.timing(mapOverlayOpacity, {
+      toValue: 0,
+      duration: 350,
+      useNativeDriver: true,
+    }).start(() => setMapReady(true));
+  }, [mapReady, mapOverlayOpacity]);
+
   // attributionPosition.bottom rises when the detail card is open (~130px card height)
   const attrBottom = selectedStation ? 134 : 8;
 
@@ -385,6 +428,7 @@ export function StationMapView({
         attributionPosition={{ bottom: attrBottom, right: 8 }}
         compassEnabled={true}
         onRegionDidChange={handleRegionDidChange}
+        onDidFinishLoadingMap={handleMapReady}
       >
         <MapLibreGL.Camera
           ref={cameraRef}
@@ -450,6 +494,16 @@ export function StationMapView({
           <View style={[mapStyles.legendDot, { backgroundColor: '#4B5563' }]} />
           <Text style={mapStyles.legendText}>{t('closed')}</Text>
         </View>
+        {/* Current location label */}
+        {locationLabel && (
+          <View style={mapStyles.legendDivider} />
+        )}
+        {locationLabel && (
+          <View style={mapStyles.legendItem}>
+            <Text style={mapStyles.legendLocIcon}>📍</Text>
+            <Text style={[mapStyles.legendText, { color: '#A5B4FC' }]} numberOfLines={1}>{locationLabel}</Text>
+          </View>
+        )}
       </View>
 
       {/* ── Locate Me FAB — appears after user pans ────────────────────────── */}
@@ -475,6 +529,14 @@ export function StationMapView({
           onClose={() => setSelectedStation(null)}
         />
       )}
+
+      {/* ── Map loading overlay — fades out when tiles finish rendering ────── */}
+      {!mapReady && (
+        <Animated.View style={[mapStyles.loadingOverlay, { opacity: mapOverlayOpacity }]}>
+          <ActivityIndicator size="large" color="#6366F1" />
+          <Text style={mapStyles.loadingOverlayText}>Loading map…</Text>
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -499,10 +561,27 @@ const mapStyles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
     elevation: 8,
+    maxWidth: 120,
   },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   legendDot:  { width: 10, height: 10, borderRadius: 5 },
-  legendText: { color: '#9CA3AF', fontSize: 11, fontWeight: '600' },
+  legendText: { color: '#9CA3AF', fontSize: 11, fontWeight: '600', flexShrink: 1 },
+  legendDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginVertical: 2 },
+  legendLocIcon: { fontSize: 10 },
+
+  // Map loading overlay
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#0D0F14',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+  },
+  loadingOverlayText: {
+    color: '#6B7280',
+    fontSize: 14,
+    fontWeight: '500',
+  },
 
   // Locate Me FAB
   locateFAB: {
