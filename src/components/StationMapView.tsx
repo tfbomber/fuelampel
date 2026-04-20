@@ -324,20 +324,9 @@ export function StationMapView({
     currentLocation ? [currentLocation.lng, currentLocation.lat] : [10.0, 51.1635],
   []); // Empty deps intentional — read currentLocation only at mount time
 
-  // Imperatively initialise camera after mount (avoids declarative re-binding)
-  // Small timeout ensures MapLibre Camera ref is fully bound before setCamera() call.
-  useEffect(() => {
-    const t = setTimeout(() => {
-      if (cameraRef.current) {
-        cameraRef.current.setCamera({
-          centerCoordinate: initialCenter,
-          zoomLevel: 12,
-          animationDuration: 0, // instant on first load
-        });
-      }
-    }, 100);
-    return () => clearTimeout(t);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Camera init is handled inside handleMapReady (onDidFinishLoadingMap callback).
+  // Removed 100ms setTimeout approach: Camera ref is guaranteed bound only when
+  // the map style has fully loaded, which is exactly when onDidFinishLoadingMap fires.
 
   // ── Camera: follow currentLocation changes (e.g. user searches new PLZ) ──
   // prevLocationRef skips the very first run (already handled by initialCenter above).
@@ -367,17 +356,28 @@ export function StationMapView({
     setTimeout(() => { isProgrammaticMoveRef.current = false; }, 700);
   }, [currentLocation]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Centralized card dismissal — resets both state AND camera padding ──────
+  const dismissCard = useCallback(() => {
+    setSelectedStation(null);
+    // Restore camera padding so the map visual-centre snaps back to true centre
+    cameraRef.current?.setCamera({
+      padding: { paddingTop: 0, paddingRight: 0, paddingBottom: 0, paddingLeft: 0 },
+    });
+  }, []);
+
   const handleMarkerPress = useCallback((station: Station) => {
     setSelectedStation(station);
     isProgrammaticMoveRef.current = true;
     if (cameraRef.current) {
       cameraRef.current.setCamera({
         centerCoordinate: [station.lng, station.lat],
-        zoomLevel: 13,
+        zoomLevel: 14,
         animationDuration: 400,
+        // Shift visual centre upward so selected station clears the bottom detail card.
+        // paddingBottom ≈ card height (150px) ensures station is in the visible map area.
+        padding: { paddingTop: 0, paddingRight: 0, paddingBottom: 160, paddingLeft: 0 },
       });
     }
-    // After animation finishes, re-enable user-pan detection
     setTimeout(() => { isProgrammaticMoveRef.current = false; }, 500);
   }, []);
 
@@ -391,26 +391,87 @@ export function StationMapView({
   }, []);
 
   const handleLocateMe = useCallback(() => {
-    if (!currentLocation || !cameraRef.current) return;
+    if (!cameraRef.current) return;
     isProgrammaticMoveRef.current = true;
     setShowLocateFAB(false);
-    cameraRef.current.setCamera({
-      centerCoordinate: [currentLocation.lng, currentLocation.lat],
-      zoomLevel: 13,
-      animationDuration: 600,
-    });
+    // fitBounds: re-frame all loaded stations (same as initial view)
+    if (stations.length > 0) {
+      const lats = stations.map(s => s.lat);
+      const lngs = stations.map(s => s.lng);
+      if (currentLocation) { lats.push(currentLocation.lat); lngs.push(currentLocation.lng); }
+      cameraRef.current.fitBounds(
+        [Math.min(...lngs) - 0.008, Math.min(...lats) - 0.008],
+        [Math.max(...lngs) + 0.008, Math.max(...lats) + 0.008],
+        [60, 30, 60, 30],
+        600,
+      );
+    } else if (currentLocation) {
+      cameraRef.current.setCamera({
+        centerCoordinate: [currentLocation.lng, currentLocation.lat],
+        zoomLevel: 13,
+        animationDuration: 600,
+      });
+    }
     setTimeout(() => { isProgrammaticMoveRef.current = false; }, 700);
-  }, [currentLocation]);
+  }, [stations, currentLocation]);
 
-  // Fade out the loading overlay when map tiles are ready
+  // onDidFinishLoadingMap: fires ONCE when the map style + camera are fully initialised.
+  // At this point cameraRef is guaranteed bound — safe to call setCamera / fitBounds.
   const handleMapReady = useCallback(() => {
     if (mapReady) return;
+
+    if (cameraRef.current) {
+      if (stations.length > 0) {
+        // fitBounds(SW, NE, padding, duration) — MapLibre React Native convention
+        const lats = stations.map(s => s.lat);
+        const lngs = stations.map(s => s.lng);
+        if (currentLocation) { lats.push(currentLocation.lat); lngs.push(currentLocation.lng); }
+        cameraRef.current.fitBounds(
+          [Math.min(...lngs) - 0.008, Math.min(...lats) - 0.008],  // SW [lng, lat]
+          [Math.max(...lngs) + 0.008, Math.max(...lats) + 0.008],  // NE [lng, lat]
+          [60, 30, 60, 30],   // padding: [top, right, bottom, left] px
+          0,                  // instant on first paint
+        );
+      } else if (currentLocation) {
+        cameraRef.current.setCamera({
+          centerCoordinate: [currentLocation.lng, currentLocation.lat],
+          zoomLevel: 13,
+          animationDuration: 0,
+        });
+      }
+    }
+
     Animated.timing(mapOverlayOpacity, {
       toValue: 0,
       duration: 350,
       useNativeDriver: true,
     }).start(() => setMapReady(true));
-  }, [mapReady, mapOverlayOpacity]);
+  }, [mapReady, mapOverlayOpacity, stations, currentLocation]);
+
+  // ── Re-fitBounds when new stations arrive after initial map load ──────────
+  // e.g. user searches a new PLZ — new stations are fetched, we re-frame the map.
+  // Guard: only fire after mapReady (cameraRef is bound) and when stations change.
+  const prevStationsLengthRef = useRef(0);
+  useEffect(() => {
+    if (!mapReady || stations.length === 0 || !cameraRef.current) return;
+    // Skip if station count hasn't changed (e.g. fuel-type switch just re-prices same set)
+    if (stations.length === prevStationsLengthRef.current && prevStationsLengthRef.current > 0) return;
+    prevStationsLengthRef.current = stations.length;
+
+    const lats = stations.map(s => s.lat);
+    const lngs = stations.map(s => s.lng);
+    if (currentLocation) { lats.push(currentLocation.lat); lngs.push(currentLocation.lng); }
+    isProgrammaticMoveRef.current = true;
+    setShowLocateFAB(false);
+    cameraRef.current.fitBounds(
+      [Math.min(...lngs) - 0.008, Math.min(...lats) - 0.008],
+      [Math.max(...lngs) + 0.008, Math.max(...lats) + 0.008],
+      [60, 30, 60, 30],
+      500,
+    );
+    setTimeout(() => { isProgrammaticMoveRef.current = false; }, 600);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stations, mapReady]);
 
   // attributionPosition.bottom rises when the detail card is open (~130px card height)
   const attrBottom = selectedStation ? 134 : 8;
@@ -427,8 +488,11 @@ export function StationMapView({
         attributionEnabled={true}
         attributionPosition={{ bottom: attrBottom, right: 8 }}
         compassEnabled={true}
+        pitchEnabled={false}
+        rotateEnabled={false}
         onRegionDidChange={handleRegionDidChange}
         onDidFinishLoadingMap={handleMapReady}
+        onPress={() => { if (selectedStation) dismissCard(); }}
       >
         <MapLibreGL.Camera
           ref={cameraRef}
@@ -526,7 +590,7 @@ export function StationMapView({
           fuelType={fuelType}
           isCheapest={cheapestStation?.id === selectedStation.id}
           isNearest={nearestStation?.id === selectedStation.id}
-          onClose={() => setSelectedStation(null)}
+          onClose={dismissCard}
         />
       )}
 
@@ -534,7 +598,7 @@ export function StationMapView({
       {!mapReady && (
         <Animated.View style={[mapStyles.loadingOverlay, { opacity: mapOverlayOpacity }]}>
           <ActivityIndicator size="large" color="#6366F1" />
-          <Text style={mapStyles.loadingOverlayText}>Loading map…</Text>
+          <Text style={mapStyles.loadingOverlayText}>{t('mapLoading')}</Text>
         </Animated.View>
       )}
     </View>

@@ -25,6 +25,7 @@ import { sortByValue, findNearestOpen } from '../../src/utils/ranking';
 import { estimateLevelPercent } from '../../src/core/smartTank';
 import { TANK_CONFIRM_LOCK_DAYS } from '../../src/utils/constants';
 import * as Haptics from 'expo-haptics';
+import { t } from '../../src/utils/i18n';
 
 type SortMode = 'price' | 'distance' | 'value';
 type ViewMode = 'list' | 'map';
@@ -319,11 +320,11 @@ export default function StationsScreen() {
   // ── Summary bar (replaces stats row + column labels) ─────────────────────
   function ListHeader() {
     if (stations.length === 0) return null;
-    const fromPrice = cheapestPrice ? `from ${cheapestPrice.toFixed(3)} €` : '';
+    const fromPrice = cheapestPrice ? `${t('stationsFrom')} ${cheapestPrice.toFixed(3)} €` : '';
     return (
       <View style={styles.summaryBar}>
         <Text style={styles.summaryText} numberOfLines={1}>
-          {displayList.length} stations
+          {displayList.length} {t('stationsCount')}
           {fromPrice ? `  ·  ${fromPrice}` : ''}
           {'  ·  '}
           <Text style={styles.summarySrc}>{locationLabel}</Text>
@@ -346,9 +347,9 @@ export default function StationsScreen() {
     return (
       <View style={styles.emptyBox}>
         <Text style={styles.emptyEmoji}>⛽</Text>
-        <Text style={styles.emptyTitle}>No stations yet</Text>
+        <Text style={styles.emptyTitle}>{t('noStationsTitle')}</Text>
         <Text style={styles.emptyText}>
-          Enter a PLZ above or allow location access, then pull to refresh.
+          {t('noStationsHint')}
         </Text>
       </View>
     );
@@ -363,15 +364,15 @@ export default function StationsScreen() {
         <View style={styles.locInputWrap}>
           <TextInput
             style={styles.plzInput}
-            placeholder="📮 PLZ or address…"
+            placeholder={t('plzPlaceholder')}
             placeholderTextColor="#4B5563"
             value={locQuery}
-            onChangeText={(t) => {
-              setLocQuery(t);
+            onChangeText={(text) => {
+              setLocQuery(text);
               setLocResults([]);
               setLocNoResult(false);
               cancelLocPending();
-              const q = t.trim();
+              const q = text.trim();
               if (q.length >= 3) {
                 setLocLoading(true);
                 // 400ms debounce — fires even after keyboard dismiss
@@ -435,7 +436,7 @@ export default function StationsScreen() {
       {locNoResult && (
         <View style={styles.locStatusBanner}>
           <Text style={styles.locStatusText}>
-            {`No results for “${locQuery}”`}
+          {`${t('noResultsFor')} "${locQuery}"`}
           </Text>
           <TouchableOpacity onPress={() => fetchViaGPS()} style={styles.locGpsBtn}>
             <Text style={styles.locGpsBtnText}>📍 GPS</Text>
@@ -474,7 +475,7 @@ export default function StationsScreen() {
                   accessibilityLabel={`Sort by ${mode}`}
                 >
                   <Text style={[styles.sortBtnText, sortMode === mode && styles.sortBtnTextActive]}>
-                    {mode === 'price' ? '💰 Price' : mode === 'distance' ? '📍 Dist' : '⭐ Value'}
+                    {mode === 'price' ? t('sortPrice') : mode === 'distance' ? t('sortDist') : t('sortValue')}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -492,7 +493,7 @@ export default function StationsScreen() {
               accessibilityLabel="List view"
             >
               <Text style={[styles.viewToggleBtnText, viewMode === 'list' && styles.viewToggleBtnTextActive]}>
-                📋 List
+                {t('viewList')}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -501,7 +502,7 @@ export default function StationsScreen() {
               accessibilityLabel="Map view"
             >
               <Text style={[styles.viewToggleBtnText, viewMode === 'map' && styles.viewToggleBtnTextActive]}>
-                🗺️ Map
+                {t('viewMap')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -512,7 +513,7 @@ export default function StationsScreen() {
       {isLoading && stations.length === 0 && (
         <View style={styles.loadingBox}>
           <ActivityIndicator size="large" color="#6366F1" />
-          <Text style={styles.loadingText}>Fetching stations…</Text>
+          <Text style={styles.loadingText}>{t('checkingPrices')}</Text>
         </View>
       )}
 

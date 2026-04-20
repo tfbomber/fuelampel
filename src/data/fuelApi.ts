@@ -101,13 +101,17 @@ export async function fetchNearbyStations(
     `&lng=${location.lng}` +
     `&rad=${TANKER_SEARCH_RADIUS_KM}` +
     `&sort=dist` +
-    `&type=${fuelType}` +
+    `&type=all` +          // Fetch all three fuel prices in one request — enables zero-network switchFuelType()
     `&apikey=${TANKER_API_KEY}`;
 
-  console.log(`[FuelAPI] Fetching stations at (${location.lat}, ${location.lng}) for ${fuelType}`);
+  console.log(`[FuelAPI] Fetching stations at (${location.lat}, ${location.lng}) type=all`);
+
+  const controller = new AbortController();
+  const timeoutId  = setTimeout(() => controller.abort(), 8000);
 
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       console.error(`[FuelAPI] HTTP error: ${response.status}`);
@@ -126,7 +130,12 @@ export async function fetchNearbyStations(
     return stations;
 
   } catch (err) {
-    console.error('[FuelAPI] Fetch failed:', err);
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === 'AbortError') {
+      console.error('[FuelAPI] Request timed out after 8s — returning empty array');
+    } else {
+      console.error('[FuelAPI] Fetch failed:', err);
+    }
     return [];
   }
 }

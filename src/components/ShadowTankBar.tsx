@@ -11,6 +11,7 @@
 
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { t } from '../utils/i18n';
 import Animated, {
   useSharedValue, useAnimatedStyle, withSpring,
 } from 'react-native-reanimated';
@@ -21,6 +22,8 @@ interface Props {
   totalRangeKm?: number | null;
   /** When true, shows ~ prefix to indicate estimated (not confirmed) level. */
   isEstimated?: boolean;
+  /** When provided, appends fuel type to left label: "⛽ Tank  ·  Diesel" */
+  fuelTypeLabel?: string;
   /** When provided, holding the bar triggers this callback (manual level edit). */
   onLongPress?: () => void;
   /** When provided, single tap triggers this callback. */
@@ -33,7 +36,7 @@ function getBarColor(pct: number): string {
   return '#EF4444';
 }
 
-export function ShadowTankBar({ fuelLevelPercent, totalRangeKm, isEstimated, onLongPress, onPress }: Props) {
+export function ShadowTankBar({ fuelLevelPercent, totalRangeKm, isEstimated, fuelTypeLabel, onLongPress, onPress }: Props) {
   const color = getBarColor(fuelLevelPercent);
 
   // Right label: km if totalRangeKm is configured, else %
@@ -60,7 +63,7 @@ export function ShadowTankBar({ fuelLevelPercent, totalRangeKm, isEstimated, onL
     <View style={styles.container}>
       <View style={styles.labelRow}>
         <Text style={styles.labelLeft}>
-          {isEstimated ? '〜 Tank' : '⛽ Tank'}
+          {isEstimated ? t('tankLabelEst') : t('tankLabel')}{fuelTypeLabel ? `  ·  ${fuelTypeLabel}` : ''}
         </Text>
         <Text style={[styles.labelRight, { color }]}>{rightLabel}</Text>
       </View>

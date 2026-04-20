@@ -21,7 +21,7 @@ import { SmartTankState } from '../../src/utils/types';
 // ─── TankGaugeSlider ──────────────────────────────────────────────────────────
 // Single combined component: animated fill bar + thumb slider overlaid in one.
 function TankGaugeSlider({
-  value, onValueChange, onSlidingComplete, totalRangeKm, animatedPct, isEstimated,
+  value, onValueChange, onSlidingComplete, totalRangeKm, animatedPct, isEstimated, fuelTypeLabel,
 }: {
   value: number;
   onValueChange: (v: number) => void;
@@ -29,6 +29,7 @@ function TankGaugeSlider({
   totalRangeKm: number | null;
   animatedPct: Animated.Value;
   isEstimated: boolean;
+  fuelTypeLabel?: string;
 }) {
   const color = value > 50 ? '#22C55E' : value > 25 ? '#F59E0B' : '#EF4444';
   const rightLabel = totalRangeKm
@@ -37,7 +38,9 @@ function TankGaugeSlider({
   return (
     <View style={tgs.container}>
       <View style={tgs.labelRow}>
-        <Text style={tgs.left}>{isEstimated ? '〜 Tank' : '⛽ Tank'}</Text>
+        <Text style={tgs.left}>
+          {isEstimated ? '〜 Tank' : '⛽ Tank'}{fuelTypeLabel ? `  ·  ${fuelTypeLabel}` : ''}
+        </Text>
         <Text style={[tgs.right, { color }]}>{rightLabel}</Text>
       </View>
       <FuelSlider
@@ -328,10 +331,6 @@ export default function HomeScreen() {
         <Pressable style={styles.absoluteOverlay} onPress={handleBlankTap} />
       )}
 
-      {/* ── Fuel type subtitle (scrollable) ── */}
-      <View style={styles.headerRow}>
-        <Text style={styles.subtitle}>{formatFuelType(fuelType)}</Text>
-      </View>
 
       {/* ── Pattern Confirm Banner ── */}
       {pendingPattern && (
@@ -406,6 +405,7 @@ export default function HomeScreen() {
               fuelLevelPercent={fuelPct}
               totalRangeKm={totalRangeKm}
               isEstimated={isEstimated}
+              fuelTypeLabel={formatFuelType(fuelType)}
               onLongPress={mode === 'normal' ? handleManualAdjust : undefined}
               onPress={mode === 'normal' ? handleTankTap : undefined}
             />
@@ -423,6 +423,7 @@ export default function HomeScreen() {
               totalRangeKm={totalRangeKm}
               animatedPct={animatedPct}
               isEstimated={isEstimated}
+              fuelTypeLabel={formatFuelType(fuelType)}
             />
           </Animated.View>
         </View>

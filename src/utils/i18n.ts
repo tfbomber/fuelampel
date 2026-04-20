@@ -57,6 +57,9 @@ const translations = {
     estimateOutdated:  '🔄  Schätzung möglicherweise veraltet — Hast du getankt?',
     yesReset:          'Ja, zurücksetzen',
     undoLabel:         '↺ Rückgängig',
+    // Tank bar
+    tankLabel:         '⛽ Tank',
+    tankLabelEst:      '〜 Tank',
     // Map
     cheapest:          'Günstigster',
     nearest:           'Nächster',
@@ -65,6 +68,22 @@ const translations = {
     distance:          'Entfernung',
     status:            'Status',
     returnToLoc:       'Zum Standort zurückkehren',
+    mapLoading:        'Karte wird geladen…',
+    mapReadyTitle:     'Karte bereit',
+    mapReadyHint:      'PLZ oder Adresse eingeben, oder GPS tippen.',
+    // Stations list
+    stationsFrom:      'ab',
+    stationsCount:     'Tankstellen',
+    noStationsTitle:   'Keine Stationen',
+    noStationsHint:    'PLZ eingeben oder Standort erlauben, dann aktualisieren.',
+    noResultsFor:      'Keine Ergebnisse für',
+    plzPlaceholder:    '📮 PLZ oder Adresse…',
+    // Sort + view toggle
+    sortPrice:         '💰 Preis',
+    sortDist:          '📍 Entf.',
+    sortValue:         '⭐ Wert',
+    viewList:          '📋 Liste',
+    viewMap:           '🗺️ Karte',
     // Language names
     langDe:            'Deutsch',
     langEn:            'English',
@@ -114,6 +133,10 @@ const translations = {
     estimateOutdated:  '🔄  Estimate may be outdated — did you refuel?',
     yesReset:          'Yes, reset',
     undoLabel:         '↺ Undo',
+    // Tank bar
+    tankLabel:         '⛽ Tank',
+    tankLabelEst:      '〜 Tank',
+    // Map
     cheapest:          'Cheapest',
     nearest:           'Nearest',
     open:              'Open',
@@ -121,6 +144,23 @@ const translations = {
     distance:          'Distance',
     status:            'Status',
     returnToLoc:       'Return to my location',
+    mapLoading:        'Loading map…',
+    mapReadyTitle:     'Map ready',
+    mapReadyHint:      'Enter a PLZ or address above, or tap GPS.',
+    // Stations list
+    stationsFrom:      'from',
+    stationsCount:     'stations',
+    noStationsTitle:   'No stations yet',
+    noStationsHint:    'Enter a PLZ above or allow location access, then pull to refresh.',
+    noResultsFor:      'No results for',
+    plzPlaceholder:    '📮 PLZ or address…',
+    // Sort + view toggle
+    sortPrice:         '💰 Price',
+    sortDist:          '📍 Dist',
+    sortValue:         '⭐ Value',
+    viewList:          '📋 List',
+    viewMap:           '🗺️ Map',
+    // Language names
     langDe:            'Deutsch',
     langEn:            'English',
   },

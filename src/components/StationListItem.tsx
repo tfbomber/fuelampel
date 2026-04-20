@@ -16,6 +16,7 @@ import {
 import { Station } from '../utils/types';
 import { computeNetVsNearest, formatNetVsNearest } from '../utils/ranking';
 import { openGoogleMapsNavigation } from '../utils/navigation';
+import { t } from '../utils/i18n';
 
 type DisplayMode = 'price' | 'distance' | 'value';
 
@@ -105,7 +106,7 @@ export function StationListItem({
           {station.brand || station.name}
         </Text>
         <Text style={styles.subLine} numberOfLines={1}>
-          {`${distLabel}${closed ? '  ·  CLOSED' : ''}  ·  ${station.street}, ${station.place}`}
+          {`${distLabel}${closed ? `  ·  ${t('closed').toUpperCase()}` : ''}  ·  ${station.street}, ${station.place}`}
         </Text>
       </View>
 
