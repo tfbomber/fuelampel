@@ -106,6 +106,8 @@ const translations = {
     // Tab navigation
     tabDecide:         'Entscheiden',
     tabStations:       'Tankstellen',
+    // Map interaction
+    navigate:          'Navigation starten',
     // Alert dialogs (Settings)
     alertInvalidValue:    'Ungültiger Wert',
     alertConsumptionRange:'3–25 L/100km',
@@ -229,6 +231,8 @@ const translations = {
     alertFullResetTitle:  '⚠️ Full Reset',
     alertFullResetBody:   'Clear ALL data and return to setup screen?',
     alertResetEverything: 'Reset everything',
+    // Map interaction
+    navigate:          'Navigate',
     // Settings inputs
     rangePlaceholder:  'e.g. 600',
     optionalLabel:     '(optional)',

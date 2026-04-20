@@ -7,12 +7,13 @@
 //  - Full Reset moved to bottom "Danger Zone" section
 // ====================================================
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, Alert, Pressable,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { useUserStore } from '../src/store/userStore';
 import { formatFuelType } from '../src/utils/formatters';
 import {
@@ -192,6 +193,40 @@ export default function SettingsScreen() {
       }},
     ]);
   }
+
+  // Auto-save dirty inputs on page blur (e.g. user types value then switches Tab).
+  // Prevents silent data loss — same validation logic as the manual ✓ button.
+  useFocusEffect(useCallback(() => {
+    return () => {
+      if (consumptionDirty) {
+        const val = parseFloat(consumptionInput);
+        if (!isNaN(val) && val >= 3 && val <= 25) {
+          setAvgConsumption(val); setConsumptionDirty(false);
+          console.log('[Settings] Auto-saved consumption on blur:', val);
+        }
+      }
+      if (capacityDirty) {
+        const val = parseFloat(capacityInput);
+        if (!isNaN(val) && val >= 20 && val <= 120) {
+          setTankCapacity(val); setCapacityDirty(false);
+          console.log('[Settings] Auto-saved capacity on blur:', val);
+        }
+      }
+      if (rangeDirty) {
+        const trimmed = rangeInput.trim();
+        if (trimmed === '' || trimmed === '0') {
+          setTotalRangeKm(null); setRangeDirty(false);
+        } else {
+          const val = parseFloat(trimmed);
+          if (!isNaN(val) && val >= 50 && val <= 2000) {
+            setTotalRangeKm(val); setRangeDirty(false);
+            console.log('[Settings] Auto-saved range on blur:', val);
+          }
+        }
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [consumptionDirty, consumptionInput, capacityDirty, capacityInput, rangeDirty, rangeInput]));
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>

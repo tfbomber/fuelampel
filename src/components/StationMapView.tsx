@@ -16,7 +16,7 @@
 import React, { useRef, useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Animated, ActivityIndicator,
+  Animated, ActivityIndicator, Linking, PanResponder,
 } from 'react-native';
 import MapLibreGL from '@maplibre/maplibre-react-native';
 import type * as GeoJSON from 'geojson';
@@ -138,15 +138,17 @@ const markerStyles = StyleSheet.create({
 
 // ─── Bottom detail card ────────────────────────────────────────────────────────
 function StationDetailCard({
-  station, fuelType, isCheapest, isNearest, onClose,
+  station, fuelType, isCheapest, isNearest, onClose, onNavigate,
 }: {
   station: Station;
   fuelType: FuelType;
   isCheapest: boolean;
   isNearest: boolean;
   onClose: () => void;
+  onNavigate: () => void;
 }) {
   const slideAnim = useRef(new Animated.Value(120)).current;
+  const dragY     = useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
     Animated.spring(slideAnim, {
@@ -157,19 +159,37 @@ function StationDetailCard({
     }).start();
   }, [station.id]);
 
-  // Accent color for the top border of the card
+  // Swipe-down-to-dismiss: pan handler on the drag handle
+  const panResponder = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_, { dy }) => dy > 8,
+    onPanResponderMove: (_, { dy }) => { if (dy > 0) dragY.setValue(dy); },
+    onPanResponderRelease: (_, { dy }) => {
+      if (dy > 60) {
+        onClose();
+      } else {
+        Animated.spring(dragY, {
+          toValue: 0, useNativeDriver: true, damping: 20, stiffness: 300,
+        }).start();
+      }
+    },
+  })).current;
+
   const accentColor =
     isCheapest ? '#22C55E' :
     isNearest  ? '#6366F1' :
                  'rgba(255,255,255,0.09)';
 
   return (
-    <Animated.View style={[cardStyles.card, { transform: [{ translateY: slideAnim }] }]}>
+    <Animated.View
+      style={[cardStyles.card, { transform: [{ translateY: Animated.add(slideAnim, dragY) }] }]}
+    >
       {/* Accent top border */}
       <View style={[cardStyles.accentBar, { backgroundColor: accentColor }]} />
 
-      {/* Drag handle */}
-      <View style={cardStyles.handle} />
+      {/* Drag handle — receives pan responder for swipe-to-dismiss */}
+      <View style={cardStyles.handleHitArea} {...panResponder.panHandlers}>
+        <View style={cardStyles.handle} />
+      </View>
 
       {/* Badge row */}
       <View style={cardStyles.badgeRow}>
@@ -223,6 +243,11 @@ function StationDetailCard({
           <Text style={cardStyles.statLbl}>{t('status')}</Text>
         </View>
       </View>
+
+      {/* Navigate button: opens station in the device's default maps app */}
+      <TouchableOpacity style={cardStyles.navBtn} onPress={onNavigate} activeOpacity={0.8}>
+        <Text style={cardStyles.navBtnText}>🧭  {t('navigate')}</Text>
+      </TouchableOpacity>
     </Animated.View>
   );
 }
@@ -289,7 +314,21 @@ const cardStyles = StyleSheet.create({
   stat:   { flex: 1, alignItems: 'center', gap: 2 },
   statVal:{ color: '#F9FAFB', fontSize: 13, fontWeight: '800' },
   statLbl:{ color: '#4B5563', fontSize: 10 },
-  divider:{ width: 1, height: 24, backgroundColor: 'rgba(255,255,255,0.07)' },
+  navBtn: {
+    marginTop: 12,
+    backgroundColor: 'rgba(99,102,241,0.12)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(99,102,241,0.35)',
+    paddingVertical: 11,
+    alignItems: 'center',
+  },
+  navBtnText: { color: '#A5B4FC', fontWeight: '700', fontSize: 13 },
+  handleHitArea: {
+    paddingVertical: 8,   // expands pan-responder area without changing visual handle size
+    marginTop: -8,
+  },
+  divider: { width: 1, height: 24, backgroundColor: 'rgba(255,255,255,0.07)' },
 });
 
 // ─── Main map component ────────────────────────────────────────────────────────
@@ -318,8 +357,51 @@ export function StationMapView({
   const cameraCenterRef = useRef<[number, number]>(
     currentLocation ? [currentLocation.lng, currentLocation.lat] : [10.0, 51.1635]
   );
+  // Bug-fix: prevents MapView.onPress from immediately dismissing a card we just opened
+  // via ShapeSource.onPress (event bubbling). Set for 80ms after each marker tap.
+  const justSelectedRef = useRef(false);
+  // UX guard: ignores map background taps during card slide-in animation (~350ms)
+  const isAnimatingRef = useRef(false);
+  // Store actions
+  const recordNavigatedToStation = useUserStore(s => s.recordNavigatedToStation);
   // i18n reactive dependency — re-renders map when language changes
   const _lang = useUserStore(s => s.language); // eslint-disable-line @typescript-eslint/no-unused-vars
+
+  // ── Dual GeoJSON sources for zero-flicker selection highlight ──────────────
+  // mainGeoJSON: ALL stations with cheapest/nearest/open/closed state.
+  //   Does NOT include selectedStation state — so selection changes don't trigger
+  //   a full N-feature ShapeSource update.
+  const mainGeoJSON = useMemo<GeoJSON.FeatureCollection>(() => ({
+    type: 'FeatureCollection',
+    features: stations.map(s => ({
+      type: 'Feature',
+      id: s.id,
+      geometry: { type: 'Point', coordinates: [s.lng, s.lat] },
+      properties: {
+        stationId: s.id,
+        price: s.price !== null ? s.price.toFixed(3) : '',
+        state: !s.isOpen              ? 'closed'
+             : cheapestStation?.id === s.id ? 'cheapest'
+             : nearestStation?.id  === s.id ? 'nearest'
+             : 'open',
+      },
+    })),
+  }), [stations, cheapestStation, nearestStation]);
+
+  // selectedGeoJSON: at most 1 feature — only the selected station.
+  //   Separate ShapeSource means deselecting triggers a minimal 0-feature update.
+  const selectedGeoJSON = useMemo<GeoJSON.FeatureCollection>(() => ({
+    type: 'FeatureCollection',
+    features: selectedStation ? [{
+      type: 'Feature',
+      id: selectedStation.id,
+      geometry: { type: 'Point', coordinates: [selectedStation.lng, selectedStation.lat] },
+      properties: {
+        stationId: selectedStation.id,
+        price: selectedStation.price !== null ? selectedStation.price.toFixed(3) : '',
+      },
+    }] : [],
+  }), [selectedStation]);
 
   // Freeze initial map center — computed ONCE on mount from the currentLocation
   // prop. Using useMemo([]) prevents re-binding the Camera on every re-render,
@@ -376,6 +458,9 @@ export function StationMapView({
 
   const handleMarkerPress = useCallback((station: Station) => {
     setSelectedStation(station);
+    // UX guard: block map background tap dismiss during card slide-in (~350ms)
+    isAnimatingRef.current = true;
+    setTimeout(() => { isAnimatingRef.current = false; }, 400);
     isProgrammaticMoveRef.current = true;
     if (cameraRef.current) {
       cameraRef.current.setCamera({
@@ -389,6 +474,17 @@ export function StationMapView({
     }
     setTimeout(() => { isProgrammaticMoveRef.current = false; }, 500);
   }, []);
+
+  // Navigate to selected station via device maps app
+  const handleNavigate = useCallback(() => {
+    if (!selectedStation) return;
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${selectedStation.lat},${selectedStation.lng}`;
+    Linking.openURL(url).catch(err =>
+      console.warn('[StationMapView] Failed to open maps URL:', err)
+    );
+    recordNavigatedToStation();
+    console.log(`[StationMapView] Navigate to: ${selectedStation.id} (${selectedStation.brand})`);
+  }, [selectedStation, recordNavigatedToStation]);
 
   // Called after any camera movement (user pan or programmatic)
   const handleRegionDidChange = useCallback((feature: any) => {
@@ -506,7 +602,12 @@ export function StationMapView({
         rotateEnabled={false}
         onRegionDidChange={handleRegionDidChange}
         onDidFinishLoadingMap={handleMapReady}
-        onPress={() => { if (selectedStation) dismissCard(); }}
+        onPress={() => {
+          // Guard 1: ShapeSource tap just happened (justSelectedRef) — skip dismiss
+          // Guard 2: Card is still animating in (isAnimatingRef) — skip dismiss
+          if (justSelectedRef.current || isAnimatingRef.current) return;
+          if (selectedStation) dismissCard();
+        }}
       >
         <MapLibreGL.Camera
           ref={cameraRef}
@@ -525,95 +626,108 @@ export function StationMapView({
         {/* User location dot */}
         <MapLibreGL.UserLocation visible={true} />
 
-        {/* Station markers — ShapeSource + CircleLayer (native OpenGL, pixel-perfect touch) */}
-        {/* Migrated from MarkerView: MarkerView is JS-thread React views overlaid on the map;
-            they suffer from touch-area misalignment after re-renders (Android-specific bug).
-            ShapeSource+CircleLayer renders in the MapLibre GL thread — touch is always exact. */}
-        {stations.length > 0 && (() => {
-          // Build GeoJSON FeatureCollection from stations
-          const geojson: GeoJSON.FeatureCollection = {
-            type: 'FeatureCollection',
-            features: stations.map(s => ({
-              type: 'Feature',
-              id: s.id,
-              geometry: { type: 'Point', coordinates: [s.lng, s.lat] },
-              properties: {
-                stationId:  s.id,
-                price:      s.price !== null ? s.price.toFixed(3) : '',
-                state: !s.isOpen              ? 'closed'
-                     : cheapestStation?.id === s.id ? 'cheapest'
-                     : nearestStation?.id  === s.id ? 'nearest'
-                     : selectedStation?.id === s.id ? 'selected'
-                     : 'open',
-              },
-            })),
-          };
-
-          return (
-            <MapLibreGL.ShapeSource
-              id="stationsSource"
-              shape={geojson}
-              // hitbox: 44×44 pt = Material Design minimum touch target
-              hitbox={{ width: 44, height: 44 }}
-              onPress={(e) => {
-                const feat = e?.features?.[0];
-                if (!feat) return;
-                const sid = feat.properties?.stationId;
-                const station = stations.find(s => s.id === sid);
-                if (station) handleMarkerPress(station);
+        {/* Station markers — dual ShapeSource architecture:
+            - stationsSource: ALL stations (cheapest/nearest/open/closed colors)
+              useMemo-d on [stations, cheapest, nearest] only, never on selectedStation
+              → selection changes do NOT trigger a full N-feature GL update
+            - selectedSource: the 1 selected station (gold highlight)
+              Separate source means deselection = 0-feature update, zero flicker         */}
+        {stations.length > 0 && (
+          <MapLibreGL.ShapeSource
+            id="stationsSource"
+            shape={mainGeoJSON}
+            hitbox={{ width: 44, height: 44 }}
+            onPress={(e) => {
+              // Set guard for 80ms: prevents MapView.onPress from immediately
+              // dismissing the card we're about to open (event propagation bug).
+              justSelectedRef.current = true;
+              setTimeout(() => { justSelectedRef.current = false; }, 80);
+              const feat = e?.features?.[0];
+              if (!feat) return;
+              const sid = feat.properties?.stationId;
+              const station = stations.find(s => s.id === sid);
+              if (station) handleMarkerPress(station);
+            }}
+          >
+            {/* Main dot layer: cheapest=green, nearest=indigo, open=blue, closed=gray */}
+            <MapLibreGL.CircleLayer
+              id="stationDots"
+              style={{
+                circleRadius: ['match', ['get', 'state'],
+                  'cheapest', 13,
+                  'nearest',  13,
+                  'closed',   8,
+                  10
+                ] as any,
+                circleColor: ['match', ['get', 'state'],
+                  'cheapest', '#22C55E',
+                  'nearest',  '#6366F1',
+                  'closed',   '#374151',
+                  '#60A5FA'
+                ] as any,
+                circleOpacity: ['match', ['get', 'state'], 'closed', 0.4, 1.0] as any,
+                circleStrokeWidth: 1.5,
+                circleStrokeColor: 'rgba(255,255,255,0.2)',
+                circlePitchAlignment: 'map',
               }}
-            >
-              {/* Outer glow ring for selected station */}
-              <MapLibreGL.CircleLayer
-                id="stationGlow"
-                style={{
-                  circleRadius: ['match', ['get', 'state'],
-                    'selected', 20, 0
-                  ] as any,
-                  circleColor: 'rgba(251,191,36,0.2)',
-                  circleBlur: 1,
-                }}
-              />
-              {/* Main dot layer */}
-              <MapLibreGL.CircleLayer
-                id="stationDots"
-                style={{
-                  circleRadius: ['match', ['get', 'state'],
-                    'cheapest', 14,
-                    'nearest',  14,
-                    'selected', 14,
-                    'closed',   9,
-                    11
-                  ] as any,
-                  circleColor: ['match', ['get', 'state'],
-                    'cheapest', '#22C55E',
-                    'nearest',  '#6366F1',
-                    'selected', '#FBBF24',
-                    'closed',   '#374151',
-                    '#60A5FA'
-                  ] as any,
-                  circleStrokeWidth: 1.5,
-                  circleStrokeColor: 'rgba(255,255,255,0.25)',
-                  circlePitchAlignment: 'map',
-                }}
-              />
-              {/* Price label on top of each circle */}
-              <MapLibreGL.SymbolLayer
-                id="stationLabels"
-                style={{
-                  textField: ['get', 'price'] as any,
-                  textSize: 9,
-                  textColor: '#FFFFFF',
-                  textFont: ['Noto Sans Bold'],
-                  textAnchor: 'center',
-                  textMaxWidth: 6,
-                  textIgnorePlacement: true,
-                  textAllowOverlap: true,
-                } as any}
-              />
-            </MapLibreGL.ShapeSource>
-          );
-        })()}
+            />
+            {/* Price labels on all open stations */}
+            <MapLibreGL.SymbolLayer
+              id="stationLabels"
+              filter={['!=', ['get', 'state'], 'closed'] as any}
+              style={{
+                textField: ['get', 'price'] as any,
+                textSize: 9,
+                textColor: '#FFFFFF',
+                // CARTO Dark Matter uses Open Sans — Noto Sans Bold is not in this tile stack
+                textFont: ['Open Sans Bold', 'Arial Unicode MS Bold'],
+                textAnchor: 'center',
+                textIgnorePlacement: true,
+                textAllowOverlap: true,
+              } as any}
+            />
+          </MapLibreGL.ShapeSource>
+        )}
+
+        {/* Selected station overlay — separate source for zero-flicker swap */}
+        <MapLibreGL.ShapeSource
+          id="selectedSource"
+          shape={selectedGeoJSON}
+        >
+          {/* Gold outer glow ring */}
+          <MapLibreGL.CircleLayer
+            id="selectedGlow"
+            style={{
+              circleRadius: 22,
+              circleColor: 'rgba(251,191,36,0.15)',
+              circleBlur: 1.2,
+            }}
+          />
+          {/* Gold solid dot */}
+          <MapLibreGL.CircleLayer
+            id="selectedDot"
+            style={{
+              circleRadius: 14,
+              circleColor: '#FBBF24',
+              circleStrokeWidth: 2,
+              circleStrokeColor: 'rgba(255,255,255,0.5)',
+              circlePitchAlignment: 'map',
+            }}
+          />
+          {/* Selected price label (darker text on gold) */}
+          <MapLibreGL.SymbolLayer
+            id="selectedLabel"
+            style={{
+              textField: ['get', 'price'] as any,
+              textSize: 9,
+              textColor: '#1A1D26',
+              textFont: ['Open Sans Bold', 'Arial Unicode MS Bold'],
+              textAnchor: 'center',
+              textIgnorePlacement: true,
+              textAllowOverlap: true,
+            } as any}
+          />
+        </MapLibreGL.ShapeSource>
       </MapLibreGL.MapView>
 
       {/* ── Legend — top-right ─────────────────────────────────────────────── */}
@@ -667,6 +781,7 @@ export function StationMapView({
           isCheapest={cheapestStation?.id === selectedStation.id}
           isNearest={nearestStation?.id === selectedStation.id}
           onClose={dismissCard}
+          onNavigate={handleNavigate}
         />
       )}
 

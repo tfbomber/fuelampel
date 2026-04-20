@@ -141,19 +141,32 @@ export default function StationsScreen() {
   }, [highlightId, stations.length]);
 
   // ── GPS fetch ─────────────────────────────────────────────────────────────
+  // GPS_TIMEOUT_MS: max wait for a GPS fix before falling back to homeLocation.
+  // Location.getCurrentPositionAsync can hang indefinitely on Android in weak-signal areas.
+  // 6s: fast enough to not feel stuck, long enough for indoor cold-start.
+  const GPS_TIMEOUT_MS = 6000;
+
   async function fetchViaGPS(fuelType?: FuelType) {
     const ft = fuelType ?? localFuelType;
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === 'granted') {
-        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        // Race: GPS fix vs. 6-second timeout guard
+        const gpsPromise = Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('GPS_TIMEOUT')), GPS_TIMEOUT_MS)
+        );
+        const pos = await Promise.race([gpsPromise, timeoutPromise]);
         const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         currentLocation.current = loc;
         setLocationLabel('GPS');
         await refresh(loc, true, ft);
         return;
       }
-    } catch { /* fall through */ }
+    } catch (err) {
+      // GPS_TIMEOUT or permission error — fall through to homeLocation
+      console.warn('[StationsTab] GPS fetch failed or timed out:', (err as Error).message);
+    }
 
     if (homeLocation) {
       currentLocation.current = homeLocation;
@@ -451,19 +464,27 @@ export default function StationsScreen() {
 
       {/* ── Address suggestion dropdown ──────────────────────────────────── */}
       {locResults.length > 0 && (
-        <View style={styles.locDropdown}>
-          {locResults.map((s, i) => (
-            <TouchableOpacity
-              key={i}
-              style={[styles.locSuggestion, i > 0 && styles.locSuggestionBorder]}
-              onPress={() => pickLocResult(s)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.locSuggestionShort} numberOfLines={1}>{s.shortName}</Text>
-              <Text style={styles.locSuggestionFull} numberOfLines={1}>{s.displayName}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        // Backdrop: transparent full-screen Pressable behind dropdown.
+        // Tap = keyboard dismiss + clear results. Per KI §5.2: no debounce cancel, no focus ref.
+        <>
+          <Pressable
+            style={styles.locBackdrop}
+            onPress={() => { Keyboard.dismiss(); clearLocSearch(); }}
+          />
+          <View style={[styles.locDropdown, { zIndex: 1 }]}>
+            {locResults.map((s, i) => (
+              <TouchableOpacity
+                key={i}
+                style={[styles.locSuggestion, i > 0 && styles.locSuggestionBorder]}
+                onPress={() => pickLocResult(s)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.locSuggestionShort} numberOfLines={1}>{s.shortName}</Text>
+                <Text style={styles.locSuggestionFull} numberOfLines={1}>{s.displayName}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </>
       )}
 
       {/* ── No-result feedback ─────────────────────────────────────────────── */}
@@ -734,6 +755,14 @@ const styles = StyleSheet.create({
   locSuggestionBorder: { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)' },
   locSuggestionShort:  { color: '#F9FAFB', fontSize: 14, fontWeight: '700' },
   locSuggestionFull:   { color: '#6B7280', fontSize: 11 },
+  // Backdrop: full-screen transparent tap target behind the suggestion dropdown.
+  // Placed first in the fragment so it renders under the dropdown (zIndex = 0).
+  // Tapping it dismisses keyboard + clears suggestions without blocking map or list interaction.
+  locBackdrop: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    zIndex: 0,
+  },
 
   // Status banner (no-result / error)
   locStatusBanner: {
