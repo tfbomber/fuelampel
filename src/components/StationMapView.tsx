@@ -19,6 +19,7 @@ import {
   Animated, ActivityIndicator,
 } from 'react-native';
 import MapLibreGL from '@maplibre/maplibre-react-native';
+import type * as GeoJSON from 'geojson';
 import { Station, GeoLocation } from '../utils/types';
 import { formatFuelType } from '../utils/formatters';
 import type { FuelType } from '../utils/types';
@@ -312,6 +313,11 @@ export function StationMapView({
   const mapOverlayOpacity = useRef(new Animated.Value(1)).current;
   const cameraRef = useRef<MapLibreGL.CameraRef | null>(null);
   const isProgrammaticMoveRef = useRef(false);
+  // Tracks the last known map center [lng, lat] — used in dismissCard to prevent drift
+  // when resetting camera padding (padding reset without centerCoordinate shifts the view).
+  const cameraCenterRef = useRef<[number, number]>(
+    currentLocation ? [currentLocation.lng, currentLocation.lat] : [10.0, 51.1635]
+  );
   // i18n reactive dependency — re-renders map when language changes
   const _lang = useUserStore(s => s.language); // eslint-disable-line @typescript-eslint/no-unused-vars
 
@@ -356,12 +362,15 @@ export function StationMapView({
     setTimeout(() => { isProgrammaticMoveRef.current = false; }, 700);
   }, [currentLocation]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Centralized card dismissal — resets both state AND camera padding ──────
+  // Centralized card dismissal — resets both state AND camera padding
+  // IMPORTANT: always pass centerCoordinate so MapLibre doesn't recalculate the
+  // visual centre from the padding change (which would cause the map to drift down).
   const dismissCard = useCallback(() => {
     setSelectedStation(null);
-    // Restore camera padding so the map visual-centre snaps back to true centre
     cameraRef.current?.setCamera({
+      centerCoordinate: cameraCenterRef.current,
       padding: { paddingTop: 0, paddingRight: 0, paddingBottom: 0, paddingLeft: 0 },
+      animationDuration: 0,  // instant — no visible drift
     });
   }, []);
 
@@ -387,6 +396,11 @@ export function StationMapView({
     const isGesture = feature?.properties?.isUserInteraction === true;
     if (isGesture && !isProgrammaticMoveRef.current) {
       setShowLocateFAB(true);
+    }
+    // Track current geographic center so dismissCard can lock it when resetting padding
+    const coords = feature?.geometry?.coordinates;
+    if (Array.isArray(coords) && coords.length === 2) {
+      cameraCenterRef.current = [coords[0], coords[1]];
     }
   }, []);
 
@@ -511,37 +525,95 @@ export function StationMapView({
         {/* User location dot */}
         <MapLibreGL.UserLocation visible={true} />
 
-        {/* Station markers — dot + label design */}
-        {stations.map(station => {
-          const isCheapest = cheapestStation?.id === station.id;
-          const isNearest  = nearestStation?.id  === station.id;
+        {/* Station markers — ShapeSource + CircleLayer (native OpenGL, pixel-perfect touch) */}
+        {/* Migrated from MarkerView: MarkerView is JS-thread React views overlaid on the map;
+            they suffer from touch-area misalignment after re-renders (Android-specific bug).
+            ShapeSource+CircleLayer renders in the MapLibre GL thread — touch is always exact. */}
+        {stations.length > 0 && (() => {
+          // Build GeoJSON FeatureCollection from stations
+          const geojson: GeoJSON.FeatureCollection = {
+            type: 'FeatureCollection',
+            features: stations.map(s => ({
+              type: 'Feature',
+              id: s.id,
+              geometry: { type: 'Point', coordinates: [s.lng, s.lat] },
+              properties: {
+                stationId:  s.id,
+                price:      s.price !== null ? s.price.toFixed(3) : '',
+                state: !s.isOpen              ? 'closed'
+                     : cheapestStation?.id === s.id ? 'cheapest'
+                     : nearestStation?.id  === s.id ? 'nearest'
+                     : selectedStation?.id === s.id ? 'selected'
+                     : 'open',
+              },
+            })),
+          };
+
           return (
-            <MapLibreGL.MarkerView
-              key={station.id}
-              coordinate={[station.lng, station.lat]}
-              anchor={{ x: 0, y: 0.5 }}
+            <MapLibreGL.ShapeSource
+              id="stationsSource"
+              shape={geojson}
+              // hitbox: 44×44 pt = Material Design minimum touch target
+              hitbox={{ width: 44, height: 44 }}
+              onPress={(e) => {
+                const feat = e?.features?.[0];
+                if (!feat) return;
+                const sid = feat.properties?.stationId;
+                const station = stations.find(s => s.id === sid);
+                if (station) handleMarkerPress(station);
+              }}
             >
-              {/*
-                hitSlop expands the tap detection area beyond rendered bounds.
-                style.padding provides real render area (required on Android for hitSlop to work).
-                Together: ~46pt touch target regardless of marker size.
-              */}
-              <TouchableOpacity
-                activeOpacity={0.75}
-                onPress={() => handleMarkerPress(station)}
-                hitSlop={{ top: 20, bottom: 20, left: 16, right: 16 }}
-                style={markerStyles.touchTarget}
-              >
-                <StationMarker
-                  price={station.price}
-                  isOpen={station.isOpen}
-                  isCheapest={isCheapest}
-                  isNearest={isNearest}
-                />
-              </TouchableOpacity>
-            </MapLibreGL.MarkerView>
+              {/* Outer glow ring for selected station */}
+              <MapLibreGL.CircleLayer
+                id="stationGlow"
+                style={{
+                  circleRadius: ['match', ['get', 'state'],
+                    'selected', 20, 0
+                  ] as any,
+                  circleColor: 'rgba(251,191,36,0.2)',
+                  circleBlur: 1,
+                }}
+              />
+              {/* Main dot layer */}
+              <MapLibreGL.CircleLayer
+                id="stationDots"
+                style={{
+                  circleRadius: ['match', ['get', 'state'],
+                    'cheapest', 14,
+                    'nearest',  14,
+                    'selected', 14,
+                    'closed',   9,
+                    11
+                  ] as any,
+                  circleColor: ['match', ['get', 'state'],
+                    'cheapest', '#22C55E',
+                    'nearest',  '#6366F1',
+                    'selected', '#FBBF24',
+                    'closed',   '#374151',
+                    '#60A5FA'
+                  ] as any,
+                  circleStrokeWidth: 1.5,
+                  circleStrokeColor: 'rgba(255,255,255,0.25)',
+                  circlePitchAlignment: 'map',
+                }}
+              />
+              {/* Price label on top of each circle */}
+              <MapLibreGL.SymbolLayer
+                id="stationLabels"
+                style={{
+                  textField: ['get', 'price'] as any,
+                  textSize: 9,
+                  textColor: '#FFFFFF',
+                  textFont: ['Noto Sans Bold'],
+                  textAnchor: 'center',
+                  textMaxWidth: 6,
+                  textIgnorePlacement: true,
+                  textAllowOverlap: true,
+                } as any}
+              />
+            </MapLibreGL.ShapeSource>
           );
-        })}
+        })()}
       </MapLibreGL.MapView>
 
       {/* ── Legend — top-right ─────────────────────────────────────────────── */}

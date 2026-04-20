@@ -340,9 +340,40 @@ export default function StationsScreen() {
             <Text style={styles.summaryInfoIcon}>ⓘ</Text>
           </TouchableOpacity>
         )}
-      </View>
-    );
-  }
+
+      {/* ── View Mode FAB: float bottom-center, switches List ↔ Map ─────── */}
+      {/* Only shown when stations are loaded so the user has something to toggle between */}
+      {stations.length > 0 && (
+        <TouchableOpacity
+          style={styles.viewModeFAB}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            setViewMode(viewMode === 'list' ? 'map' : 'list');
+          }}
+          activeOpacity={0.85}
+          accessibilityLabel={viewMode === 'list' ? 'Switch to map view' : 'Switch to list view'}
+        >
+          <Text style={styles.viewModeFABText}>
+            {viewMode === 'list' ? t('viewMap') : t('viewList')}
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      {/* View Mode FAB: floats bottom-center, switches List <-> Map */}
+      {stations.length > 0 && (
+        <TouchableOpacity
+          style={styles.viewModeFAB}
+          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setViewMode(viewMode === 'list' ? 'map' : 'list'); }}
+          activeOpacity={0.85}
+          accessibilityLabel={viewMode === 'list' ? 'Switch to map view' : 'Switch to list view'}
+        >
+          <Text style={styles.viewModeFABText}>{viewMode === 'list' ? t('viewMap') : t('viewList')}</Text>
+        </TouchableOpacity>
+      )}
+
+    </View>
+  );
+}
 
   function EmptyState() {
     if (isLoading) return null;
@@ -465,9 +496,8 @@ export default function StationsScreen() {
           ))}
         </View>
 
-        {/* Row 2: Sort tabs + List/Map toggle — always on ONE line */}
+        {/* Row 2: Sort tabs — full width, no overlap possible */}
         <View style={styles.controlRow}>
-          {/* Sort tabs — hidden in map mode but occupy no space */}
           {viewMode === 'list' && (
             <View style={styles.sortGroup}>
               {(['price', 'distance', 'value'] as SortMode[]).map(mode => (
@@ -484,31 +514,6 @@ export default function StationsScreen() {
               ))}
             </View>
           )}
-
-          {/* Spacer — pushes toggle to the right in map mode */}
-          {viewMode === 'map' && <View style={{ flex: 1 }} />}
-
-          {/* List / Map toggle — always visible, always right-aligned */}
-          <View style={styles.viewToggle}>
-            <TouchableOpacity
-              style={[styles.viewToggleBtn, viewMode === 'list' && styles.viewToggleBtnActive]}
-              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setViewMode('list'); }}
-              accessibilityLabel="List view"
-            >
-              <Text style={[styles.viewToggleBtnText, viewMode === 'list' && styles.viewToggleBtnTextActive]}>
-                {t('viewList')}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.viewToggleBtn, viewMode === 'map' && styles.viewToggleBtnActive]}
-              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setViewMode('map'); }}
-              accessibilityLabel="Map view"
-            >
-              <Text style={[styles.viewToggleBtnText, viewMode === 'map' && styles.viewToggleBtnTextActive]}>
-                {t('viewMap')}
-              </Text>
-            </TouchableOpacity>
-          </View>
         </View>
       </View>
 
@@ -544,8 +549,8 @@ export default function StationsScreen() {
       {viewMode === 'map' && stations.length === 0 && !isLoading && (
         <View style={styles.emptyBox}>
           <Text style={styles.emptyEmoji}>🗺️</Text>
-          <Text style={styles.emptyTitle}>Map ready</Text>
-          <Text style={styles.emptyText}>Enter a PLZ or address above, or tap GPS.</Text>
+          <Text style={styles.emptyTitle}>{t('mapReadyTitle')}</Text>
+          <Text style={styles.emptyText}>{t('mapReadyHint')}</Text>
         </View>
       )}
 
@@ -637,6 +642,18 @@ export default function StationsScreen() {
             setShowConfirmModal(false);
           }}
         />
+      )}
+
+      {/* View Mode FAB: floats bottom-center, switches List <-> Map */}
+      {stations.length > 0 && (
+        <TouchableOpacity
+          style={styles.viewModeFAB}
+          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setViewMode(viewMode === 'list' ? 'map' : 'list'); }}
+          activeOpacity={0.85}
+          accessibilityLabel={viewMode === 'list' ? 'Switch to map view' : 'Switch to list view'}
+        >
+          <Text style={styles.viewModeFABText}>{viewMode === 'list' ? t('viewMap') : t('viewList')}</Text>
+        </TouchableOpacity>
       )}
 
     </View>
@@ -786,24 +803,26 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   sortGroup: { flexDirection: 'row', gap: 5, flex: 1 },
-  // List / Map view toggle
-  viewToggle: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
-    overflow: 'hidden',
+  // View Mode FAB (replaces inline toggle to prevent DE label overflow)
+  viewModeFAB: {
+    position: 'absolute',
+    bottom: 24,
+    left: '50%' as any,
+    marginLeft: -65,
+    width: 130,
+    height: 44,
+    backgroundColor: 'rgba(99,102,241,0.92)',
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#6366F1',
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 12,
+    zIndex: 999,
   },
-  viewToggleBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  viewToggleBtnActive: {
-    backgroundColor: 'rgba(99,102,241,0.18)',
-  },
-  viewToggleBtnText:       { color: '#6B7280', fontSize: 12, fontWeight: '600' },
-  viewToggleBtnTextActive: { color: '#A5B4FC', fontWeight: '700' },
+  viewModeFABText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   sortBtn: {
     paddingHorizontal: 9,
     paddingVertical: 5,

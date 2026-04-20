@@ -106,6 +106,22 @@ const translations = {
     // Tab navigation
     tabDecide:         'Entscheiden',
     tabStations:       'Tankstellen',
+    // Alert dialogs (Settings)
+    alertInvalidValue:    'Ungültiger Wert',
+    alertConsumptionRange:'3–25 L/100km',
+    alertCapacityRange:   '20–120 L',
+    alertRangeInputRange: '50–2000 km',
+    alertResetTankTitle:  'Tank zurücksetzen?',
+    alertResetTankBody:   'Tank als voll markieren?',
+    alertCancel:          'Abbrechen',
+    alertYesRefueled:     'Ja, getankt',
+    alertFullResetTitle:  '⚠️ Alles zurücksetzen',
+    alertFullResetBody:   'Alle Daten löschen und zur Einrichtung zurückkehren?',
+    alertResetEverything: 'Alles löschen',
+    // Settings inputs
+    rangePlaceholder:  'z.B. 600',
+    optionalLabel:     '(optional)',
+    applyBtn:          '✓',
   },
   en: {
     language:          'Language',
@@ -201,6 +217,22 @@ const translations = {
     // Tab navigation
     tabDecide:         'Decide',
     tabStations:       'Stations',
+    // Alert dialogs (Settings)
+    alertInvalidValue:    'Invalid value',
+    alertConsumptionRange:'3–25 L/100km',
+    alertCapacityRange:   '20–120 L',
+    alertRangeInputRange: '50–2000 km',
+    alertResetTankTitle:  'Reset tank?',
+    alertResetTankBody:   'Mark tank as full?',
+    alertCancel:          'Cancel',
+    alertYesRefueled:     'Yes, refueled',
+    alertFullResetTitle:  '⚠️ Full Reset',
+    alertFullResetBody:   'Clear ALL data and return to setup screen?',
+    alertResetEverything: 'Reset everything',
+    // Settings inputs
+    rangePlaceholder:  'e.g. 600',
+    optionalLabel:     '(optional)',
+    applyBtn:          '✓',
   },
 } as const;
 

@@ -347,9 +347,38 @@ export const useUserStore = create<UserState>()(
       },
 
       adjustLevelManually: (newPercent) => {
-        const { smartTank } = get();
-        if (!smartTank) return;
-        set({ smartTank: applyManualLevelCorrection(smartTank, newPercent) });
+        const { smartTank, commonAreas } = get();
+        if (smartTank) {
+          // Normal path — SmartTank exists, apply correction directly
+          set({ smartTank: applyManualLevelCorrection(smartTank, newPercent) });
+          console.log(`[UserStore] Manual level correction: ${Math.round(newPercent)}%`);
+        } else {
+          // Fix: previously silently dropped the update when smartTank was null,
+          // causing the slider to bounce back to the legacy shadowTank estimate (~45%).
+          const home = commonAreas[0];
+          const work = commonAreas[1];
+          if (home) {
+            // Auto-init SmartTank from the user's saved area data
+            const fresh = createDefaultSmartTank(home, work, Math.round(newPercent));
+            set({ smartTank: fresh });
+            console.log(`[UserStore] SmartTank auto-initialized at ${Math.round(newPercent)}% via manual adjust`);
+          } else {
+            // No commonAreas at all (e.g. fully skipped onboarding):
+            // Pin shadowTank by resetting the decay timer so the level doesn't drift back.
+            set((state) => ({
+              shadowTank: {
+                ...state.shadowTank,
+                kmAtLastRefuel: Math.round(
+                  (newPercent / 100)
+                  * (state.shadowTank.tankCapacityL / state.shadowTank.avgConsumptionPer100km)
+                  * 100
+                ),
+                lastRefuelTimeMs: Date.now(),
+              },
+            }));
+            console.log(`[UserStore] No SmartTank & no commonAreas — shadowTank pinned at ~${Math.round(newPercent)}%`);
+          }
+        }
       },
 
       setLastPrompted: () => {

@@ -89,6 +89,12 @@ export default function SettingsScreen() {
     smartTank?.totalRangeKm != null ? smartTank.totalRangeKm.toString() : ''
   );
 
+  // Dirty state: true when user has typed a new value that hasn't been saved yet.
+  // Drives the inline '✓' confirm button highlight.
+  const [consumptionDirty, setConsumptionDirty] = useState(false);
+  const [capacityDirty,    setCapacityDirty]    = useState(false);
+  const [rangeDirty,       setRangeDirty]       = useState(false);
+
   // Translated options — re-computed on each render (language reactive via store subscription)
   const REFUELING_STYLE_OPTIONS = [
     { value: 'nearEmpty'  as RefuelingStyle, label: t('whenNearlyEmpty') },
@@ -143,41 +149,45 @@ export default function SettingsScreen() {
 
   function saveConsumption() {
     const val = parseFloat(consumptionInput);
-    if (isNaN(val) || val < 3 || val > 25) { Alert.alert('Invalid value', '3–25 L/100km'); return; }
+    if (isNaN(val) || val < 3 || val > 25) { Alert.alert(t('alertInvalidValue'), t('alertConsumptionRange')); return; }
     setAvgConsumption(val);
+    setConsumptionDirty(false);
     showSaved('consumption');
   }
 
   function saveCapacity() {
     const val = parseFloat(capacityInput);
-    if (isNaN(val) || val < 20 || val > 120) { Alert.alert('Invalid value', '20–120 L'); return; }
+    if (isNaN(val) || val < 20 || val > 120) { Alert.alert(t('alertInvalidValue'), t('alertCapacityRange')); return; }
     setTankCapacity(val);
+    setCapacityDirty(false);
     showSaved('capacity');
   }
 
   function saveRange() {
     if (rangeInput.trim() === '' || rangeInput.trim() === '0') {
       setTotalRangeKm(null);
+      setRangeDirty(false);
       showSaved('range');
       return;
     }
     const val = parseFloat(rangeInput);
-    if (isNaN(val) || val < 50 || val > 2000) { Alert.alert('Invalid value', '50–2000 km'); return; }
+    if (isNaN(val) || val < 50 || val > 2000) { Alert.alert(t('alertInvalidValue'), t('alertRangeInputRange')); return; }
     setTotalRangeKm(val);
+    setRangeDirty(false);
     showSaved('range');
   }
 
   function handleRefueled() {
-    Alert.alert('Reset tank?', 'Mark tank as full?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Yes, refueled', onPress: () => { recordRefuel(); showSaved('refuel'); }},
+    Alert.alert(t('alertResetTankTitle'), t('alertResetTankBody'), [
+      { text: t('alertCancel'), style: 'cancel' },
+      { text: t('alertYesRefueled'), onPress: () => { recordRefuel(); showSaved('refuel'); }},
     ]);
   }
 
   function confirmFullReset() {
-    Alert.alert('⚠️ Full Reset', 'Clear ALL data and return to setup screen?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Reset everything', style: 'destructive', onPress: () => {
+    Alert.alert(t('alertFullResetTitle'), t('alertFullResetBody'), [
+      { text: t('alertCancel'), style: 'cancel' },
+      { text: t('alertResetEverything'), style: 'destructive', onPress: () => {
         fullReset(); router.replace('/onboarding');
       }},
     ]);
@@ -262,7 +272,7 @@ export default function SettingsScreen() {
           <TextInput
             style={styles.input}
             value={consumptionInput}
-            onChangeText={setConsumptionInput}
+            onChangeText={(v) => { setConsumptionInput(v); setConsumptionDirty(true); }}
             keyboardType="decimal-pad"
             returnKeyType="done"
             onEndEditing={saveConsumption}
@@ -270,6 +280,15 @@ export default function SettingsScreen() {
             placeholderTextColor="#4B5563"
             accessibilityLabel="Average consumption L per 100km"
           />
+          {consumptionDirty && (
+            <TouchableOpacity
+              style={styles.applyBtn}
+              onPress={saveConsumption}
+              accessibilityLabel="Save consumption value"
+            >
+              <Text style={styles.applyBtnText}>{t('applyBtn')}</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Tank Capacity */}
@@ -281,7 +300,7 @@ export default function SettingsScreen() {
           <TextInput
             style={styles.input}
             value={capacityInput}
-            onChangeText={setCapacityInput}
+            onChangeText={(v) => { setCapacityInput(v); setCapacityDirty(true); }}
             keyboardType="decimal-pad"
             returnKeyType="done"
             onEndEditing={saveCapacity}
@@ -289,14 +308,23 @@ export default function SettingsScreen() {
             placeholderTextColor="#4B5563"
             accessibilityLabel="Tank capacity in litres"
           />
+          {capacityDirty && (
+            <TouchableOpacity
+              style={styles.applyBtn}
+              onPress={saveCapacity}
+              accessibilityLabel="Save tank capacity value"
+            >
+              <Text style={styles.applyBtnText}>{t('applyBtn')}</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Range on full tank */}
         <View style={styles.settingRow}>
           <View style={styles.settingLabelRow}>
             <Text style={styles.settingLabel}>
-              {t('fullTankRange')}{'  '}<Text style={{ color: '#4B5563' }}>— optional</Text>
-            </Text>
+            {t('fullTankRange')}{'  '}<Text style={{ color: '#4B5563' }}>{t('optionalLabel')}</Text>
+          </Text>
             {savedField === 'range' && <Text style={styles.savedHint}>{t('saved')}</Text>}
           </View>
           <Text style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>
@@ -305,15 +333,24 @@ export default function SettingsScreen() {
           <TextInput
             style={styles.input}
             value={rangeInput}
-            onChangeText={setRangeInput}
+            onChangeText={(v) => { setRangeInput(v); setRangeDirty(true); }}
             keyboardType="numeric"
-            placeholder="e.g. 600"
+            placeholder={t('rangePlaceholder')}
             placeholderTextColor="#4B5563"
             returnKeyType="done"
             onEndEditing={saveRange}
             onSubmitEditing={saveRange}
             accessibilityLabel="Full tank range km"
           />
+          {rangeDirty && (
+            <TouchableOpacity
+              style={styles.applyBtn}
+              onPress={saveRange}
+              accessibilityLabel="Save range value"
+            >
+              <Text style={styles.applyBtnText}>{t('applyBtn')}</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Refuel reset button */}
@@ -378,6 +415,10 @@ const styles = StyleSheet.create({
   settingLabel:    { color: '#9CA3AF', fontSize: 13 },
   savedHint:       { color: '#22C55E', fontSize: 11, fontWeight: '700' },
   input:           { backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', color: '#F9FAFB', paddingHorizontal: 14, paddingVertical: 10, fontSize: 15 },
+
+  // Inline apply button: appears beside numeric inputs when the field is dirty (value changed)
+  applyBtn:        { marginTop: 6, alignSelf: 'flex-end', backgroundColor: 'rgba(99,102,241,0.2)', borderRadius: 8, borderWidth: 1, borderColor: '#6366F1', paddingHorizontal: 18, paddingVertical: 8 },
+  applyBtnText:    { color: '#A5B4FC', fontWeight: '700', fontSize: 14 },
 
   refuelBtn:     { backgroundColor: 'rgba(34,197,94,0.1)', borderRadius: 12, paddingVertical: 13, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(34,197,94,0.3)', marginTop: 4 },
   refuelBtnText: { color: '#22C55E', fontWeight: '700', fontSize: 14 },
