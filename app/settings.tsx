@@ -186,6 +186,13 @@ export default function SettingsScreen() {
     }
     const val = parseFloat(rangeInput);
     if (isNaN(val) || val < 50 || val > 2000) { Alert.alert(t('alertInvalidValue'), t('alertRangeInputRange')); return; }
+
+    // Bootstrap SmartTank if needed before committing range
+    if (!smartTank && homeArea) {
+      initSmartTank(homeArea, workArea ?? undefined);
+      console.log('[Settings] SmartTank bootstrapped from saveRange.');
+    }
+
     setTotalRangeKm(val);
     setRangeDirty(false);
     showSaved('range');
@@ -268,6 +275,21 @@ export default function SettingsScreen() {
   // Prevents silent data loss — same validation logic as the manual ✓ button.
   useFocusEffect(useCallback(() => {
     return () => {
+      // 1. Auto-save areas
+      if (areaDirty) {
+        const areas: CommonArea[] = [];
+        if (homeArea) areas.push(homeArea);
+        if (workArea) areas.push(workArea);
+        setCommonAreas(areas);
+        setAreaDirty(false);
+        console.log('[Settings] Auto-saved Gebiete on blur');
+        if (!smartTank && homeArea) {
+          initSmartTank(homeArea, workArea ?? undefined);
+          console.log('[Settings] SmartTank bootstrapped on blur.');
+        }
+      }
+
+      // 2. Auto-save numeric fields
       if (consumptionDirty) {
         const val = parseFloat(consumptionInput);
         if (!isNaN(val) && val >= 3 && val <= 25) {
@@ -289,6 +311,8 @@ export default function SettingsScreen() {
         } else {
           const val = parseFloat(trimmed);
           if (!isNaN(val) && val >= 50 && val <= 2000) {
+            // Bootstrap here as well just in case they only touched range
+            if (!smartTank && homeArea) initSmartTank(homeArea, workArea ?? undefined);
             setTotalRangeKm(val); setRangeDirty(false);
             console.log('[Settings] Auto-saved range on blur:', val);
           }
@@ -296,7 +320,7 @@ export default function SettingsScreen() {
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [consumptionDirty, consumptionInput, capacityDirty, capacityInput, rangeDirty, rangeInput]));
+  }, [areaDirty, homeArea, workArea, consumptionDirty, consumptionInput, capacityDirty, capacityInput, rangeDirty, rangeInput]));
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
