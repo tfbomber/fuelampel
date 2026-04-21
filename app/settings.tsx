@@ -82,11 +82,12 @@ export default function SettingsScreen() {
     language,
     setFuelType, setCommonAreas, setRefuelingStyle, setCarType, setLastRefuelAmount,
     setLanguage,
-    recordRefuel, setAvgConsumption, setTankCapacity, setTotalRangeKm,
+    recordRefuel, recordSmartRefuel, setAvgConsumption, setTankCapacity, setTotalRangeKm,
     fullReset, initSmartTank,
   } = useUserStore();
 
   const recomputeDecision = useFuelStore(s => s.recomputeDecision);
+  const switchFuelType    = useFuelStore(s => s.switchFuelType);
 
   const [consumptionInput, setConsumptionInput] = useState(shadowTank.avgConsumptionPer100km.toString());
   const [capacityInput,    setCapacityInput]    = useState(shadowTank.tankCapacityL.toString());
@@ -255,10 +256,24 @@ export default function SettingsScreen() {
     }
   }
 
+  function handleRefuelingStyleChange(style: RefuelingStyle) {
+    setRefuelingStyle(style);
+    recomputeDecision();
+    console.log('[Settings] RefuelingStyle changed →', style, '— decision recomputed.');
+  }
+
   function handleRefueled() {
     Alert.alert(t('alertResetTankTitle'), t('alertResetTankBody'), [
       { text: t('alertCancel'), style: 'cancel' },
-      { text: t('alertYesRefueled'), onPress: () => { recordRefuel(); showSaved('refuel'); }},
+      { text: t('alertYesRefueled'), onPress: () => {
+        if (smartTank) {
+          recordSmartRefuel(0, 'user_tap');
+          console.log('[Settings] SmartTank refuel recorded → level reset to ~100%');
+        }
+        recordRefuel();
+        recomputeDecision();
+        showSaved('refuel');
+      }},
     ]);
   }
 
@@ -369,7 +384,11 @@ export default function SettingsScreen() {
       <Section title={t('fuelType')}>
         <View style={styles.tabRow}>
           {FUEL_TYPES.map(ft => (
-            <TouchableOpacity key={ft} style={[styles.tab, fuelType === ft && styles.tabActive]} onPress={() => setFuelType(ft)}>
+            <TouchableOpacity key={ft} style={[styles.tab, fuelType === ft && styles.tabActive]} onPress={() => {
+              setFuelType(ft);
+              switchFuelType(ft);
+              recomputeDecision();
+            }}>
               <Text style={[styles.tabText, fuelType === ft && styles.tabTextA]}>{formatFuelType(ft)}</Text>
             </TouchableOpacity>
           ))}
@@ -398,7 +417,7 @@ export default function SettingsScreen() {
 
       {/* Refueling Style */}
       <Section title={t('refuelingStyle')}>
-        <OptionRow<RefuelingStyle> options={REFUELING_STYLE_OPTIONS} value={refuelingStyle} onSelect={setRefuelingStyle} />
+        <OptionRow<RefuelingStyle> options={REFUELING_STYLE_OPTIONS} value={refuelingStyle} onSelect={handleRefuelingStyleChange} />
       </Section>
 
       {/* Car Type */}
