@@ -26,7 +26,7 @@ export function TankConfirmModal({ visible, estimatedPercent, onConfirm, onAdjus
         <Pressable style={styles.card} onPress={e => e.stopPropagation()}>
           <View style={styles.content}>
             <Text style={styles.emoji}>🚘</Text>
-            <Text style={styles.title}>{titleText}</Text>
+            <Text style={styles.title} adjustsFontSizeToFit numberOfLines={2} minimumFontScale={0.75}>{titleText}</Text>
             <Text style={styles.subtitle}>{t('tankConfirmSubtitle')}</Text>
           </View>
           

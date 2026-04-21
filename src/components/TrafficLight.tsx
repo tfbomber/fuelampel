@@ -128,7 +128,12 @@ export function TrafficLight({ recommendation, size = 160 }: Props) {
       ]}
     >
       <Text style={[styles.emoji, { fontSize: size * 0.3 }]}>{cfg.emoji}</Text>
-      <Text style={[styles.label, { color: cfg.textColor, fontSize: size * 0.22 }]}>
+      <Text
+        style={[styles.label, { color: cfg.textColor, fontSize: size * 0.22 }]}
+        adjustsFontSizeToFit
+        numberOfLines={1}
+        minimumFontScale={0.5}
+      >
         {label}
       </Text>
     </Animated.View>
@@ -150,6 +155,11 @@ const styles = StyleSheet.create({
   },
   label: {
     fontWeight: '800',
-    letterSpacing: 3,
+    letterSpacing: 1,
+    // paddingHorizontal constrains the text width so adjustsFontSizeToFit
+    // has a stable reference boundary inside the circle.
+    paddingHorizontal: 16,
+    alignSelf: 'stretch',
+    textAlign: 'center',
   },
 });

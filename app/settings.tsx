@@ -13,6 +13,7 @@ import {
   TextInput, Alert, Pressable,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Stack } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useUserStore } from '../src/store/userStore';
 import { formatFuelType } from '../src/utils/formatters';
@@ -95,6 +96,10 @@ export default function SettingsScreen() {
   const [consumptionDirty, setConsumptionDirty] = useState(false);
   const [capacityDirty,    setCapacityDirty]    = useState(false);
   const [rangeDirty,       setRangeDirty]       = useState(false);
+  // Global save button state — true whenever any numeric field is dirty
+  const [globalDirty,      setGlobalDirty]      = useState(false);
+  const [globalSaved,      setGlobalSaved]      = useState(false);
+  const globalSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Translated options — re-computed on each render (language reactive via store subscription)
   const REFUELING_STYLE_OPTIONS = [
@@ -178,6 +183,42 @@ export default function SettingsScreen() {
     showSaved('range');
   }
 
+  // Global save: commits all outstanding dirty numeric fields in one gesture.
+  // Called by the fixed header button — always visible, never scrolls away.
+  function handleGlobalSave() {
+    let hasError = false;
+    if (consumptionDirty) {
+      const val = parseFloat(consumptionInput);
+      if (isNaN(val) || val < 3 || val > 25) {
+        Alert.alert(t('alertInvalidValue'), t('alertConsumptionRange')); hasError = true;
+      } else { setAvgConsumption(val); setConsumptionDirty(false); }
+    }
+    if (capacityDirty) {
+      const val = parseFloat(capacityInput);
+      if (isNaN(val) || val < 20 || val > 120) {
+        Alert.alert(t('alertInvalidValue'), t('alertCapacityRange')); hasError = true;
+      } else { setTankCapacity(val); setCapacityDirty(false); }
+    }
+    if (rangeDirty) {
+      const trimmed = rangeInput.trim();
+      if (trimmed === '' || trimmed === '0') {
+        setTotalRangeKm(null); setRangeDirty(false);
+      } else {
+        const val = parseFloat(trimmed);
+        if (isNaN(val) || val < 50 || val > 2000) {
+          Alert.alert(t('alertInvalidValue'), t('alertRangeInputRange')); hasError = true;
+        } else { setTotalRangeKm(val); setRangeDirty(false); }
+      }
+    }
+    if (!hasError) {
+      setGlobalDirty(false);
+      if (globalSavedTimerRef.current) clearTimeout(globalSavedTimerRef.current);
+      setGlobalSaved(true);
+      globalSavedTimerRef.current = setTimeout(() => setGlobalSaved(false), 2000);
+      console.log('[Settings] Global save committed.');
+    }
+  }
+
   function handleRefueled() {
     Alert.alert(t('alertResetTankTitle'), t('alertResetTankBody'), [
       { text: t('alertCancel'), style: 'cancel' },
@@ -230,6 +271,25 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+
+      {/* Fixed header Save button — same level as 'Einstellungen' title, never scrolls away */}
+      <Stack.Screen
+        options={{
+          headerRight: () => (
+            <TouchableOpacity
+              onPress={handleGlobalSave}
+              disabled={!globalDirty}
+              style={{ paddingHorizontal: 4, paddingVertical: 4 }}
+              accessibilityLabel="Alle Änderungen speichern"
+            >
+              <Text style={[styles.headerSaveBtn, !globalDirty && styles.headerSaveBtnDisabled]}>
+                {globalSaved ? '✓' : 'Speichern'}
+              </Text>
+            </TouchableOpacity>
+          ),
+        }}
+      />
+
       <View style={styles.pageNote}>
         <Text style={styles.pageNoteText}>{t('settingsAutosaveHint')}</Text>
       </View>
@@ -310,7 +370,7 @@ export default function SettingsScreen() {
           <TextInput
             style={styles.input}
             value={consumptionInput}
-            onChangeText={(v) => { setConsumptionInput(v); setConsumptionDirty(true); }}
+            onChangeText={(v) => { setConsumptionInput(v); setConsumptionDirty(true); setGlobalDirty(true); }}
             keyboardType="decimal-pad"
             returnKeyType="done"
             onEndEditing={saveConsumption}
@@ -338,7 +398,7 @@ export default function SettingsScreen() {
           <TextInput
             style={styles.input}
             value={capacityInput}
-            onChangeText={(v) => { setCapacityInput(v); setCapacityDirty(true); }}
+            onChangeText={(v) => { setCapacityInput(v); setCapacityDirty(true); setGlobalDirty(true); }}
             keyboardType="decimal-pad"
             returnKeyType="done"
             onEndEditing={saveCapacity}
@@ -371,7 +431,7 @@ export default function SettingsScreen() {
           <TextInput
             style={styles.input}
             value={rangeInput}
-            onChangeText={(v) => { setRangeInput(v); setRangeDirty(true); }}
+            onChangeText={(v) => { setRangeInput(v); setRangeDirty(true); setGlobalDirty(true); }}
             keyboardType="numeric"
             placeholder={t('rangePlaceholder')}
             placeholderTextColor="#4B5563"
@@ -425,6 +485,10 @@ export default function SettingsScreen() {
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
+  // Header save button
+  headerSaveBtn:        { color: '#6366F1', fontSize: 16, fontWeight: '700' },
+  headerSaveBtnDisabled:{ color: '#4B5563' },
+
   screen:   { flex: 1, backgroundColor: '#0D0F14' },
   content:  { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 60, gap: 24 },
   pageNote: { backgroundColor: 'rgba(99,102,241,0.08)', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(99,102,241,0.18)', paddingHorizontal: 14, paddingVertical: 12 },

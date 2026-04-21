@@ -19,7 +19,7 @@ export function StationCard({ station, saving }: Props) {
     <View style={styles.card}>
       <View style={styles.header}>
         <View style={styles.brandBadge}>
-          <Text style={styles.brandText}>{station.brand || 'Station'}</Text>
+          <Text style={styles.brandText} numberOfLines={1} ellipsizeMode="tail">{station.brand || 'Station'}</Text>
         </View>
         <View style={styles.priceBlock}>
           <Text style={styles.price}>{formatPrice(station.price)}</Text>
@@ -66,6 +66,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 4,
+    flexShrink: 1,
+    maxWidth: '60%',
   },
   brandText: {
     color: '#A5B4FC',
