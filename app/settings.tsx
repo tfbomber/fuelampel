@@ -83,8 +83,10 @@ export default function SettingsScreen() {
     setFuelType, setCommonAreas, setRefuelingStyle, setCarType, setLastRefuelAmount,
     setLanguage,
     recordRefuel, setAvgConsumption, setTankCapacity, setTotalRangeKm,
-    fullReset,
+    fullReset, initSmartTank,
   } = useUserStore();
+
+  const recomputeDecision = useFuelStore(s => s.recomputeDecision);
 
   const [consumptionInput, setConsumptionInput] = useState(shadowTank.avgConsumptionPer100km.toString());
   const [capacityInput,    setCapacityInput]    = useState(shadowTank.tankCapacityL.toString());
@@ -134,22 +136,27 @@ export default function SettingsScreen() {
   // Local resolved areas (mirrors store, updated on pick)
   const [homeArea, setHomeArea] = useState<CommonArea | null>(commonAreas[0] ?? null);
   const [workArea, setWorkArea] = useState<CommonArea | null>(commonAreas[1] ?? null);
+  const [areaDirty, setAreaDirty] = useState(false);
 
   function updateHome(area: CommonArea) {
     setHomeArea(area);
-    setCommonAreas(workArea ? [area, workArea] : [area]);
+    setAreaDirty(true);
+    setGlobalDirty(true);
   }
   function clearHome() {
     setHomeArea(null);
-    setCommonAreas(workArea ? [workArea] : []);
+    setAreaDirty(true);
+    setGlobalDirty(true);
   }
   function updateWork(area: CommonArea) {
     setWorkArea(area);
-    if (homeArea) setCommonAreas([homeArea, area]);
+    setAreaDirty(true);
+    setGlobalDirty(true);
   }
   function clearWork() {
     setWorkArea(null);
-    if (homeArea) setCommonAreas([homeArea]);
+    setAreaDirty(true);
+    setGlobalDirty(true);
   }
 
   // ── Auto-save helpers: validate → save silently → show inline ✓ ──────────
@@ -184,10 +191,28 @@ export default function SettingsScreen() {
     showSaved('range');
   }
 
-  // Global save: commits all outstanding dirty numeric fields in one gesture.
-  // Called by the fixed header button — always visible, never scrolls away.
+  // Global save: commits all outstanding dirty fields in one gesture.
+  // Called by the fixed header button. Always visible, never scrolls away.
   function handleGlobalSave() {
     let hasError = false;
+
+    // ── 1. Save Gebiete first (must run before Reichweite so SmartTank exists) ──
+    if (areaDirty) {
+      const areas: CommonArea[] = [];
+      if (homeArea) areas.push(homeArea);
+      if (workArea) areas.push(workArea);
+      setCommonAreas(areas);
+      setAreaDirty(false);
+      console.log('[Settings] Gebiete saved:', areas.map(a => a.displayName).join(', '));
+      // Bootstrap SmartTank for skip-onboarding users.
+      // Zustand set() is synchronous, so subsequent setTotalRangeKm sees new smartTank.
+      if (!smartTank && homeArea) {
+        initSmartTank(homeArea, workArea ?? undefined);
+        console.log('[Settings] SmartTank bootstrapped from Settings Gebiete save.');
+      }
+    }
+
+    // ── 2. Save numeric fields ──────────────────────────────────────────────
     if (consumptionDirty) {
       const val = parseFloat(consumptionInput);
       if (isNaN(val) || val < 3 || val > 25) {
@@ -211,12 +236,15 @@ export default function SettingsScreen() {
         } else { setTotalRangeKm(val); setRangeDirty(false); }
       }
     }
+
+    // ── 3. Commit + refresh Home decision engine ────────────────────────────
     if (!hasError) {
       setGlobalDirty(false);
       if (globalSavedTimerRef.current) clearTimeout(globalSavedTimerRef.current);
       setGlobalSaved(true);
       globalSavedTimerRef.current = setTimeout(() => setGlobalSaved(false), 2000);
-      console.log('[Settings] Global save committed.');
+      recomputeDecision();
+      console.log('[Settings] Global save committed. Decision recomputed.');
     }
   }
 
