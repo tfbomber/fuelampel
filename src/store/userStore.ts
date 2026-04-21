@@ -271,7 +271,12 @@ export const useUserStore = create<UserState>()(
       setAvgConsumption: (l100km) => {
         const updated = updateConsumption(get().shadowTank, l100km);
         console.log(`[UserStore] Avg consumption → ${updated.avgConsumptionPer100km} L/100km`);
-        set({ shadowTank: updated });
+        set((state) => ({
+          shadowTank: updated,
+          smartTank: state.smartTank
+            ? { ...state.smartTank, consumptionPer100km: l100km }
+            : state.smartTank,
+        }));
       },
 
       setTankCapacity: (litres) => {

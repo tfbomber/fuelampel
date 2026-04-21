@@ -16,6 +16,7 @@ import { useRouter } from 'expo-router';
 import { Stack } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useUserStore } from '../src/store/userStore';
+import { useFuelStore } from '../src/store/fuelStore';
 import { formatFuelType } from '../src/utils/formatters';
 import {
   FuelType, RefuelingStyle, CarType, LastRefuelAmount, CommonArea,
