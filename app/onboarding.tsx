@@ -18,6 +18,7 @@ import { useFuelStore } from '../src/store/fuelStore';
 import {
   FuelType, RefuelingStyle, CarType, LastRefuelAmount, CommonArea,
 } from '../src/utils/types';
+import { t } from '../src/utils/i18n';
 import { LiveAddressInput } from '../src/components/LiveAddressInput';
 import { FuelSlider } from '../src/components/FuelSlider';
 
@@ -29,25 +30,38 @@ const FUEL_TYPES: { value: FuelType; label: string }[] = [
   { value: 'diesel', label: 'Diesel' },
 ];
 
-const REFUELING_STYLES: { value: RefuelingStyle; label: string; desc: string }[] = [
-  { value: 'nearEmpty',  label: 'When nearly empty', desc: 'I wait until the tank is low' },
-  { value: 'cheapest',   label: 'Best price always', desc: 'I actively look for the cheapest' },
-];
+function getRefuelingStyles(): { value: RefuelingStyle; label: string; desc: string }[] {
+  return [
+    { value: 'nearEmpty', label: t('whenNearlyEmpty'), desc: t('refuelStyleNearEmptyDesc') },
+    { value: 'cheapest', label: t('bestPriceAlways'), desc: t('refuelStyleCheapestDesc') },
+  ];
+}
 
-const CAR_TYPES: { value: CarType; label: string }[] = [
-  { value: 'small',   label: 'Small car  (< 45 L)' },
-  { value: 'regular', label: 'Family car  (45–65 L)' },
-  { value: 'large',   label: 'Large car / SUV  (65 L+)' },
-  { value: 'unknown', label: 'Not sure' },
-];
+function getCarTypes(): { value: CarType; label: string }[] {
+  return [
+    { value: 'small', label: t('carSmall') },
+    { value: 'regular', label: t('carFamily') },
+    { value: 'large', label: t('carLarge') },
+    { value: 'unknown', label: t('carUnknown') },
+  ];
+}
 
-const AMOUNTS: { value: LastRefuelAmount; label: string }[] = [
-  { value: '<40',     label: '< 40 €' },
-  { value: '40-60',   label: '40 – 60 €' },
-  { value: '60-80',   label: '60 – 80 €' },
-  { value: '80+',     label: '80 € +' },
-  { value: 'unknown', label: "Don't remember" },
-];
+function getAmounts(): { value: LastRefuelAmount; label: string }[] {
+  return [
+    { value: '<40', label: t('below40') },
+    { value: '40-60', label: t('from40to60') },
+    { value: '60-80', label: t('from60to80') },
+    { value: '80+', label: t('above80') },
+    { value: 'unknown', label: t('dontRemember') },
+  ];
+}
+
+function getTankLevelLabel(pct: number): string {
+  if (pct >= 75) return t('tankLevelMostlyFull');
+  if (pct >= 40) return t('tankLevelHalf');
+  if (pct >= 15) return t('tankLevelLow');
+  return t('tankLevelNearlyEmpty');
+}
 
 // ── Progress dots ─────────────────────────────────────────────────────────────
 
@@ -101,6 +115,7 @@ const pill = StyleSheet.create({
 function SmartTankInitScreen({ onDone }: { onDone: (pct: number) => void }) {
   const [pct,     setPct]     = useState(50);
   const [carType, setCarType] = useState<CarType | null>(null);
+  const carTypes = getCarTypes();
 
   return (
     <View style={s.screen}>
@@ -110,24 +125,16 @@ function SmartTankInitScreen({ onDone }: { onDone: (pct: number) => void }) {
       >
         {/* Header */}
         <Text style={s.emoji}>🛢️</Text>
-        <Text style={s.title}>Quick Setup</Text>
-        <Text style={s.subtitle}>
-          We've added a smart tank estimation.{'\n'}
-          Just two quick questions — takes 20 seconds.
-        </Text>
+        <Text style={s.title}>{t('smartTankQuickTitle')}</Text>
+        <Text style={s.subtitle}>{t('smartTankQuickSubtitle')}</Text>
 
         {/* Tank level slider */}
         <View style={{ gap: 12, marginTop: 8 }}>
-          <Text style={s.sectionLabel}>⛽ How full is your tank right now?</Text>
+          <Text style={s.sectionLabel}>⛽ {t('onboardingTankTitle')}</Text>
 
           <View style={levelS.box}>
             <Text style={levelS.pct}>{pct}%</Text>
-            <Text style={levelS.label}>
-              {pct >= 75 ? '🟢 Mostly full'
-                : pct >= 40 ? '🟡 Half-tank'
-                : pct >= 15 ? '🟠 Getting low'
-                : '🔴 Nearly empty'}
-            </Text>
+            <Text style={levelS.label}>{getTankLevelLabel(pct)}</Text>
           </View>
 
           <FuelSlider
@@ -137,13 +144,13 @@ function SmartTankInitScreen({ onDone }: { onDone: (pct: number) => void }) {
             onValueChange={setPct}
             onSlidingComplete={setPct}
           />
-          <Text style={levelS.hint}>0% = leer  •  50% = halb  •  100% = voll</Text>
+          <Text style={levelS.hint}>{t('tankLevelScaleHint')}</Text>
         </View>
 
         {/* Car type (reused for capacity estimate) */}
         <View style={{ gap: 10, marginTop: 8 }}>
-          <Text style={s.sectionLabel}>🚗 Vehicle type (for tank size estimate)</Text>
-          {CAR_TYPES.map(c => (
+          <Text style={s.sectionLabel}>🚗 {t('smartTankVehicleTypeHint')}</Text>
+          {carTypes.map(c => (
             <Pill
               key={c.value}
               selected={carType === c.value}
@@ -159,10 +166,10 @@ function SmartTankInitScreen({ onDone }: { onDone: (pct: number) => void }) {
           onPress={() => onDone(pct)}
           activeOpacity={0.8}
         >
-          <Text style={s.nextBtnText}>Done — Let's go ✓</Text>
+          <Text style={s.nextBtnText}>{t('smartTankDone')}</Text>
         </TouchableOpacity>
         <Text style={[s.hint, { marginTop: 8 }]}>
-          You can edit everything in Settings anytime.
+          {t('smartTankEditLater')}
         </Text>
       </ScrollView>
     </View>
@@ -177,7 +184,11 @@ export default function OnboardingScreen() {
 
   const router = useRouter();
   const { mode } = useLocalSearchParams<{ mode?: string }>();
+  const _lang = useUserStore(s => s.language);
   const { completeOnboarding, adjustLevelManually, initSmartTank, commonAreas } = useUserStore();
+  const refuelingStyles = getRefuelingStyles();
+  const carTypes = getCarTypes();
+  const amounts = getAmounts();
 
   // ── SmartTank-only init mode (existing users after update) ────────────
   if (mode === 'smartTankInit') {
@@ -282,17 +293,17 @@ export default function OnboardingScreen() {
           <ProgressDots step={step} />
           {step > 0 && (
             <TouchableOpacity onPress={() => setStep(s => s - 1)} style={s.backBtn}>
-              <Text style={s.backText}>← Back</Text>
+              <Text style={s.backText}>{t('onboardingBack')}</Text>
             </TouchableOpacity>
           )}
           {(step === 3) && (
             <TouchableOpacity onPress={commit} style={s.skipBtn}>
-              <Text style={s.skipText}>Skip</Text>
+              <Text style={s.skipText}>{t('onboardingSkip')}</Text>
             </TouchableOpacity>
           )}
           {(step === 1 || step === 2) && (
             <TouchableOpacity onPress={handleSkipAll} style={s.skipBtn}>
-              <Text style={s.skipText}>Skip</Text>
+              <Text style={s.skipText}>{t('onboardingSkip')}</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -301,8 +312,8 @@ export default function OnboardingScreen() {
         {step === 0 && (
           <View style={s.stepWrap}>
             <Text style={s.emoji}>⛽</Text>
-            <Text style={s.title}>Your default fuel type?</Text>
-            <Text style={s.subtitle}>Used as default when searching stations</Text>
+            <Text style={s.title}>{t('onboardingFuelTitle')}</Text>
+            <Text style={s.subtitle}>{t('onboardingFuelSubtitle')}</Text>
             <View style={s.options}>
               {FUEL_TYPES.map(t => (
                 <Pill key={t.value} selected={fuelType === t.value} label={t.label} onPress={() => setFuelType(t.value)} />
@@ -315,13 +326,13 @@ export default function OnboardingScreen() {
         {step === 1 && (
           <View style={s.stepWrap}>
             <Text style={s.emoji}>📍</Text>
-            <Text style={s.title}>Where do you usually refuel?</Text>
-            <Text style={s.subtitle}>Start typing — results appear automatically.{'\n'}We'll find stations near those areas.</Text>
+            <Text style={s.title}>{t('onboardingAreaTitle')}</Text>
+            <Text style={s.subtitle}>{t('onboardingAreaSubtitle')}</Text>
             <View style={[s.options, { zIndex: 20 }]}>
               <LiveAddressInput
-                label="Home area"
+                label={t('homeArea')}
                 icon="🏠"
-                placeholder="e.g. 80331 or München Zentrum"
+                placeholder={t('addrPlaceholder')}
                 selectedArea={homeArea}
                 onSelect={setHomeArea}
                 onClear={() => setHomeArea(null)}
@@ -329,9 +340,9 @@ export default function OnboardingScreen() {
             </View>
             <View style={s.options}>
               <LiveAddressInput
-                label="Work area  (optional)"
+                label={t('workArea')}
                 icon="🏢"
-                placeholder="e.g. 10115 or Berlin Mitte"
+                placeholder={t('addrPlaceholder')}
                 selectedArea={workArea}
                 onSelect={setWorkArea}
                 onClear={() => setWorkArea(null)}
@@ -344,10 +355,10 @@ export default function OnboardingScreen() {
         {step === 2 && (
           <View style={s.stepWrap}>
             <Text style={s.emoji}>🔁</Text>
-            <Text style={s.title}>Your refueling habit?</Text>
-            <Text style={s.subtitle}>Helps us decide when to recommend filling up</Text>
+            <Text style={s.title}>{t('onboardingHabitTitle')}</Text>
+            <Text style={s.subtitle}>{t('onboardingHabitSubtitle')}</Text>
             <View style={s.options}>
-              {REFUELING_STYLES.map(r => (
+              {refuelingStyles.map(r => (
                 <Pill key={r.value} selected={refStyle === r.value} label={r.label} desc={r.desc} onPress={() => setRefStyle(r.value)} />
               ))}
             </View>
@@ -358,36 +369,36 @@ export default function OnboardingScreen() {
         {step === 3 && (
           <View style={s.stepWrap}>
             <Text style={s.emoji}>✨</Text>
-            <Text style={s.title}>Help us optimise faster</Text>
-            <Text style={s.subtitle}>Both optional — skip anytime,{'\n'}editable later in Settings</Text>
+            <Text style={s.title}>{t('onboardingOptionalTitle')}</Text>
+            <Text style={s.subtitle}>{t('onboardingOptionalSubtitle')}</Text>
 
-            <Text style={s.sectionLabel}>🚗 Vehicle type</Text>
+            <Text style={s.sectionLabel}>🚗 {t('vehicleType')}</Text>
             <View style={s.options}>
-              {CAR_TYPES.map(c => (
+              {carTypes.map(c => (
                 <Pill key={c.value} selected={carType === c.value} label={c.label} onPress={() => setCarType(c.value === carType ? null : c.value)} />
               ))}
             </View>
 
-            <Text style={[s.sectionLabel, { marginTop: 8 }]}>💰 Cost to fill up  (estimate)</Text>
+            <Text style={[s.sectionLabel, { marginTop: 8 }]}>💰 {t('fullTankCost')}</Text>
             <View style={s.options}>
-              {AMOUNTS.map(a => (
+              {amounts.map(a => (
                 <Pill key={a.value} selected={refAmount === a.value} label={a.label} onPress={() => setRefAmount(a.value === refAmount ? null : a.value)} />
               ))}
             </View>
 
             {/* Optional: full-tank range */}
-            <Text style={[s.sectionLabel, { marginTop: 8 }]}>🛣️ Range on full tank  (optional)</Text>
-            <Text style={s.hint}>How many km can you drive on a full tank? Enables km display.</Text>
+            <Text style={[s.sectionLabel, { marginTop: 8 }]}>🛣️ {t('fullTankRange')} {t('optionalLabel')}</Text>
+            <Text style={s.hint}>{t('onboardingRangeHint')}</Text>
             <View style={rangeS.inputRow}>
               <TextInput
                 style={rangeS.input}
                 value={totalRangeKm}
                 onChangeText={setTotalRangeKm}
-                placeholder="e.g. 600"
+                placeholder={t('rangePlaceholder')}
                 placeholderTextColor="#4B5563"
                 keyboardType="numeric"
                 returnKeyType="done"
-                accessibilityLabel="Full tank range km"
+                accessibilityLabel={t('fullTankRange')}
               />
               <Text style={rangeS.unit}>km</Text>
             </View>
@@ -398,21 +409,13 @@ export default function OnboardingScreen() {
         {step === 4 && (
           <View style={s.stepWrap}>
             <Text style={s.emoji}>🛢️</Text>
-            <Text style={s.title}>How full is your tank right now?</Text>
-            <Text style={s.subtitle}>
-              We'll start with the right estimate –{'\n'}
-              you can adjust this anytime.
-            </Text>
+            <Text style={s.title}>{t('onboardingTankTitle')}</Text>
+            <Text style={s.subtitle}>{t('onboardingTankSubtitle')}</Text>
 
             {/* Big % label */}
             <View style={levelS.box}>
               <Text style={levelS.pct}>{tankPct}%</Text>
-              <Text style={levelS.label}>
-                {tankPct >= 75 ? '🟢 Mostly full'
-                  : tankPct >= 40 ? '🟡 Half-tank'
-                  : tankPct >= 15 ? '🟠 Getting low'
-                  : '🔴 Nearly empty'}
-              </Text>
+              <Text style={levelS.label}>{getTankLevelLabel(tankPct)}</Text>
             </View>
 
             {/* Combined visual bar + slider — one element via FuelSlider */}
@@ -426,7 +429,7 @@ export default function OnboardingScreen() {
               onSlidingComplete={setTankPct}
             />
 
-            <Text style={levelS.hint}>0% = leer • 50% = halb • 100% = voll</Text>
+            <Text style={levelS.hint}>{t('tankLevelScaleHint')}</Text>
           </View>
         )}
 
@@ -438,14 +441,12 @@ export default function OnboardingScreen() {
           activeOpacity={0.8}
         >
           <Text style={s.nextBtnText}>
-            {step < 4 ? 'Weiter →' : 'Start — FuelAmpel ✓'}
+            {step < 4 ? t('onboardingNext') : t('onboardingStart')}
           </Text>
         </TouchableOpacity>
 
         {step === 1 && !homeArea && (
-          <Text style={s.hint}>
-            Start typing to search automatically.{' '}Can't connect? Tap <Text style={{ color: '#9CA3AF', fontWeight: '600' }}>Skip</Text> to set up later.
-          </Text>
+          <Text style={s.hint}>{t('onboardingSearchHint')}</Text>
         )}
 
       </ScrollView>

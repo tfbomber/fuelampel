@@ -20,6 +20,7 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { useEffect, useState } from 'react';
 import { useUserStore } from '../src/store/userStore';
+import { t } from '../src/utils/i18n';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -93,6 +94,7 @@ function OnboardingGate() {
 }
 
 export default function RootLayout() {
+  const _lang = useUserStore(s => s.language);
   // Silently takes location snapshots (foreground only, 3h gap-gated)
   useLocationSnapshot();
   // Pre-schedules 16:00 daily check notification whenever SmartTank changes
@@ -128,7 +130,7 @@ export default function RootLayout() {
         <Stack.Screen
           name="settings"
           options={{
-            title: 'Settings',
+            title: t('settingsTitle'),
             presentation: 'card',
           }}
         />

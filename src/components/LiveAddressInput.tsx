@@ -21,6 +21,7 @@ import {
 } from 'react-native';
 import { searchAddressWithFallback, AddressSuggestion } from '../utils/geocoding';
 import { CommonArea } from '../utils/types';
+import { t } from '../utils/i18n';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -166,7 +167,7 @@ export function LiveAddressInput({
             <TouchableOpacity
               onPress={handleClear}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              accessibilityLabel="Clear input"
+              accessibilityLabel={t('clearInputA11y')}
             >
               <Text style={livStyles.clear}>✕</Text>
             </TouchableOpacity>

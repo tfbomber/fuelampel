@@ -7,6 +7,7 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Station } from '../utils/types';
 import { formatPrice, formatDistance, formatRelativeTime } from '../utils/formatters';
+import { t } from '../utils/i18n';
 
 interface Props {
   station: Station;
@@ -38,7 +39,7 @@ export function StationCard({ station, saving }: Props) {
         <Text style={styles.metaItem}>🕐 {formatRelativeTime(station.fetchedAt)}</Text>
         <Text style={styles.metaDot}>·</Text>
         <Text style={[styles.metaItem, { color: station.isOpen ? '#22C55E' : '#EF4444' }]}>
-          {station.isOpen ? 'Open' : 'Closed'}
+          {station.isOpen ? t('open') : t('closed')}
         </Text>
       </View>
     </View>

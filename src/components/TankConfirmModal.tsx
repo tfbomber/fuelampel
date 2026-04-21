@@ -22,7 +22,7 @@ export function TankConfirmModal({ visible, estimatedPercent, onConfirm, onAdjus
       animationType="fade"
       onRequestClose={onClose}
     >
-      <Pressable style={styles.overlay} onPress={onClose} accessibilityLabel="Close confirm modal">
+      <Pressable style={styles.overlay} onPress={onClose} accessibilityLabel={t('closeConfirmModalA11y')}>
         <Pressable style={styles.card} onPress={e => e.stopPropagation()}>
           <View style={styles.content}>
             <Text style={styles.emoji}>🚘</Text>

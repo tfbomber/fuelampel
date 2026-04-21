@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native';
 import { Recommendation } from '../utils/types';
+import { t } from '../utils/i18n';
 
 interface Props {
   recommendation: Recommendation;
@@ -23,7 +24,6 @@ interface Props {
 
 const CONFIG: Record<Recommendation, {
   emoji: string;
-  label: string;
   color: string;
   glow: string;
   bg: string;
@@ -31,7 +31,6 @@ const CONFIG: Record<Recommendation, {
 }> = {
   Go: {
     emoji: '⛽',
-    label: 'GO',
     color: '#22C55E',
     glow: 'rgba(34, 197, 94, 0.4)',
     bg: 'rgba(34, 197, 94, 0.12)',
@@ -39,7 +38,6 @@ const CONFIG: Record<Recommendation, {
   },
   Wait: {
     emoji: '⏳',
-    label: 'WAIT',
     color: '#F59E0B',
     glow: 'rgba(245, 158, 11, 0.4)',
     bg: 'rgba(245, 158, 11, 0.12)',
@@ -47,7 +45,6 @@ const CONFIG: Record<Recommendation, {
   },
   Skip: {
     emoji: '💤',
-    label: 'SKIP',
     color: '#6B7280',
     glow: 'rgba(107, 114, 128, 0.3)',
     bg: 'rgba(107, 114, 128, 0.08)',
@@ -60,6 +57,10 @@ export function TrafficLight({ recommendation, size = 160 }: Props) {
   // during the fade-out phase so the OLD content fades rather than the new.
   const [displayRec, setDisplayRec] = useState<Recommendation>(recommendation);
   const cfg = CONFIG[displayRec];
+  const label =
+    displayRec === 'Go' ? t('trafficGo') :
+    displayRec === 'Wait' ? t('trafficWait') :
+    t('trafficSkip');
 
   const isMounted = useRef(false);
   const fadeAnim  = useRef(new Animated.Value(1)).current; // start visible
@@ -128,7 +129,7 @@ export function TrafficLight({ recommendation, size = 160 }: Props) {
     >
       <Text style={[styles.emoji, { fontSize: size * 0.3 }]}>{cfg.emoji}</Text>
       <Text style={[styles.label, { color: cfg.textColor, fontSize: size * 0.22 }]}>
-        {cfg.label}
+        {label}
       </Text>
     </Animated.View>
   );

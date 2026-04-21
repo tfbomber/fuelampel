@@ -230,16 +230,19 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      <View style={styles.pageNote}>
+        <Text style={styles.pageNoteText}>{t('settingsAutosaveHint')}</Text>
+      </View>
 
       {/* Language / Sprache */}
-      <Section title="Sprache / Language">
+      <Section title={t('language')}>
         <View style={styles.tabRow}>
           {LANGUAGE_OPTIONS.map(o => (
             <TouchableOpacity
               key={o.value}
               style={[styles.tab, language === o.value && styles.tabActive]}
               onPress={() => setLanguage(o.value)}
-              accessibilityLabel={`Switch language to ${o.label}`}
+              accessibilityLabel={`${t('language')}: ${o.label}`}
             >
               <Text style={[styles.tabText, language === o.value && styles.tabTextA]}>
                 {o.label}
@@ -313,13 +316,13 @@ export default function SettingsScreen() {
             onEndEditing={saveConsumption}
             onSubmitEditing={saveConsumption}
             placeholderTextColor="#4B5563"
-            accessibilityLabel="Average consumption L per 100km"
+            accessibilityLabel={t('avgConsumption')}
           />
           {consumptionDirty && (
             <TouchableOpacity
               style={styles.applyBtn}
               onPress={saveConsumption}
-              accessibilityLabel="Save consumption value"
+              accessibilityLabel={t('saveConsumptionA11y')}
             >
               <Text style={styles.applyBtnText}>{t('applyBtn')}</Text>
             </TouchableOpacity>
@@ -341,13 +344,13 @@ export default function SettingsScreen() {
             onEndEditing={saveCapacity}
             onSubmitEditing={saveCapacity}
             placeholderTextColor="#4B5563"
-            accessibilityLabel="Tank capacity in litres"
+            accessibilityLabel={t('tankCapacity')}
           />
           {capacityDirty && (
             <TouchableOpacity
               style={styles.applyBtn}
               onPress={saveCapacity}
-              accessibilityLabel="Save tank capacity value"
+              accessibilityLabel={t('saveTankCapacityA11y')}
             >
               <Text style={styles.applyBtnText}>{t('applyBtn')}</Text>
             </TouchableOpacity>
@@ -375,13 +378,13 @@ export default function SettingsScreen() {
             returnKeyType="done"
             onEndEditing={saveRange}
             onSubmitEditing={saveRange}
-            accessibilityLabel="Full tank range km"
+            accessibilityLabel={t('fullTankRange')}
           />
           {rangeDirty && (
             <TouchableOpacity
               style={styles.applyBtn}
               onPress={saveRange}
-              accessibilityLabel="Save range value"
+              accessibilityLabel={t('saveRangeA11y')}
             >
               <Text style={styles.applyBtnText}>{t('applyBtn')}</Text>
             </TouchableOpacity>
@@ -392,6 +395,7 @@ export default function SettingsScreen() {
         <Pressable
           style={({ pressed }) => [styles.refuelBtn, pressed && { opacity: 0.7 }]}
           onPress={handleRefueled}
+          accessibilityLabel={t('markRefueledA11y')}
         >
           <Text style={styles.refuelBtnText}>
             {savedField === 'refuel' ? t('tankReset') : t('refuelReset')}
@@ -402,18 +406,13 @@ export default function SettingsScreen() {
 
       {/* About */}
       <Section title={t('about')}>
-        <Text style={styles.aboutText}>
-          FuelAmpel uses the Tankerkönig API (CC BY 4.0).{'\n'}
-          Fuel price data: © MTS-K / Bundeskartellamt.{'\n\n'}
-          Shadow Tank estimates range via time-based consumption.
-          No GPS tracking is stored.
-        </Text>
-        <Text style={styles.creditText}>Data: tankerkoenig.de</Text>
+        <Text style={styles.aboutText}>{t('aboutBody')}</Text>
+        <Text style={styles.creditText}>{t('aboutCredit')}</Text>
       </Section>
 
       {/* ── DANGER ZONE — Full Reset always at bottom ── */}
       <Section title={t('dangerZone')}>
-        <TouchableOpacity style={[styles.resetBtn, styles.resetBtnDanger]} onPress={confirmFullReset}>
+        <TouchableOpacity style={[styles.resetBtn, styles.resetBtnDanger]} onPress={confirmFullReset} accessibilityLabel={t('fullReset')}>
           <Text style={[styles.resetBtnText, styles.resetBtnTextDanger]}>{t('fullReset')}</Text>
           <Text style={styles.resetBtnDesc}>{t('fullResetDesc')}</Text>
         </TouchableOpacity>
@@ -428,10 +427,12 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   screen:   { flex: 1, backgroundColor: '#0D0F14' },
   content:  { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 60, gap: 24 },
+  pageNote: { backgroundColor: 'rgba(99,102,241,0.08)', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(99,102,241,0.18)', paddingHorizontal: 14, paddingVertical: 12 },
+  pageNoteText: { color: '#A5B4FC', fontSize: 12, lineHeight: 18 },
 
   section:      { gap: 10 },
   sectionTitle: { color: '#6B7280', fontSize: 11, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase' },
-  sectionBody:  { backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', padding: 16, gap: 14 },
+  sectionBody:  { backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', padding: 16, gap: 14 },
 
   tabRow:      { flexDirection: 'row', gap: 8 },
   tab:         { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
@@ -448,7 +449,7 @@ const styles = StyleSheet.create({
   settingRow:      { gap: 6 },
   settingLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   settingLabel:    { color: '#9CA3AF', fontSize: 13 },
-  savedHint:       { color: '#22C55E', fontSize: 11, fontWeight: '700' },
+  savedHint:       { color: '#4ADE80', fontSize: 11, fontWeight: '700', backgroundColor: 'rgba(34,197,94,0.12)', borderWidth: 1, borderColor: 'rgba(34,197,94,0.24)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
   input:           { backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', color: '#F9FAFB', paddingHorizontal: 14, paddingVertical: 10, fontSize: 15 },
 
   // Inline apply button: appears beside numeric inputs when the field is dirty (value changed)

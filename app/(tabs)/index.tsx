@@ -39,7 +39,7 @@ function TankGaugeSlider({
     <View style={tgs.container}>
       <View style={tgs.labelRow}>
         <Text style={tgs.left}>
-          {isEstimated ? '〜 Tank' : '⛽ Tank'}{fuelTypeLabel ? `  ·  ${fuelTypeLabel}` : ''}
+          {isEstimated ? t('tankLabelEst') : t('tankLabel')}{fuelTypeLabel ? `  ·  ${fuelTypeLabel}` : ''}
         </Text>
         <Text style={[tgs.right, { color }]}>{rightLabel}</Text>
       </View>
@@ -205,6 +205,10 @@ export default function HomeScreen() {
     : null;
 
   const onRefresh = useCallback(async () => { await refresh(); }, [refresh]);
+  const showEstimateBanner = !pendingPattern
+    && refuelBanner === 'timeout'
+    && mode === 'normal'
+    && Date.now() > suppressBannerUntilRef.current;
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
 
@@ -332,18 +336,15 @@ export default function HomeScreen() {
       )}
 
 
-      {/* ── Pattern Confirm Banner ── */}
-      {pendingPattern && (
+      {/* ── Priority Banner Stack ── */}
+      {pendingPattern ? (
         <PatternConfirmBanner
           pattern={pendingPattern}
           onConfirm={() => confirmTripPattern(pendingPattern.dayOfWeek, true)}
           onReject={()  => confirmTripPattern(pendingPattern.dayOfWeek, false)}
           onDismiss={() => confirmTripPattern(pendingPattern.dayOfWeek, false)}
         />
-      )}
-
-      {/* ── Permission Denied Banner ── */}
-      {permissionDenied && (
+      ) : permissionDenied ? (
         <View style={styles.refuelBanner}>
           <Text style={styles.refuelBannerText}>
             {t('locationDenied')}
@@ -355,26 +356,19 @@ export default function HomeScreen() {
             <Text style={styles.refuelBannerBtnText}>{t('systemSettings')}</Text>
           </TouchableOpacity>
         </View>
-      )}
-
-      {/* ── SmartTank Not Configured Banner ── */}
-      {!isSmartActive && (
+      ) : !isSmartActive ? (
         <TouchableOpacity
           style={styles.setupBanner}
           onPress={() => router.push('/settings')}
           activeOpacity={0.8}
-          accessibilityLabel="Set up SmartTank"
+          accessibilityLabel={t('setupSmartTankA11y')}
         >
           <Text style={styles.setupBannerText}>
             {t('setupSmartTank')}
           </Text>
           <Text style={styles.setupBannerCta}>{t('setupCta')}</Text>
         </TouchableOpacity>
-      )}
-
-      {/* ── Refuel Confirm Banner — only 'timeout' type shown */}
-      {!pendingPattern && refuelBanner === 'timeout' && mode === 'normal'
-        && Date.now() > suppressBannerUntilRef.current && (
+      ) : showEstimateBanner ? (
         <View style={styles.refuelBanner}>
           <Text style={styles.refuelBannerText}>
             {t('estimateOutdated')}
@@ -386,7 +380,7 @@ export default function HomeScreen() {
             <Text style={styles.refuelBannerBtnText}>{t('yesReset')}</Text>
           </TouchableOpacity>
         </View>
-      )}
+      ) : null}
 
       {/* ── Tank area — fixed height, dual-opacity overlay ─────────────── */}
       <Animated.View style={[
@@ -443,13 +437,17 @@ export default function HomeScreen() {
             <Pressable
               onPress={handleUndo}
               style={({ pressed }) => pressed ? { opacity: 0.65 } : undefined}
-              accessibilityLabel="Undo refuel"
+              accessibilityLabel={t('undoRefuelA11y')}
             >
               <Text style={styles.undoFloatingText}>{t('undoLabel')}</Text>
             </Pressable>
           </Animated.View>
         </View>
       </Animated.View>
+
+      <Text style={styles.tankHint}>
+        {mode === 'adjusting' ? t('tankAdjustingHint') : t('tankAdjustHint')}
+      </Text>
 
       {/* ── Traffic Light ── */}
       <View style={styles.lightContainer}>
@@ -463,7 +461,7 @@ export default function HomeScreen() {
             <TouchableOpacity
               onPress={() => router.push({ pathname: '/stations', params: { highlightId: decision.station?.id ?? '' } })}
               activeOpacity={0.82}
-              accessibilityLabel="GO — tap to see nearby stations"
+              accessibilityLabel={t('goStationsA11y')}
             >
               <TrafficLight recommendation={decision.recommendation} size={164} />
               <Text style={styles.goHint}>{t('viewStations')}</Text>
@@ -512,7 +510,7 @@ export default function HomeScreen() {
             ]}
             onPress={handleGetankt}
             disabled={fuelPct >= 100 || mode !== 'normal'}
-            accessibilityLabel="Mark as refueled"
+            accessibilityLabel={t('markRefueledA11y')}
           >
             <Text style={[
               styles.refuelBtnText, 
@@ -568,6 +566,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 4,
     opacity: 0.7,
+  },
+  tankHint: {
+    color: '#6B7280',
+    fontSize: 12,
+    textAlign: 'center',
+    marginHorizontal: 24,
+    marginTop: -4,
   },
   stationSection: { gap: 8 },
   sectionLabel: {

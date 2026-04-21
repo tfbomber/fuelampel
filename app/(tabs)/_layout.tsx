@@ -27,7 +27,7 @@ function SettingsBtn() {
       onPress={() => router.push('/settings')}
       style={styles.settingsHeaderBtn}
       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-      accessibilityLabel="Open settings"
+      accessibilityLabel={t('openSettingsA11y')}
     >
       <Text style={styles.settingsHeaderIcon}>⚙️</Text>
     </TouchableOpacity>

@@ -284,6 +284,11 @@ export default function StationsScreen() {
     else fetchViaGPS(localFuelType);
   }, [isLoading, refresh, homeLocation, localFuelType]);
 
+  function handleToggleViewMode() {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setViewMode(viewMode === 'list' ? 'map' : 'list');
+  }
+
   // ── Fuel type switch — zero network (re-picks from cached raw prices) ────
   function handleFuelTypeChange(newType: FuelType) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -370,55 +375,11 @@ export default function StationsScreen() {
           <TouchableOpacity
             onPress={() => setShowValueInfo(true)}
             hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-            accessibilityLabel="Value ranking explanation"
+            accessibilityLabel={t('valueRankingInfoA11y')}
           >
             <Text style={styles.summaryInfoIcon}>ⓘ</Text>
           </TouchableOpacity>
         )}
-
-      {/* ── View Mode FAB: float bottom-center, switches List ↔ Map ─────── */}
-      {/* Only shown when stations are loaded so the user has something to toggle between */}
-      {stations.length > 0 && (
-        <TouchableOpacity
-          style={styles.viewModeFAB}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            setViewMode(viewMode === 'list' ? 'map' : 'list');
-          }}
-          activeOpacity={0.85}
-          accessibilityLabel={viewMode === 'list' ? 'Switch to map view' : 'Switch to list view'}
-        >
-          <Text style={styles.viewModeFABText}>
-            {viewMode === 'list' ? t('viewMap') : t('viewList')}
-          </Text>
-        </TouchableOpacity>
-      )}
-
-      {/* ── View Mode FAB (Auto-Hide with Animated.View) ──────────────────── */}
-      {/* Only shown when stations are loaded so the user has something to toggle between */}
-      {stations.length > 0 && (
-        <Animated.View style={[
-          styles.viewModeFABContainer,
-          { 
-            transform: [{ translateY: fabTranslateY }],
-            opacity: fabOpacity,
-          }
-        ]} pointerEvents={isMapCardOpen ? 'none' : 'box-none'}>
-          <TouchableOpacity
-            style={styles.viewModeFAB}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              setViewMode(viewMode === 'list' ? 'map' : 'list');
-            }}
-            activeOpacity={0.85}
-            accessibilityLabel={viewMode === 'list' ? 'Switch to map view' : 'Switch to list view'}
-          >
-            <Text style={styles.viewModeFABText}>
-              {viewMode === 'list' ? t('viewMap') : t('viewList')}
-            </Text>
-          </TouchableOpacity>
-        </Animated.View>
-      )}
 
     </View>
   );
@@ -471,7 +432,7 @@ export default function StationsScreen() {
             // onBlur: 500ms delay — ensures tap on a suggestion item fires before the
             // dropdown is hidden. 200ms was insufficient on slower Android devices.
             onBlur={() => setTimeout(() => setLocResults([]), 500)}
-            accessibilityLabel="Location or postal code search"
+            accessibilityLabel={t('searchLocationA11y')}
           />
           {/* Clear button */}
           {locQuery.length > 0 && !locLoading && (
@@ -488,7 +449,7 @@ export default function StationsScreen() {
           style={styles.searchBtn}
           onPress={locQuery.trim() ? () => startLocSearch(locQuery.trim()) : () => fetchViaGPS()}
           disabled={locLoading}
-          accessibilityLabel={locQuery.trim() ? 'Search location' : 'Use GPS location'}
+          accessibilityLabel={locQuery.trim() ? t('searchLocationBtnA11y') : t('useGpsLocationA11y')}
         >
           {locLoading ? (
             <ActivityIndicator size="small" color="#A5B4FC" />
@@ -647,34 +608,34 @@ export default function StationsScreen() {
         <Pressable style={styles.infoOverlay} onPress={() => setShowValueInfo(false)}>
           {/* Stop tap from propagating through the card */}
           <Pressable style={styles.infoCard} onPress={e => e.stopPropagation()}>
-            <Text style={styles.infoTitle}>⭐ Value Ranking — How it works</Text>
+            <Text style={styles.infoTitle}>{t('valueInfoTitle')}</Text>
 
             <View style={styles.infoRow}>
               <Text style={styles.infoEmoji}>📍</Text>
               <View style={{ flex: 1 }}>
-                <Text style={styles.infoRowTitle}>Base — Nearest open station</Text>
-                <Text style={styles.infoRowDesc}>The default choice: no extra detour needed</Text>
+                <Text style={styles.infoRowTitle}>{t('valueInfoBaseTitle')}</Text>
+                <Text style={styles.infoRowDesc}>{t('valueInfoBaseDesc')}</Text>
               </View>
             </View>
 
             <View style={styles.infoRow}>
               <Text style={styles.infoEmoji}>#1</Text>
               <View style={{ flex: 1 }}>
-                <Text style={styles.infoRowTitle}>Rank #1 — Best value</Text>
-                <Text style={styles.infoRowDesc}>Saves more than Base after accounting for the extra distance cost</Text>
+                <Text style={styles.infoRowTitle}>{t('valueInfoBestTitle')}</Text>
+                <Text style={styles.infoRowDesc}>{t('valueInfoBestDesc')}</Text>
               </View>
             </View>
 
             <View style={styles.infoDivider} />
 
-            <Text style={styles.infoFormula}>Formula: (price diff × tank size) − (extra km × fuel cost)</Text>
-            <Text style={styles.infoFormula}>Positive = worth the detour  ·  Negative = just go to Base</Text>
+            <Text style={styles.infoFormula}>{t('valueInfoFormula1')}</Text>
+            <Text style={styles.infoFormula}>{t('valueInfoFormula2')}</Text>
 
             <TouchableOpacity
               style={styles.infoDismiss}
               onPress={() => setShowValueInfo(false)}
             >
-              <Text style={styles.infoDismissText}>Got it</Text>
+              <Text style={styles.infoDismissText}>{t('valueInfoGotIt')}</Text>
             </TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -704,14 +665,25 @@ export default function StationsScreen() {
 
       {/* View Mode FAB: floats bottom-center, switches List <-> Map */}
       {stations.length > 0 && (
-        <TouchableOpacity
-          style={styles.viewModeFAB}
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setViewMode(viewMode === 'list' ? 'map' : 'list'); }}
-          activeOpacity={0.85}
-          accessibilityLabel={viewMode === 'list' ? 'Switch to map view' : 'Switch to list view'}
+        <Animated.View
+          style={[
+            styles.viewModeFABContainer,
+            {
+              transform: [{ translateY: fabTranslateY }],
+              opacity: fabOpacity,
+            },
+          ]}
+          pointerEvents={isMapCardOpen ? 'none' : 'box-none'}
         >
-          <Text style={styles.viewModeFABText}>{viewMode === 'list' ? t('viewMap') : t('viewList')}</Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.viewModeFAB}
+            onPress={handleToggleViewMode}
+            activeOpacity={0.85}
+            accessibilityLabel={viewMode === 'list' ? t('switchToMapViewA11y') : t('switchToListViewA11y')}
+          >
+            <Text style={styles.viewModeFABText}>{viewMode === 'list' ? t('viewMap') : t('viewList')}</Text>
+          </TouchableOpacity>
+        </Animated.View>
       )}
 
     </View>
