@@ -1,21 +1,30 @@
 // ====================================================
-// FuelAmpel — Daily Check Scheduler (v1)
+// FuelAmpel — Daily Check Scheduler (v2 — 4-Gate)
 //
 // Schedules a local push notification for 16:00 based
 // on the PROJECTED tank level at that time.
 //
-// Called whenever SmartTankState changes:
+// v2 upgrades (Phase 8):
+//   - Integrates shouldNotify() 4-Gate model (Need/Value/Trust/Budget)
+//   - Uses buildNotificationPayload() for corridor-aware rich content
+//   - Records notification budget via onNotificationSent() callback
+//   - Fallback to v1 hardcoded strings when decision is unavailable
+//
+// Called whenever SmartTankState or DecisionResult changes:
 //   - On app open
 //   - After recordSmartRefuel
 //   - After adjustLevelManually
+//   - After fuelStore.refresh()
 //
-// No network required — uses only local SmartTank data.
+// No network required — uses only cached decision + local SmartTank data.
 // When user taps the notification → app opens → live GPS + API fetch.
 // ====================================================
 
 import * as Notifications from 'expo-notifications';
-import { SmartTankState } from '../utils/types';
+import { SmartTankState, DecisionResult } from '../utils/types';
 import { estimateLevelPercent, classifyZone } from './smartTank';
+import { shouldNotify, buildNotificationPayload } from './notificationLogic';
+import { CorridorStation } from '../utils/routeCorridor';
 
 const DAILY_NOTIF_ID = 'fuelampel-daily-16h';
 
@@ -83,16 +92,23 @@ function buildContent(
 /**
  * Schedule (or cancel) the 16:00 daily check notification.
  *
- * Logic:
+ * Logic (v2 - 4-Gate):
  *   1. Always cancel existing daily notification.
  *   2. Project tank level at next 16:00.
  *   3. Classify projected zone.
- *   4. Zone = Low or Critical → schedule notification.
- *   5. Zone = Safe or Planning → stay silent (do not schedule).
- *
- * @param smartTank  Current SmartTankState (null = onboarding not done, skip)
+ *   4. Zone = Safe or Planning → stay silent (do not schedule).
+ *   5. Zone = Low or Critical:
+ *      - If decision available: run 4-Gate check (`shouldNotify`). If blocked, stay silent.
+ *      - If decision missing (fallback): schedule v1 notification.
+ *   6. Record notification sent (if scheduled).
  */
-export async function scheduleDailyCheck(smartTank: SmartTankState | null): Promise<void> {
+export async function scheduleDailyCheck(
+  smartTank: SmartTankState | null,
+  decision?: DecisionResult | null,
+  corridorStation?: CorridorStation | null,
+  notifState?: { lastNotifiedMs: number; weekCount: number; weekStartMs: number },
+  onNotificationSent?: (isCritical: boolean) => void,
+): Promise<void> {
   // Step 1: Always cancel existing to avoid duplicates
   try {
     await Notifications.cancelScheduledNotificationAsync(DAILY_NOTIF_ID);
@@ -122,9 +138,28 @@ export async function scheduleDailyCheck(smartTank: SmartTankState | null): Prom
     return;
   }
 
-  // Step 4: Schedule the notification
-  const content = buildContent(zone, projectedLevel);
+  // Step 4: Notification Content & Gate Check
+  let content: Notifications.NotificationContentInput;
 
+  if (decision && notifState && onNotificationSent) {
+    const gate = shouldNotify(decision, notifState);
+    if (!gate.allowed) {
+      console.log(`[DailyCheck] 4-Gate blocked: ${gate.reason} — no notification scheduled`);
+      return;
+    }
+    const payload = buildNotificationPayload(decision, corridorStation, smartTank);
+    content = {
+      title: payload.title,
+      body: payload.body,
+      data: { type: 'daily_check', zone },
+      sound: zone === 'Critical',
+    };
+  } else {
+    // Fallback to v1 hardcoded strings
+    content = buildContent(zone, projectedLevel);
+  }
+
+  // Step 5: Schedule the notification
   try {
     await Notifications.scheduleNotificationAsync({
       identifier: DAILY_NOTIF_ID,
@@ -137,6 +172,10 @@ export async function scheduleDailyCheck(smartTank: SmartTankState | null): Prom
     console.log(
       `[DailyCheck] ✅ Notification scheduled for ${target.toLocaleString()} — zone=${zone}, ~${pctStr}%`
     );
+    // Record that we scheduled a notification
+    if (onNotificationSent) {
+      onNotificationSent(zone === 'Critical');
+    }
   } catch (err) {
     console.warn('[DailyCheck] ❌ Failed to schedule notification:', err);
   }

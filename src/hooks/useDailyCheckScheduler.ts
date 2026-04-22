@@ -10,17 +10,35 @@
 
 import { useEffect } from 'react';
 import { useUserStore } from '../store/userStore';
+import { useFuelStore } from '../store/fuelStore';
 import { scheduleDailyCheck } from '../core/dailyCheck';
 
 export function useDailyCheckScheduler(): void {
   const smartTank = useUserStore((s) => s.smartTank);
+  const lastNotifiedMs = useUserStore((s) => s.lastNotifiedMs);
+  const notificationWeekCount = useUserStore((s) => s.notificationWeekCount);
+  const notificationWeekStartMs = useUserStore((s) => s.notificationWeekStartMs);
+  const recordNotificationSent = useUserStore((s) => s.recordNotificationSent);
+
+  const decision = useFuelStore((s) => s.decision);
+  const corridorStation = useFuelStore((s) => s.corridorStation);
 
   useEffect(() => {
+    const notifState = {
+      lastNotifiedMs,
+      weekCount: notificationWeekCount,
+      weekStartMs: notificationWeekStartMs,
+    };
+
     // Fire async without blocking render
-    scheduleDailyCheck(smartTank).catch((err) => {
+    scheduleDailyCheck(
+      smartTank,
+      decision,
+      corridorStation,
+      notifState,
+      recordNotificationSent
+    ).catch((err) => {
       console.warn('[useDailyCheckScheduler] Unexpected error:', err);
     });
-  }, [smartTank]);
-  // Effect fires whenever smartTank reference changes (Zustand updates the ref on any state change).
-  // This covers: app open, post-refuel, post-manual-adjust, post-onboarding.
+  }, [smartTank, decision]); // deliberately omit notifState dependencies to avoid cycle
 }
