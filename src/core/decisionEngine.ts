@@ -35,6 +35,7 @@ import {
   CHEAPEST_LEVEL_CEILING_PCT,
 } from '../utils/constants';
 import { computeRefuelUrgency, classifyZone } from './smartTank';
+import { computeNetVsNearest, findNearestOpen } from '../utils/ranking';
 
 
 // ─── Step 1: Readiness Check ──────────────────────────────────────────────────
@@ -210,7 +211,14 @@ export function computeDecision(
   const sortedPrices = validStations.map((s) => s.price as number).sort((a, b) => a - b);
   const regionMedian = computeMedian(sortedPrices) ?? 0;
   const scored = scoreStations(validStations, regionMedian);
-  const best = scored[0];
+
+  // F5: Re-rank by net-€ saving (consistent with "⭐ Value" list sort in stations tab)
+  const nearestStation = findNearestOpen(validStations);
+  const bestByValue = [...scored].sort((a, b) =>
+    computeNetVsNearest(b.station, nearestStation, tankCapacityL) -
+    computeNetVsNearest(a.station, nearestStation, tankCapacityL)
+  )[0] ?? scored[0];
+  const best = bestByValue;
 
   if (!best) {
     return {
@@ -226,6 +234,15 @@ export function computeDecision(
   const { station, savingVsMedian } = best;
   const brandName = station.brand || station.name;
 
+  const priceStr    = (station.price as number).toFixed(3);          // e.g. "1.679"
+  const netSavingEur = parseFloat(
+    (computeNetVsNearest(station, nearestStation, tankCapacityL)).toFixed(2)
+  );
+  const netSavingStr = netSavingEur >= 0
+    ? `+${netSavingEur.toFixed(2)} €`
+    : `${netSavingEur.toFixed(2)} €`;
+  const tankPctStr  = `${Math.round(levelPercent)}%`;
+
   // --- Step 4: Decision logic (V1 Logic Tree) ---
   
   // Rule 1: Emergency override
@@ -234,7 +251,7 @@ export function computeDecision(
       recommendation: 'Go',
       station,
       saving_estimate: savingVsMedian,
-      reason: `🔴 Tank kritisch leer (≤15%). Jetzt tanken!`,
+      reason: `🔴 Tank kritisch leer (${tankPctStr}). Jetzt tanken bei ${brandName} — ${priceStr} €/L`,
       readiness: 'Action',
       zone: 'Critical',
       confidenceLevel,
@@ -245,7 +262,10 @@ export function computeDecision(
   const cheapThreshold = regionMedian * (1 - GOOD_DEAL_PCT_THRESHOLD);
   const isGoodDeal = (station.price as number) <= cheapThreshold;
   const currentHour = new Date().getHours();
-  const isGoodWindow = currentHour >= 16 && currentHour < 19;
+  const currentDow   = new Date().getDay(); // 0=Sun, 6=Sat
+  const isWeekday    = currentDow >= 1 && currentDow <= 5;
+  // German fuel price intraday dip: weekdays 16-19h only
+  const isGoodWindow = isWeekday && currentHour >= 16 && currentHour < 19;
 
   // ── Effective ceiling: how high can the tank be before we ignore a good deal?
   // 'nearEmpty' users only want alerts when genuinely low (30%).
@@ -260,8 +280,8 @@ export function computeDecision(
         station,
         saving_estimate: savingVsMedian,
         reason: isGoodDeal
-          ? `🟢 Guter Preis heute! Auf dem Weg tanken.`
-          : `🟡 Abendstunden (16–19 Uhr) — Kraftstoffpreise tendieren jetzt zu fallen.`,
+          ? `🟢 Guter Preis: ${priceStr} €/L — ${(savingVsMedian * 100).toFixed(1)}¢/L unter Schnitt. Vollgetankt ca. ${netSavingStr} gespart.`
+          : `🟡 Günstige Tageszeit (16–19 Uhr) — Tank bei ${tankPctStr}, jetzt ${priceStr} €/L.`,
         readiness: 'Action',
         zone: 'Low',
         confidenceLevel,
@@ -271,7 +291,7 @@ export function computeDecision(
         recommendation: 'Wait',
         station,
         saving_estimate: savingVsMedian,
-        reason: `🟡 Tank ist niedrig — Preis ist durchschnittlich. Beobachte die Lage.`,
+        reason: `🟡 Tank bei ${tankPctStr} — Preis aktuell durchschnittlich (${priceStr} €/L). Abwarten.`,
         readiness: 'Monitor',
         zone: 'Low',
         confidenceLevel,
@@ -284,7 +304,7 @@ export function computeDecision(
         recommendation: 'Skip',
         station,
         saving_estimate: savingVsMedian,
-        reason: `Tank bei ${Math.round(levelPercent)}% — guter Preis, aber noch kein Bedarf.`,
+        reason: `Tank bei ${tankPctStr} — ${priceStr} €/L ist gut, aber noch kein Bedarf.`,
         readiness: 'NotNeeded',
         zone,
         confidenceLevel,
@@ -294,7 +314,7 @@ export function computeDecision(
       recommendation: 'Go',
       station,
       saving_estimate: savingVsMedian,
-      reason: `🟢 Guter Preis heute! ${(GOOD_DEAL_PCT_THRESHOLD * 100).toFixed(0)}% unter dem regionalen Durchschnitt.`,
+      reason: `🟢 ${brandName} ${priceStr} €/L — ${(savingVsMedian * 100).toFixed(1)}¢/L günstiger als Umgebung. Vollgetankt ca. ${netSavingStr} gespart.`,
       readiness: 'Monitor',
       zone: 'Planning',
       confidenceLevel,
@@ -305,7 +325,7 @@ export function computeDecision(
       recommendation: 'Skip',
       station,
       saving_estimate: savingVsMedian,
-      reason: `Tank in Ordnung — heute keine besonderen Angebote in der Nähe.`,
+      reason: `Tank bei ${tankPctStr} — ${priceStr} €/L, keine besseren Angebote in der Nähe.`,
       readiness: 'NotNeeded',
       zone,
       confidenceLevel,
