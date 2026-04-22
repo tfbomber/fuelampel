@@ -29,6 +29,7 @@ interface Props {
   displayMode: DisplayMode;
   distanceSource: 'road' | 'estimated';
   highlighted?: boolean;      // true = scrolled-to from GO decision
+  isCorridor?: boolean;       // true = is the route corridor station
 }
 
 // ── Price colouring (vs area median) ─────────────────────────────────────────
@@ -52,7 +53,7 @@ function rankDotColors(price: number | null, median: number) {
 
 export function StationListItem({
   station, regionMedian, nearest, fillUpLitres,
-  rank, displayMode, distanceSource, highlighted = false,
+  rank, displayMode, distanceSource, highlighted = false, isCorridor = false,
 }: Props) {
   const closed = !station.isOpen;
   const price  = station.price;
@@ -106,7 +107,7 @@ export function StationListItem({
           {station.brand || station.name}
         </Text>
         <Text style={styles.subLine} numberOfLines={1}>
-          {`${distLabel}${closed ? `  ·  ${t('closed').toUpperCase()}` : ''}  ·  ${station.street}, ${station.place}`}
+          {isCorridor ? '🚗 Auf dem Weg  ·  ' : ''}{`${distLabel}${closed ? `  ·  ${t('closed').toUpperCase()}` : ''}  ·  ${station.street}, ${station.place}`}
         </Text>
       </View>
 

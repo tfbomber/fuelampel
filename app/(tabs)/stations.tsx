@@ -41,7 +41,7 @@ function median(prices: number[]): number {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function StationsScreen() {
-  const { stations, isLoading, error, refresh, switchFuelType, distanceSource } = useFuelStore();
+  const { stations, isLoading, error, refresh, switchFuelType, distanceSource, corridorStation } = useFuelStore();
   const { 
     fuelType: storedFuelType, 
     homeLocation, 
@@ -357,8 +357,9 @@ export default function StationsScreen() {
       displayMode={sortMode}
       distanceSource={distanceSource}
       highlighted={item.id === highlightedId}
+      isCorridor={corridorStation ? item.id === corridorStation.id : false}
     />
-  ), [regionMedian, nearestOpen, fillUpLitres, sortMode, distanceSource, highlightedId]);
+  ), [regionMedian, nearestOpen, fillUpLitres, sortMode, distanceSource, highlightedId, corridorStation]);
 
   // ── Summary bar (replaces stats row + column labels) ─────────────────────
   function ListHeader() {
@@ -566,6 +567,7 @@ export default function StationsScreen() {
             fuelType={localFuelType}
             nearestStation={nearestOpen}
             cheapestStation={stations.find(s => s.isOpen && s.price === cheapestPrice) ?? null}
+            corridorStation={corridorStation}
             locationLabel={locationLabel}
             onSelectionChange={setIsMapCardOpen}
           />

@@ -23,6 +23,7 @@ import type * as GeoJSON from 'geojson';
 import { Station, GeoLocation } from '../utils/types';
 import { formatFuelType } from '../utils/formatters';
 import type { FuelType } from '../utils/types';
+import { CorridorStation } from '../utils/routeCorridor';
 import { t } from '../utils/i18n';
 import { useUserStore } from '../store/userStore';
 
@@ -138,12 +139,13 @@ const markerStyles = StyleSheet.create({
 
 // ─── Bottom detail card ────────────────────────────────────────────────────────
 function StationDetailCard({
-  station, fuelType, isCheapest, isNearest, onClose, onNavigate,
+  station, fuelType, isCheapest, isNearest, isCorridor, onClose, onNavigate,
 }: {
   station: Station;
   fuelType: FuelType;
   isCheapest: boolean;
   isNearest: boolean;
+  isCorridor: boolean;
   onClose: () => void;
   onNavigate: () => void;
 }) {
@@ -176,6 +178,7 @@ function StationDetailCard({
 
   const accentColor =
     isCheapest ? '#22C55E' :
+    isCorridor ? '#F59E0B' :
     isNearest  ? '#6366F1' :
                  'rgba(255,255,255,0.09)';
 
@@ -196,6 +199,11 @@ function StationDetailCard({
         {isCheapest && (
           <View style={[cardStyles.badge, { backgroundColor: 'rgba(34,197,94,0.15)', borderColor: 'rgba(34,197,94,0.4)' }]}>
             <Text style={[cardStyles.badgeText, { color: '#4ADE80' }]}>💰 {t('cheapest')}</Text>
+          </View>
+        )}
+        {isCorridor && (
+          <View style={[cardStyles.badge, { backgroundColor: 'rgba(245,158,11,0.15)', borderColor: 'rgba(245,158,11,0.4)' }]}>
+            <Text style={[cardStyles.badgeText, { color: '#FCD34D' }]}>🚗 Auf dem Weg</Text>
           </View>
         )}
         {isNearest && (
@@ -338,6 +346,7 @@ interface StationMapViewProps {
   fuelType: FuelType;
   nearestStation: Station | null;
   cheapestStation: Station | null;
+  corridorStation?: CorridorStation | null;
   /** Label shown in map overlay (e.g. "GPS", "PLZ 40210", "Home") */
   locationLabel?: string;
   /** Callback fired when a station card is opened or closed */
@@ -345,7 +354,7 @@ interface StationMapViewProps {
 }
 
 export function StationMapView({
-  stations, currentLocation, fuelType, nearestStation, cheapestStation, locationLabel, onSelectionChange,
+  stations, currentLocation, fuelType, nearestStation, cheapestStation, corridorStation, locationLabel, onSelectionChange,
 }: StationMapViewProps) {
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const [showLocateFAB, setShowLocateFAB] = useState(false);
@@ -390,11 +399,12 @@ export function StationMapView({
         price: s.price !== null ? s.price.toFixed(3) : '',
         state: !s.isOpen              ? 'closed'
              : cheapestStation?.id === s.id ? 'cheapest'
+             : corridorStation?.id === s.id ? 'corridor'
              : nearestStation?.id  === s.id ? 'nearest'
              : 'open',
       },
     })),
-  }), [stations, cheapestStation, nearestStation]);
+  }), [stations, cheapestStation, nearestStation, corridorStation]);
 
   // selectedGeoJSON: at most 1 feature — only the selected station.
   //   Separate ShapeSource means deselecting triggers a minimal 0-feature update.
@@ -663,12 +673,14 @@ export function StationMapView({
               style={{
                 circleRadius: ['match', ['get', 'state'],
                   'cheapest', 13,
+                  'corridor', 13,
                   'nearest',  13,
                   'closed',   8,
                   10
                 ] as any,
                 circleColor: ['match', ['get', 'state'],
                   'cheapest', '#22C55E',
+                  'corridor', '#F59E0B',
                   'nearest',  '#6366F1',
                   'closed',   '#374151',
                   '#60A5FA'
@@ -745,6 +757,10 @@ export function StationMapView({
           <Text style={mapStyles.legendText}>{t('cheapest')}</Text>
         </View>
         <View style={mapStyles.legendItem}>
+          <View style={[mapStyles.legendDot, { backgroundColor: '#F59E0B', shadowColor: '#F59E0B', shadowOpacity: 0.7, shadowRadius: 4, elevation: 4 }]} />
+          <Text style={mapStyles.legendText}>Auf dem Weg</Text>
+        </View>
+        <View style={mapStyles.legendItem}>
           <View style={[mapStyles.legendDot, { backgroundColor: '#6366F1', shadowColor: '#6366F1', shadowOpacity: 0.7, shadowRadius: 4, elevation: 4 }]} />
           <Text style={mapStyles.legendText}>{t('nearest')}</Text>
         </View>
@@ -788,6 +804,7 @@ export function StationMapView({
           fuelType={fuelType}
           isCheapest={cheapestStation?.id === selectedStation.id}
           isNearest={nearestStation?.id === selectedStation.id}
+          isCorridor={corridorStation?.id === selectedStation.id}
           onClose={dismissCard}
           onNavigate={handleNavigate}
         />
