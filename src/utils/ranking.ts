@@ -22,11 +22,10 @@
 // ====================================================
 
 import { Station } from './types';
+import { VALUE_RANKING_COST_PER_KM } from './constants';
 
 // ─── Tunable constants ────────────────────────────────────────────────────────
 
-const FILL_UP_LITRES = 40;     // Assumed fill-up volume (litres)
-const COST_PER_KM   = 0.15;   // €/km fuel cost for the detour
 // Note: station.dist is already OSRM-corrected (×1.18) from fuelStore.
 // No additional road_factor needed here.
 
@@ -59,8 +58,8 @@ export function computeNetVsNearest(
   if (station.price === null) return -Infinity;
   if (nearest === null)       return 0;
 
-  const priceSaving  = (nearest.price! - station.price) * FILL_UP_LITRES;
-  const extraDetour  = (station.dist - nearest.dist) * COST_PER_KM;
+  const priceSaving  = (nearest.price! - station.price) * fillUpLitres;
+  const extraDetour  = (station.dist - nearest.dist) * VALUE_RANKING_COST_PER_KM;
 
   return parseFloat((priceSaving - extraDetour).toFixed(2));
 }
@@ -91,7 +90,7 @@ export function formatNetVsNearest(
  * Sort stations by Value score (best net saving vs nearest first).
  * Open stations always rank above closed ones in Value mode.
  */
-export function sortByValue(stations: Station[]): Station[] {
+export function sortByValue(stations: Station[], fillUpLitres = 40): Station[] {
   const nearest = findNearestOpen(stations);
 
   return [...stations].sort((a, b) => {
@@ -99,30 +98,8 @@ export function sortByValue(stations: Station[]): Station[] {
     if (a.isOpen && !b.isOpen) return -1;
     if (!a.isOpen && b.isOpen) return 1;
 
-    return computeNetVsNearest(b, nearest) - computeNetVsNearest(a, nearest);
+    return computeNetVsNearest(b, nearest, fillUpLitres) - computeNetVsNearest(a, nearest, fillUpLitres);
   });
 }
 
-// ─── Legacy export (kept for fallback) ───────────────────────────────────────
-
-/** @deprecated Use computeNetVsNearest instead */
-export function computeNetSaving(station: Station, regionMedian: number): number {
-  if (station.price === null) return -Infinity;
-  const priceSaving = (regionMedian - station.price) * FILL_UP_LITRES;
-  const detourCost  = station.dist * COST_PER_KM;
-  return parseFloat((priceSaving - detourCost).toFixed(2));
-}
-
-/** @deprecated Use formatNetVsNearest instead */
-export function formatNetSaving(netSaving: number): string {
-  if (netSaving === -Infinity) return '—';
-  const sign = netSaving >= 0 ? '+' : '';
-  return `${sign}${netSaving.toFixed(1)}€`;
-}
-
-/**
- * Estimated road distance from straight-line (legacy, kept for safety).
- */
-export function estRoadDist(straightLineKm: number): number {
-  return parseFloat((straightLineKm * 1.3).toFixed(1));
-}
+// ─── End ──────────────────────────────────────────────────────────────────────

@@ -99,3 +99,5 @@ export const URGENCY_MONITOR_DAYS  = 3.5;  // < 3.5 days → Monitor
 export const ROUTE_CORRIDOR_MAX_DETOUR_KM  = 3.0;    // max acceptable detour
 export const ROUTE_CORRIDOR_FUEL_COST_BASE = 0.08;   // €/km operating cost estimate
 
+// Unified detour cost for Value ranking (reflects ~7.5L/100km × ~1.70€/L ≈ 0.13€/km)
+export const VALUE_RANKING_COST_PER_KM     = 0.13;

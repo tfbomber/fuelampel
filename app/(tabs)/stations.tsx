@@ -320,7 +320,8 @@ export default function StationsScreen() {
     } else if (sortMode === 'distance') {
       list.sort((a, b) => a.dist - b.dist);
     } else {
-      return sortByValue(list);
+      const tankCapacityL = useUserStore.getState().smartTank?.tankCapacityL ?? 50;
+      return sortByValue(list, tankCapacityL);
     }
     return list;
   }, [stations, sortMode]);
