@@ -35,7 +35,7 @@ const LANGUAGE_OPTIONS: { value: Language; label: string; sublabel: string }[] =
   { value: 'en', label: 'English', sublabel: 'English' },
 ];
 
-const REFUELING_STYLE_VALUES: RefuelingStyle[] = ['nearEmpty', 'cheapest'];
+const REFUELING_STYLE_VALUES: RefuelingStyle[] = ['nearEmpty', 'cheapest', 'convenient'];
 const CAR_TYPE_VALUES: CarType[] = ['small', 'regular', 'large', 'unknown'];
 const AMOUNT_VALUES: LastRefuelAmount[] = ['<40', '40-60', '60-80', '80+', 'unknown'];
 
@@ -113,6 +113,7 @@ export default function SettingsScreen() {
   const REFUELING_STYLE_OPTIONS = [
     { value: 'nearEmpty'  as RefuelingStyle, label: t('whenNearlyEmpty') },
     { value: 'cheapest'   as RefuelingStyle, label: t('bestPriceAlways') },
+    { value: 'convenient' as RefuelingStyle, label: t('onRouteConvenient') },
   ];
   const CAR_TYPE_OPTIONS = [
     { value: 'small'   as CarType, label: t('carSmall') },
