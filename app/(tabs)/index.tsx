@@ -11,7 +11,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, RefreshControl, TouchableOpacity,
-  ActivityIndicator, StyleSheet, Pressable, Animated, Linking,
+  ActivityIndicator, StyleSheet, Pressable, Animated, Linking, TextInput,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -94,6 +94,7 @@ export default function HomeScreen() {
   const restoreSmartTankSnapshot = useUserStore(s => s.restoreSmartTankSnapshot);
   const confirmTripPattern  = useUserStore(s => s.confirmTripPattern);
   const commonAreas         = useUserStore(s => s.commonAreas);
+  const corridorStation     = useFuelStore(s => s.corridorStation);
   // i18n reactive dependency — re-renders this component when language changes
   const _lang = useUserStore(s => s.language); // eslint-disable-line @typescript-eslint/no-unused-vars
 
@@ -117,6 +118,7 @@ export default function HomeScreen() {
   type AppMode = 'normal' | 'animating' | 'adjusting' | 'soft_confirm';
   const [mode, setMode] = useState<AppMode>('normal');
   const [sliderValue, setSliderValue]   = useState(100);
+  const [litresInput, setLitresInput]   = useState('');
 
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** true = mode was triggered by "ich habe getankt"; false = manual long-press adjust */
@@ -220,7 +222,12 @@ export default function HomeScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); // strong, felt on all Android devices
     prevFuelPctRef.current = fuelPct;
     isRefuelModeRef.current = true;
-    recordSmartRefuel(0, 'user_tap');
+    const litresAdded = parseFloat(litresInput) || 0;
+    const cappedLitres = smartTank
+      ? Math.min(litresAdded, smartTank.tankCapacityL)
+      : litresAdded;
+    recordSmartRefuel(cappedLitres, 'user_tap');
+    setLitresInput('');
     suppressBannerUntilRef.current = Date.now() + 10_000;
     setMode('animating');
     Animated.timing(animatedPct, {
@@ -500,6 +507,17 @@ export default function HomeScreen() {
         </View>
       )}
 
+      {/* ── Corridor Banner ── */}
+      {corridorStation && corridorStation.price !== null && (
+        <View style={styles.corridorBanner}>
+          <Text style={styles.corridorBannerText}>
+            {'🚗 '}
+            <Text style={styles.corridorBannerBrand}>{corridorStation.brand}</Text>
+            {` liegt auf deinem Weg — ${corridorStation.price.toFixed(3)} €/L · ca. ${corridorStation.netSavingEur.toFixed(2)} € gespart`}
+          </Text>
+        </View>
+      )}
+
       {/* ── Bottom Actions ── */}
       <View style={[styles.actions, (mode === 'adjusting' || mode === 'soft_confirm') ? { zIndex: 20 } : undefined]}>
         <View style={styles.getanktRow}>
@@ -520,6 +538,19 @@ export default function HomeScreen() {
               {t('iRefueled')}
             </Text>
           </Pressable>
+          {mode === 'normal' && (
+            <TextInput
+              style={styles.litresInput}
+              value={litresInput}
+              onChangeText={(v: string) => setLitresInput(v.replace(/[^0-9.]/g, ''))}
+              placeholder="0 L"
+              placeholderTextColor="#4B5563"
+              keyboardType="decimal-pad"
+              maxLength={5}
+              returnKeyType="done"
+              accessibilityLabel="Litres added input"
+            />
+          )}
         </View>
       </View>
     </ScrollView>
@@ -689,5 +720,29 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     paddingRight: 4,
     alignItems: 'center',
+  },
+  corridorBanner: {
+    marginHorizontal: 16,
+    backgroundColor: 'rgba(34,197,94,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(34,197,94,0.22)',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  corridorBannerText: { color: '#86EFAC', fontSize: 13, lineHeight: 18 },
+  corridorBannerBrand: { fontWeight: '700', color: '#4ADE80' },
+  litresInput: {
+    backgroundColor: 'rgba(99,102,241,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(99,102,241,0.3)',
+    borderRadius: 24,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    color: '#A5B4FC',
+    fontSize: 14,
+    fontWeight: '600',
+    width: 72,
+    textAlign: 'center',
   },
 });
