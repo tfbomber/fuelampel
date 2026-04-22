@@ -83,7 +83,7 @@ export default function SettingsScreen() {
     setFuelType, setCommonAreas, setRefuelingStyle, setCarType, setLastRefuelAmount,
     setLanguage,
     recordRefuel, recordSmartRefuel, setAvgConsumption, setTankCapacity, setTotalRangeKm,
-    fullReset, initSmartTank,
+    fullReset,
   } = useUserStore();
 
   const recomputeDecision = useFuelStore(s => s.recomputeDecision);

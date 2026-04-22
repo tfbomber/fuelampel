@@ -185,7 +185,7 @@ export default function OnboardingScreen() {
   const router = useRouter();
   const { mode } = useLocalSearchParams<{ mode?: string }>();
   const _lang = useUserStore(s => s.language);
-  const { completeOnboarding, adjustLevelManually, initSmartTank, commonAreas } = useUserStore();
+  const { completeOnboarding, commonAreas } = useUserStore();
   const refuelingStyles = getRefuelingStyles();
   const carTypes = getCarTypes();
   const amounts = getAmounts();
