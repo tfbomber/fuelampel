@@ -83,9 +83,6 @@ function OnboardingGate() {
       if (!hasCompletedOnboarding) {
         console.log('[OnboardingGate] → /onboarding (new / reset user)');
         router.replace('/onboarding');
-      } else if (!smartTank && !hasSkippedSmartTankSetup) {
-        console.log('[OnboardingGate] → /onboarding?mode=smartTankInit (no SmartTank, not skipped)');
-        router.replace('/onboarding?mode=smartTankInit');
       }
     }, 0);
   }, [hydrated, segments]);

@@ -93,6 +93,7 @@ export default function HomeScreen() {
   const adjustLevelManually = useUserStore(s => s.adjustLevelManually);
   const restoreSmartTankSnapshot = useUserStore(s => s.restoreSmartTankSnapshot);
   const confirmTripPattern  = useUserStore(s => s.confirmTripPattern);
+  const commonAreas         = useUserStore(s => s.commonAreas);
   // i18n reactive dependency — re-renders this component when language changes
   const _lang = useUserStore(s => s.language); // eslint-disable-line @typescript-eslint/no-unused-vars
 
@@ -356,7 +357,7 @@ export default function HomeScreen() {
             <Text style={styles.refuelBannerBtnText}>{t('systemSettings')}</Text>
           </TouchableOpacity>
         </View>
-      ) : !isSmartActive ? (
+      ) : commonAreas.length === 0 ? (
         <TouchableOpacity
           style={styles.setupBanner}
           onPress={() => router.push('/settings')}
@@ -364,7 +365,7 @@ export default function HomeScreen() {
           accessibilityLabel={t('setupSmartTankA11y')}
         >
           <Text style={styles.setupBannerText}>
-            {t('setupSmartTank')}
+            {t('setupAddressHint')}
           </Text>
           <Text style={styles.setupBannerCta}>{t('setupCta')}</Text>
         </TouchableOpacity>

@@ -130,13 +130,13 @@ export function classifyZone(levelPercent: number): DecisionZone {
  * @param tankCapacityL         User's tank size (default 50 L).
  */
 export function createDefaultSmartTank(
-  home: CommonArea,
+  home?: CommonArea,
   work?: CommonArea,
   initialPct = SMART_TANK_DEFAULT_LEVEL_PCT,
   consumptionPer100km = DEFAULT_AVG_CONSUMPTION,
   tankCapacityL = DEFAULT_TANK_CAPACITY,
 ): SmartTankState {
-  const onewayKm = plzOnewayKm(home, work);
+  const onewayKm = home ? plzOnewayKm(home, work) : 0;
   // Round-trip × 5 working days / 7 days = average daily km from commute
   const commuteDailyKm = onewayKm > 0
     ? (onewayKm * 2 * SMART_TANK_DEFAULT_COMMUTE_DAYS) / 7
@@ -625,7 +625,7 @@ import { ShadowTankState } from '../utils/types';
  */
 export function migrateFromShadowTank(
   old: ShadowTankState,
-  home: CommonArea,
+  home?: CommonArea,
   work?: CommonArea,
 ): SmartTankState {
   // Estimate current level from old km-based model

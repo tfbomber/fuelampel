@@ -80,6 +80,7 @@ interface UserState {
     refuelingStyle: RefuelingStyle | null;
     carType: CarType | null;
     lastRefuelAmount: LastRefuelAmount | null;
+    initialPct?: number;
   }) => void;
 
   // Language
@@ -102,7 +103,7 @@ interface UserState {
   setTankCapacity: (litres: number) => void;
 
   // Smart Tank v2 actions
-  initSmartTank: (home: CommonArea, work?: CommonArea, initialPct?: number) => void;
+  initSmartTank: (home?: CommonArea, work?: CommonArea, initialPct?: number) => void;
   recordSmartRefuel: (litresAdded: number, confirmedBy: RefuelEvent['confirmedBy']) => void;
   applyLocationSnapshot: (distFromHomeKm: number, distFromWorkKm: number | null) => void;
   confirmTripPattern: (dayOfWeek: number, confirmed: boolean) => void;
@@ -166,10 +167,14 @@ export const useUserStore = create<UserState>()(
         const homeLocFromArea = data.commonAreas[0]?.loc ?? null;
         const home = data.commonAreas[0];
         const work = data.commonAreas[1];
+        const { shadowTank } = get();
         // Initialise SmartTank with the PLZ data collected during onboarding
-        const newSmartTank = home
-          ? createDefaultSmartTank(home, work)
-          : null;
+        const newSmartTank = createDefaultSmartTank(
+          home, work,
+          data.initialPct ?? 50,
+          shadowTank.avgConsumptionPer100km,
+          shadowTank.tankCapacityL,
+        );
         set({
           hasCompletedOnboarding: true,
           fuelType: data.fuelType,
@@ -301,7 +306,11 @@ export const useUserStore = create<UserState>()(
         // Attempt migration from legacy, else fresh start
         const newSmartTank = shadowTank.lastRefuelTimeMs > 0
           ? migrateFromShadowTank(shadowTank, home, work)
-          : createDefaultSmartTank(home, work, initialPct);
+          : createDefaultSmartTank(
+              home, work, initialPct,
+              shadowTank.avgConsumptionPer100km,
+              shadowTank.tankCapacityL,
+            );
         console.log('[UserStore] SmartTank initialised:', JSON.stringify({ levelPercent: newSmartTank.levelPercent }));
         set({ smartTank: newSmartTank });
 
@@ -429,9 +438,21 @@ export const useUserStore = create<UserState>()(
       },
 
       setTotalRangeKm: (rangeKm) => {
-        const { smartTank } = get();
-        if (!smartTank) return;
-        set({ smartTank: smartSetTotalRangeKm(smartTank, rangeKm) });
+        const state = get();
+        const existing = state.smartTank;
+        if (!existing) {
+          console.warn('[UserStore] setTotalRangeKm called with null SmartTank — auto-bootstrapping');
+          const { shadowTank, commonAreas } = state;
+          const bootstrapped = createDefaultSmartTank(
+            commonAreas[0], commonAreas[1],
+            50,
+            shadowTank.avgConsumptionPer100km,
+            shadowTank.tankCapacityL,
+          );
+          set({ smartTank: smartSetTotalRangeKm(bootstrapped, rangeKm) });
+          return;
+        }
+        set({ smartTank: smartSetTotalRangeKm(existing, rangeKm) });
       },
 
 

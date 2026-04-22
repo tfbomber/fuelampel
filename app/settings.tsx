@@ -89,8 +89,12 @@ export default function SettingsScreen() {
   const recomputeDecision = useFuelStore(s => s.recomputeDecision);
   const switchFuelType    = useFuelStore(s => s.switchFuelType);
 
-  const [consumptionInput, setConsumptionInput] = useState(shadowTank.avgConsumptionPer100km.toString());
-  const [capacityInput,    setCapacityInput]    = useState(shadowTank.tankCapacityL.toString());
+  const [consumptionInput, setConsumptionInput] = useState(
+    (smartTank?.consumptionPer100km ?? shadowTank.avgConsumptionPer100km).toString()
+  );
+  const [capacityInput,    setCapacityInput]    = useState(
+    (smartTank?.tankCapacityL ?? shadowTank.tankCapacityL).toString()
+  );
   const [rangeInput,       setRangeInput]       = useState(
     smartTank?.totalRangeKm != null ? smartTank.totalRangeKm.toString() : ''
   );
@@ -188,11 +192,7 @@ export default function SettingsScreen() {
     const val = parseFloat(rangeInput);
     if (isNaN(val) || val < 50 || val > 2000) { Alert.alert(t('alertInvalidValue'), t('alertRangeInputRange')); return; }
 
-    // Bootstrap SmartTank if needed before committing range
-    if (!smartTank && homeArea) {
-      initSmartTank(homeArea, workArea ?? undefined);
-      console.log('[Settings] SmartTank bootstrapped from saveRange.');
-    }
+    // Bootstrap SmartTank if needed before committing range (now auto-handled by setTotalRangeKm)
 
     setTotalRangeKm(val);
     setRangeDirty(false);
@@ -212,12 +212,7 @@ export default function SettingsScreen() {
       setCommonAreas(areas);
       setAreaDirty(false);
       console.log('[Settings] Gebiete saved:', areas.map(a => a.displayName).join(', '));
-      // Bootstrap SmartTank for skip-onboarding users.
-      // Zustand set() is synchronous, so subsequent setTotalRangeKm sees new smartTank.
-      if (!smartTank && homeArea) {
-        initSmartTank(homeArea, workArea ?? undefined);
-        console.log('[Settings] SmartTank bootstrapped from Settings Gebiete save.');
-      }
+      // Bootstrap SmartTank for skip-onboarding users (now handled automatically if needed)
     }
 
     // ── 2. Save numeric fields ──────────────────────────────────────────────
@@ -298,10 +293,7 @@ export default function SettingsScreen() {
         setCommonAreas(areas);
         setAreaDirty(false);
         console.log('[Settings] Auto-saved Gebiete on blur');
-        if (!useUserStore.getState().smartTank && homeArea) {
-          initSmartTank(homeArea, workArea ?? undefined);
-          console.log('[Settings] SmartTank bootstrapped on blur.');
-        }
+        // SmartTank bootstrap on blur now handled automatically if needed
       }
 
       // 2. Auto-save numeric fields
@@ -326,8 +318,7 @@ export default function SettingsScreen() {
         } else {
           const val = parseFloat(trimmed);
           if (!isNaN(val) && val >= 50 && val <= 2000) {
-            // Bootstrap here as well just in case they only touched range
-            if (!useUserStore.getState().smartTank && homeArea) initSmartTank(homeArea, workArea ?? undefined);
+            // Bootstrap here as well just in case they only touched range (now auto-handled)
             setTotalRangeKm(val); setRangeDirty(false);
             console.log('[Settings] Auto-saved range on blur:', val);
           }

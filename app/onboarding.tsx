@@ -248,8 +248,11 @@ export default function OnboardingScreen() {
     const areas: CommonArea[] = [];
     if (homeArea) areas.push(homeArea);
     if (workArea) areas.push(workArea);
-    completeOnboarding({ fuelType, commonAreas: areas, refuelingStyle: refStyle, carType, lastRefuelAmount: refAmount });
-    adjustLevelManually(tankPct);
+    completeOnboarding({
+      fuelType, commonAreas: areas,
+      refuelingStyle: refStyle, carType, lastRefuelAmount: refAmount,
+      initialPct: tankPct,
+    });
     useUserStore.getState().skipSmartTankSetup();
     // Sync decision engine immediately so Home tab shows correct state on arrival
     useFuelStore.getState().recomputeDecision();
@@ -261,9 +264,12 @@ export default function OnboardingScreen() {
     const areas: CommonArea[] = [];
     if (homeArea) areas.push(homeArea);
     if (workArea) areas.push(workArea);
-    completeOnboarding({ fuelType, commonAreas: areas, refuelingStyle: refStyle, carType, lastRefuelAmount: refAmount });
-    // Apply user-stated initial tank level
-    adjustLevelManually(tankPct);
+    completeOnboarding({
+      fuelType, commonAreas: areas,
+      refuelingStyle: refStyle, carType, lastRefuelAmount: refAmount,
+      initialPct: tankPct,
+    });
+    // Apply user-stated initial tank level (now handled in completeOnboarding)
     // Apply optional total range
     const rangeNum = parseFloat(totalRangeKm);
     if (!isNaN(rangeNum) && rangeNum >= 50) {
