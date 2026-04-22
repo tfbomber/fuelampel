@@ -11,7 +11,7 @@ import { Station, FuelType, GeoLocation, DecisionResult } from '../utils/types';
 import { fetchNearbyStations } from '../data/fuelApi';
 import { computeDecision } from '../core/decisionEngine';
 import { estimateRemainingKm } from '../core/shadowTank';
-import { computeRefuelUrgency } from '../core/smartTank';
+import { computeRefuelUrgency, computeConfidence } from '../core/smartTank';
 import { STATION_CACHE_TTL_MS } from '../utils/constants';
 import { useUserStore } from './userStore';
 import { fetchRoadMetrics } from '../utils/routingDistance';
@@ -112,7 +112,7 @@ export const useFuelStore = create<FuelStoreState>()(
       const remainingKm = estimateRemainingKm(shadowTank);
       const { smartTank, refuelingStyle } = useUserStore.getState();
       const tankCapacityL = smartTank?.tankCapacityL ?? shadowTank.tankCapacityL ?? 50;
-      const confidence   = smartTank?.confidence ?? 0.5;
+      const confidence   = smartTank ? computeConfidence(smartTank) : 0.5;
       const decision = computeDecision(stations, remainingKm, fuelType, location, smartTank, refuelingStyle, tankCapacityL, confidence);
 
 
@@ -170,7 +170,7 @@ export const useFuelStore = create<FuelStoreState>()(
     const { smartTank, fuelType, refuelingStyle, shadowTank } = useUserStore.getState();
     const tankCapacityL = smartTank?.tankCapacityL ?? shadowTank.tankCapacityL ?? 50;
     const remainingKm  = estimateRemainingKm(shadowTank);
-    const confidence   = smartTank?.confidence ?? 0.5;
+    const confidence   = smartTank ? computeConfidence(smartTank) : 0.5;
     const decision = computeDecision(
       stations, remainingKm, fuelType, undefined, smartTank, refuelingStyle, tankCapacityL, confidence
     );

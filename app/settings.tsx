@@ -298,7 +298,7 @@ export default function SettingsScreen() {
         setCommonAreas(areas);
         setAreaDirty(false);
         console.log('[Settings] Auto-saved Gebiete on blur');
-        if (!smartTank && homeArea) {
+        if (!useUserStore.getState().smartTank && homeArea) {
           initSmartTank(homeArea, workArea ?? undefined);
           console.log('[Settings] SmartTank bootstrapped on blur.');
         }
@@ -327,7 +327,7 @@ export default function SettingsScreen() {
           const val = parseFloat(trimmed);
           if (!isNaN(val) && val >= 50 && val <= 2000) {
             // Bootstrap here as well just in case they only touched range
-            if (!smartTank && homeArea) initSmartTank(homeArea, workArea ?? undefined);
+            if (!useUserStore.getState().smartTank && homeArea) initSmartTank(homeArea, workArea ?? undefined);
             setTotalRangeKm(val); setRangeDirty(false);
             console.log('[Settings] Auto-saved range on blur:', val);
           }

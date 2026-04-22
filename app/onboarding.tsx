@@ -208,7 +208,6 @@ export default function OnboardingScreen() {
           const home = store.commonAreas[0] || { plz: '00000', displayName: 'GPS Default' };
           const work = store.commonAreas[1];
           store.initSmartTank(home, work, pct);
-          store.adjustLevelManually(pct);
           // Sync decision engine so Home tab shows the correct recommendation immediately
           useFuelStore.getState().recomputeDecision();
           router.replace('/(tabs)');

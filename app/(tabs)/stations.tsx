@@ -469,17 +469,22 @@ export default function StationsScreen() {
             onPress={() => { Keyboard.dismiss(); clearLocSearch(); }}
           />
           <View style={[styles.locDropdown, { zIndex: 1 }]}>
-            {locResults.map((s, i) => (
-              <TouchableOpacity
-                key={i}
-                style={[styles.locSuggestion, i > 0 && styles.locSuggestionBorder]}
-                onPress={() => pickLocResult(s)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.locSuggestionShort} numberOfLines={1}>{s.shortName}</Text>
-                <Text style={styles.locSuggestionFull} numberOfLines={1}>{s.displayName}</Text>
-              </TouchableOpacity>
-            ))}
+            <FlatList
+              data={locResults}
+              keyExtractor={(_, i) => i.toString()}
+              keyboardShouldPersistTaps="always"
+              scrollEnabled={false}
+              renderItem={({ item, index }) => (
+                <TouchableOpacity
+                  style={[styles.locSuggestion, index > 0 && styles.locSuggestionBorder]}
+                  onPress={() => pickLocResult(item)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.locSuggestionShort} numberOfLines={1}>{item.shortName}</Text>
+                  <Text style={styles.locSuggestionFull} numberOfLines={1}>{item.displayName}</Text>
+                </TouchableOpacity>
+              )}
+            />
           </View>
         </>
       )}
