@@ -159,6 +159,8 @@ export function computeDecision(
   tankCapacityL: number = 50,
   /** 0.0–1.0 confidence in levelPercent; affects Trust Gate */
   confidence: number = 0.5,
+  /** Best on-route corridor station (from fuelStore); used by 'convenient' mode */
+  corridorStation?: { brand: string; name: string; price: number | null; netSavingEur: number } | null,
 ): DecisionResult {
 
   // --- Resolve current level % ---
@@ -317,6 +319,28 @@ export function computeDecision(
       reason: `🟢 ${brandName} ${priceStr} €/L — ${(savingVsMedian * 100).toFixed(1)}¢/L günstiger als Umgebung. Vollgetankt ca. ${netSavingStr} gespart.`,
       readiness: 'Monitor',
       zone: 'Planning',
+      confidenceLevel,
+    };
+  } else if (
+    // ── Rule 2.5: Convenient mode — prefer on-route corridor station ──
+    refuelingStyle === 'convenient' &&
+    corridorStation &&
+    corridorStation.netSavingEur > 0 &&
+    levelPercent < effectiveCeiling
+  ) {
+    const corridorPriceStr = corridorStation.price !== null
+      ? corridorStation.price.toFixed(3)
+      : '—';
+    const corridorName = corridorStation.brand || corridorStation.name;
+    return {
+      recommendation: levelPercent < 30 ? 'Go' : 'Wait',
+      station,
+      saving_estimate: savingVsMedian,
+      reason: levelPercent < 30
+        ? `🟢 ${corridorName} liegt auf deinem Weg — ${corridorPriceStr} €/L, ca. ${corridorStation.netSavingEur.toFixed(2)} € gespart.`
+        : `🟡 ${corridorName} auf dem Weg — ${corridorPriceStr} €/L. Tank bei ${tankPctStr}.`,
+      readiness: levelPercent < 30 ? 'Action' : 'Monitor',
+      zone: levelPercent < 30 ? 'Low' : 'Planning',
       confidenceLevel,
     };
   } else {

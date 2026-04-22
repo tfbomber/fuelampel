@@ -34,6 +34,7 @@ function getRefuelingStyles(): { value: RefuelingStyle; label: string; desc: str
   return [
     { value: 'nearEmpty', label: t('whenNearlyEmpty'), desc: t('refuelStyleNearEmptyDesc') },
     { value: 'cheapest', label: t('bestPriceAlways'), desc: t('refuelStyleCheapestDesc') },
+    { value: 'convenient', label: t('onRouteConvenient'), desc: t('refuelStyleConvenientDesc') },
   ];
 }
 

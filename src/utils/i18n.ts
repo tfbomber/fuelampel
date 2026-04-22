@@ -37,6 +37,8 @@ const translations = {
     // Refueling styles
     whenNearlyEmpty:   'Kurz vor leer',
     bestPriceAlways:   'Immer günstigster Preis',
+    onRouteConvenient: 'Auf dem Weg tanken',
+    refuelStyleConvenientDesc: 'Ich tanke am liebsten auf dem Arbeitsweg, wenn es passt.',
     // Car types
     carSmall:          'Klein (<45 L)',
     carFamily:         'Familie (45–65 L)',
@@ -121,6 +123,7 @@ const translations = {
     tankLevelScaleHint:'0% = leer  •  50% = halb  •  100% = voll',
     refuelStyleNearEmptyDesc: 'Ich warte, bis der Tank wirklich niedrig ist.',
     refuelStyleCheapestDesc: 'Ich halte aktiv nach dem besten Preis Ausschau.',
+    refuelStyleConvenientDesc2: 'Empfehle mir Tankstellen auf meiner täglichen Strecke.',
     // Notifications
     notifCriticalTitle: '🔴 Tank fast leer — Jetzt tanken!',
     notifCriticalBody:  'Dein Tank wird auf ~{pct}% geschätzt. Bitte rechtzeitig tanken.',
@@ -218,6 +221,8 @@ const translations = {
     addrPlaceholder:   'Address, city or postal code…',
     whenNearlyEmpty:   'When nearly empty',
     bestPriceAlways:   'Best price always',
+    onRouteConvenient: 'Refuel on the way',
+    refuelStyleConvenientDesc: 'I prefer to refuel on my commute when convenient.',
     carSmall:          'Small  (< 45 L)',
     carFamily:         'Family  (45–65 L)',
     carLarge:          'Large / SUV  (65L+)',
@@ -299,6 +304,7 @@ const translations = {
     tankLevelScaleHint:'0% = empty  •  50% = half  •  100% = full',
     refuelStyleNearEmptyDesc: 'I wait until the tank is genuinely low.',
     refuelStyleCheapestDesc: 'I actively look out for the best price.',
+    refuelStyleConvenientDesc2: 'Recommend stations on my daily route.',
     // Notifications
     notifCriticalTitle: '🔴 Tank almost empty — Refuel now!',
     notifCriticalBody:  'Your tank is estimated at ~{pct}%. Please refuel before it runs out.',

@@ -15,6 +15,7 @@ import { computeRefuelUrgency, computeConfidence } from '../core/smartTank';
 import { STATION_CACHE_TTL_MS } from '../utils/constants';
 import { useUserStore } from './userStore';
 import { fetchRoadMetrics } from '../utils/routingDistance';
+import { findCorridorStation, CorridorStation } from '../utils/routeCorridor';
 
 // ─── State Shape ──────────────────────────────────────────────────────────────
 
@@ -26,6 +27,8 @@ interface FuelStoreState {
   isLoading: boolean;
   error: string | null;
   decision: DecisionResult | null;
+  /** Best on-route station between home and work (null if no commute configured). */
+  corridorStation: CorridorStation | null;
   /** 'road' = OSRM data, 'estimated' = straight-line × 1.3 fallback */
   distanceSource: 'road' | 'estimated';
 
@@ -53,6 +56,7 @@ export const useFuelStore = create<FuelStoreState>()(
   isLoading: false,
   error: null,
   decision: null,
+  corridorStation: null,
   distanceSource: 'estimated',
 
   refresh: async (location: GeoLocation, force = false, fuelTypeOverride?: FuelType) => {
@@ -110,14 +114,30 @@ export const useFuelStore = create<FuelStoreState>()(
 
       // ── Step 3: Compute decision ───────────────────────────────────────────
       const remainingKm = estimateRemainingKm(shadowTank);
-      const { smartTank, refuelingStyle } = useUserStore.getState();
+      const { smartTank, refuelingStyle, commonAreas } = useUserStore.getState();
       const tankCapacityL = smartTank?.tankCapacityL ?? shadowTank.tankCapacityL ?? 50;
       const confidence   = smartTank ? computeConfidence(smartTank) : 0.5;
-      const decision = computeDecision(stations, remainingKm, fuelType, location, smartTank, refuelingStyle, tankCapacityL, confidence);
+
+      // Step 3a: Find best on-route corridor station (home → work)
+      const homeLoc = commonAreas[0]?.loc ?? null;
+      const workLoc = commonAreas[1]?.loc ?? null;
+      let corridorStation: CorridorStation | null = null;
+      if (homeLoc && workLoc) {
+        const openPrices = stations.filter(s => s.isOpen && s.price !== null).map(s => s.price as number).sort((a, b) => a - b);
+        const medianPrice = openPrices.length > 0
+          ? (openPrices.length % 2 !== 0
+            ? openPrices[Math.floor(openPrices.length / 2)]
+            : (openPrices[Math.floor(openPrices.length / 2) - 1] + openPrices[Math.floor(openPrices.length / 2)]) / 2)
+          : 0;
+        corridorStation = findCorridorStation(homeLoc, workLoc, stations, medianPrice, tankCapacityL);
+      }
+
+      // Step 3b: Compute decision (pass corridor for convenient mode)
+      const decision = computeDecision(stations, remainingKm, fuelType, location, smartTank, refuelingStyle, tankCapacityL, confidence, corridorStation);
 
 
       console.log(
-        `[FuelStore] Decision: ${decision.recommendation} | Readiness: ${decision.readiness} | Saving: ${(decision.saving_estimate * 100).toFixed(1)}¢/L | Distance source: ${distanceSource}`
+        `[FuelStore] Decision: ${decision.recommendation} | Readiness: ${decision.readiness} | Saving: ${(decision.saving_estimate * 100).toFixed(1)}¢/L | Distance source: ${distanceSource}${corridorStation ? ` | Corridor: ${corridorStation.brand}` : ''}`
       );
 
       set({
@@ -126,6 +146,7 @@ export const useFuelStore = create<FuelStoreState>()(
         lastFetchLoc: location,
         isLoading: false,
         decision,
+        corridorStation,
         distanceSource,
       });
 
@@ -167,14 +188,29 @@ export const useFuelStore = create<FuelStoreState>()(
       console.log('[FuelStore] recomputeDecision skipped — no cached stations');
       return;
     }
-    const { smartTank, fuelType, refuelingStyle, shadowTank } = useUserStore.getState();
+    const { smartTank, fuelType, refuelingStyle, shadowTank, commonAreas } = useUserStore.getState();
     const tankCapacityL = smartTank?.tankCapacityL ?? shadowTank.tankCapacityL ?? 50;
     const remainingKm  = estimateRemainingKm(shadowTank);
     const confidence   = smartTank ? computeConfidence(smartTank) : 0.5;
+
+    // Recompute corridor
+    const homeLoc = commonAreas[0]?.loc ?? null;
+    const workLoc = commonAreas[1]?.loc ?? null;
+    let corridorStation: CorridorStation | null = null;
+    if (homeLoc && workLoc) {
+      const openPrices = stations.filter(s => s.isOpen && s.price !== null).map(s => s.price as number).sort((a, b) => a - b);
+      const medianPrice = openPrices.length > 0
+        ? (openPrices.length % 2 !== 0
+          ? openPrices[Math.floor(openPrices.length / 2)]
+          : (openPrices[Math.floor(openPrices.length / 2) - 1] + openPrices[Math.floor(openPrices.length / 2)]) / 2)
+        : 0;
+      corridorStation = findCorridorStation(homeLoc, workLoc, stations, medianPrice, tankCapacityL);
+    }
+
     const decision = computeDecision(
-      stations, remainingKm, fuelType, undefined, smartTank, refuelingStyle, tankCapacityL, confidence
+      stations, remainingKm, fuelType, undefined, smartTank, refuelingStyle, tankCapacityL, confidence, corridorStation
     );
-    set({ decision });
+    set({ decision, corridorStation });
     const levelPct = smartTank ? Math.round(computeRefuelUrgency(smartTank).levelPercent) : '?';
     console.log(`[FuelStore] recomputeDecision → ${decision.recommendation} (level=${levelPct}%)`);
     },
