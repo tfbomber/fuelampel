@@ -182,26 +182,68 @@ export function LiveAddressInput({
     setResults([]);
 
     try {
+      // 1. Permission check
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Standort', 'Bitte erlaube den Standort­zugriff in den Geräte­einstellungen.');
+        Alert.alert('Standort', 'Bitte erlaube den Standort\u00ADzugriff in den Geräte\u00ADeinstellungen.');
         setGpsLoading(false);
         return;
       }
+      console.log('[GPS] Permission granted — acquiring position…');
 
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const result = await reverseGeocode(pos.coords.latitude, pos.coords.longitude);
+      // 2. Try cached location first (instant), fall back to fresh fix with timeout
+      let coords: { latitude: number; longitude: number } | null = null;
+
+      const cached = await Location.getLastKnownPositionAsync();
+      if (cached) {
+        // Accept cache if it's < 5 minutes old
+        const ageMs = Date.now() - (cached.timestamp ?? 0);
+        if (ageMs < 5 * 60_000) {
+          coords = cached.coords;
+          console.log(`[GPS] Using cached position (age ${Math.round(ageMs / 1000)}s)`);
+        }
+      }
+
+      if (!coords) {
+        // Fresh GPS fix — race against 6s timeout to prevent infinite hang
+        const GPS_TIMEOUT_MS = 6_000;
+        console.log('[GPS] No usable cache — requesting fresh fix (6s timeout)…');
+
+        const positionPromise = Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Low,
+        });
+        const timeoutPromise = new Promise<null>((resolve) =>
+          setTimeout(() => resolve(null), GPS_TIMEOUT_MS),
+        );
+
+        const result = await Promise.race([positionPromise, timeoutPromise]);
+        if (!result) {
+          console.warn('[GPS] Position request timed out after 6s');
+          setGpsLoading(false);
+          Alert.alert('Standort', 'GPS-Position konnte nicht rechtzeitig ermittelt werden. Bitte versuche es draußen erneut.');
+          return;
+        }
+        coords = result.coords;
+        console.log(`[GPS] Fresh fix acquired: ${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}`);
+      }
+
+      // 3. Reverse geocode
+      console.log('[GPS] Reverse geocoding…');
+      const addressResult = await reverseGeocode(coords.latitude, coords.longitude);
       setGpsLoading(false);
 
-      if (!result) {
-        Alert.alert('Standort', 'Adresse konnte nicht ermittelt werden.');
+      if (!addressResult) {
+        console.warn('[GPS] Reverse geocode returned null');
+        Alert.alert('Standort', 'Koordinaten erhalten, aber Adresse konnte nicht aufgelöst werden.');
         return;
       }
 
-      // Same-location soft warning (<500m)
+      console.log(`[GPS] Address resolved: ${addressResult.shortName}`);
+
+      // 4. Same-location soft warning (<500m)
       if (otherArea?.loc) {
         const dist = haversineM(
-          result.loc.lat, result.loc.lng,
+          addressResult.loc.lat, addressResult.loc.lng,
           otherArea.loc.lat, otherArea.loc.lng,
         );
         if (dist < 500) {
@@ -210,18 +252,18 @@ export function LiveAddressInput({
             'Diese Adresse ist sehr nah an deiner anderen Adresse. Trotzdem verwenden?',
             [
               { text: 'Abbrechen', style: 'cancel' },
-              { text: 'Verwenden', onPress: () => commitGpsResult(result) },
+              { text: 'Verwenden', onPress: () => commitGpsResult(addressResult) },
             ],
           );
           return;
         }
       }
 
-      commitGpsResult(result);
+      commitGpsResult(addressResult);
     } catch (err) {
       setGpsLoading(false);
-      console.error('[LiveAddressInput] GPS error:', err);
-      Alert.alert('Standort', 'Standort konnte nicht abgerufen werden.');
+      console.error('[GPS] Unhandled error in GPS flow:', err);
+      Alert.alert('Standort', 'Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es erneut.');
     }
   }
 

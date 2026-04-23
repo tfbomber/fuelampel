@@ -52,9 +52,15 @@ export async function reverseGeocode(
   try {
     const res = await fetch(url, { headers: NOMINATIM_HEADERS, signal: ac.signal });
     clearTimeout(timeout);
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn(`[Geocoding] Reverse geocode HTTP ${res.status}`);
+      return null;
+    }
     const data = await res.json();
-    if (!data?.lat || !data?.lon) return null;
+    if (!data?.lat || !data?.lon) {
+      console.warn('[Geocoding] Reverse geocode response missing lat/lon:', JSON.stringify(data).slice(0, 200));
+      return null;
+    }
 
     const addr = data.address ?? {};
     const cityPart = addr.city ?? addr.town ?? addr.village ?? addr.county ?? '';
@@ -70,8 +76,13 @@ export async function reverseGeocode(
       shortName,
       loc: { lat: parseFloat(data.lat), lng: parseFloat(data.lon) },
     };
-  } catch {
+  } catch (err: any) {
     clearTimeout(timeout);
+    if (err?.name === 'AbortError') {
+      console.warn('[Geocoding] Reverse geocode timed out after 8s');
+    } else {
+      console.error('[Geocoding] Reverse geocode network error:', err);
+    }
     return null;
   }
 }
