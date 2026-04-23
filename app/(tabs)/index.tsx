@@ -118,7 +118,7 @@ export default function HomeScreen() {
   type AppMode = 'normal' | 'animating' | 'adjusting' | 'soft_confirm';
   const [mode, setMode] = useState<AppMode>('normal');
   const [sliderValue, setSliderValue]   = useState(100);
-  const [litresInput, setLitresInput]   = useState('');
+  const [euroInput, setEuroInput]       = useState('');
 
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** true = mode was triggered by "ich habe getankt"; false = manual long-press adjust */
@@ -222,12 +222,15 @@ export default function HomeScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); // strong, felt on all Android devices
     prevFuelPctRef.current = fuelPct;
     isRefuelModeRef.current = true;
-    const litresAdded = parseFloat(litresInput) || 0;
+    const eurosSpent = parseFloat(euroInput) || 0;
+    // Convert euros to litres using current fuel price
+    const pricePerL = decision?.station?.price ?? 0;
+    const litresAdded = pricePerL > 0 ? eurosSpent / pricePerL : 0;
     const cappedLitres = smartTank
       ? Math.min(litresAdded, smartTank.tankCapacityL)
       : litresAdded;
     recordSmartRefuel(cappedLitres, 'user_tap');
-    setLitresInput('');
+    setEuroInput('');
     suppressBannerUntilRef.current = Date.now() + 10_000;
     setMode('animating');
     Animated.timing(animatedPct, {
@@ -541,14 +544,14 @@ export default function HomeScreen() {
           {mode === 'normal' && (
             <TextInput
               style={styles.litresInput}
-              value={litresInput}
-              onChangeText={(v: string) => setLitresInput(v.replace(/[^0-9.]/g, ''))}
-              placeholder="0 L"
+              value={euroInput}
+              onChangeText={(v: string) => setEuroInput(v.replace(/[^0-9.]/g, ''))}
+              placeholder="€"
               placeholderTextColor="#4B5563"
               keyboardType="decimal-pad"
-              maxLength={5}
+              maxLength={6}
               returnKeyType="done"
-              accessibilityLabel="Litres added input"
+              accessibilityLabel="Euros spent on refuel"
             />
           )}
         </View>

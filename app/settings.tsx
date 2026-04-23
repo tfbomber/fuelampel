@@ -425,6 +425,40 @@ export default function SettingsScreen() {
       <Section title={t('vehicleAndTank')}>
         <OptionRow<CarType> options={CAR_TYPE_OPTIONS} value={carType} onSelect={handleCarTypeChange} />
 
+        {/* Range on full tank — promoted, always visible */}
+        <View style={styles.settingRow}>
+          <View style={styles.settingLabelRow}>
+            <Text style={styles.settingLabel}>
+            {t('fullTankRange')}{'  '}<Text style={{ color: '#4B5563' }}>{t('optionalLabel')}</Text>
+          </Text>
+            {savedField === 'range' && <Text style={styles.savedHint}>{t('saved')}</Text>}
+          </View>
+          <Text style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>
+            {t('fullTankRangeHint')}
+          </Text>
+          <TextInput
+            style={styles.input}
+            value={rangeInput}
+            onChangeText={(v) => { setRangeInput(v); setRangeDirty(true); setGlobalDirty(true); }}
+            keyboardType="numeric"
+            placeholder={t('rangePlaceholder')}
+            placeholderTextColor="#4B5563"
+            returnKeyType="done"
+            onEndEditing={saveRange}
+            onSubmitEditing={saveRange}
+            accessibilityLabel={t('fullTankRange')}
+          />
+          {rangeDirty && (
+            <TouchableOpacity
+              style={styles.applyBtn}
+              onPress={saveRange}
+              accessibilityLabel={t('saveRangeA11y')}
+            >
+              <Text style={styles.applyBtnText}>{t('applyBtn')}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
         {/* ── Advanced toggle ── */}
         <TouchableOpacity
           style={styles.advancedToggle}
@@ -432,7 +466,7 @@ export default function SettingsScreen() {
           accessibilityLabel={t('advancedSettings')}
         >
           <Text style={styles.advancedToggleText}>
-            {showAdvanced ? '▾' : '▸'}{'  '}{t('advancedSettings')}
+            {showAdvanced ? '\u25be' : '\u25b8'}{'  '}{t('advancedSettings')}
           </Text>
           <Text style={styles.advancedToggleHint}>{t('advancedSettingsHint')}</Text>
         </TouchableOpacity>
@@ -489,40 +523,6 @@ export default function SettingsScreen() {
                   style={styles.applyBtn}
                   onPress={saveCapacity}
                   accessibilityLabel={t('saveTankCapacityA11y')}
-                >
-                  <Text style={styles.applyBtnText}>{t('applyBtn')}</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {/* Range on full tank */}
-            <View style={styles.settingRow}>
-              <View style={styles.settingLabelRow}>
-                <Text style={styles.settingLabel}>
-                {t('fullTankRange')}{'  '}<Text style={{ color: '#4B5563' }}>{t('optionalLabel')}</Text>
-              </Text>
-                {savedField === 'range' && <Text style={styles.savedHint}>{t('saved')}</Text>}
-              </View>
-              <Text style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>
-                {t('fullTankRangeHint')}
-              </Text>
-              <TextInput
-                style={styles.input}
-                value={rangeInput}
-                onChangeText={(v) => { setRangeInput(v); setRangeDirty(true); setGlobalDirty(true); }}
-                keyboardType="numeric"
-                placeholder={t('rangePlaceholder')}
-                placeholderTextColor="#4B5563"
-                returnKeyType="done"
-                onEndEditing={saveRange}
-                onSubmitEditing={saveRange}
-                accessibilityLabel={t('fullTankRange')}
-              />
-              {rangeDirty && (
-                <TouchableOpacity
-                  style={styles.applyBtn}
-                  onPress={saveRange}
-                  accessibilityLabel={t('saveRangeA11y')}
                 >
                   <Text style={styles.applyBtnText}>{t('applyBtn')}</Text>
                 </TouchableOpacity>
