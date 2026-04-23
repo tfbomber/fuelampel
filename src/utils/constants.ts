@@ -118,3 +118,33 @@ export const ROUTE_CORRIDOR_FUEL_COST_BASE = 0.08;   // €/km operating cost es
 
 // Unified detour cost for Value ranking (reflects ~7.5L/100km × ~1.70€/L ≈ 0.13€/km)
 export const VALUE_RANKING_COST_PER_KM     = 0.13;
+
+// =============================================================================
+// Decision Engine v2 — Dual-Mode (Plan Soon / Refuel Soon)
+// =============================================================================
+
+// Planning horizon thresholds (days until empty)
+export const PLAN_URGENT_DAYS  = 2;   // < 2d → must refuel today (Plan Soon → urgent)
+export const PLAN_BUFFER_DAYS  = 4;   // < 4d → some urgency, can still optimise
+
+// German fuel regulation 2026-04-01: 12:00 is the only allowed upward price window.
+// Stations MAY raise at 12:00, or keep prices unchanged. After 12:00, only downward.
+export const NOON_UPWARD_WINDOW_HOUR = 12;
+
+// =============================================================================
+// Price Trend Module — Intraday + Multi-Day
+// =============================================================================
+
+// Intraday trend: minimum price delta to register as falling/rising (€/L)
+export const INTRADAY_TREND_THRESHOLD   = 0.005; // 0.5¢
+
+// Multi-day trend: today vs 7-day average
+export const DAY_TREND_CHEAP_FACTOR     = 0.98;  // < 98% of avg → CHEAP_DAY
+export const DAY_TREND_EXPENSIVE_FACTOR = 1.02;  // > 102% of avg → EXPENSIVE
+
+// Storage limits
+export const INTRADAY_SNAPSHOT_MAX      = 8;     // per day, FIFO
+export const PRICE_HISTORY_MAX          = 14;    // days, FIFO
+
+// Region key precision for geo-binding intraday snapshots
+export const SNAPSHOT_REGION_PRECISION  = 0.05;  // degrees ≈ 5km grid

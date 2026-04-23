@@ -9,8 +9,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   FuelType, GeoLocation, ShadowTankState, SmartTankState,
   RefuelingStyle, CarType, LastRefuelAmount, CommonArea,
-  RefuelEvent, DaySnapshot,
+  RefuelEvent, DaySnapshot, PriceSnapshot, DailyPriceEntry,
 } from '../utils/types';
+import {
+  INTRADAY_SNAPSHOT_MAX,
+  PRICE_HISTORY_MAX,
+} from '../utils/constants';
 import { Language, setAppLanguage } from '../utils/i18n';
 import {
   CAR_TYPE_TANK_CAPACITY,
@@ -76,6 +80,12 @@ interface UserState {
   // Confirm prompt tracking
   lastPromptedMs: number;
 
+  // Price Trend — persisted, auto-managed
+  /** Rolling 14-day history of best observed daily prices. */
+  priceHistory: DailyPriceEntry[];
+  /** Intraday snapshots (geo-bound); cleared daily, max 8 per day. */
+  intradaySnapshots: PriceSnapshot[];
+
   // ── Actions ──────────────────────────────────────────────────────────────────
 
   // Onboarding
@@ -130,6 +140,14 @@ interface UserState {
   setLastPrompted: () => void;
   confirmCurrentLevel: () => void;
 
+  // Price Trend actions
+  /** Record the best price observed today (call once per day, in fuelStore.refresh). */
+  recordDailyPrice: (observedBestPrice: number, fuelType: FuelType) => void;
+  /** Push an intraday price snapshot (call on every fuelStore.refresh). */
+  pushIntradaySnapshot: (snapshot: PriceSnapshot) => void;
+  /** Clear intraday snapshots (call at start of new day). */
+  clearIntradaySnapshots: () => void;
+
   // Reset actions (Settings)
   resetCommonArea: () => void;
   resetPreferences: () => void;
@@ -161,6 +179,8 @@ export const useUserStore = create<UserState>()(
       notificationWeekCount: 0,
       notificationWeekStartMs: Date.now(),
       lastPromptedMs: 0,
+      priceHistory: [],
+      intradaySnapshots: [],
 
       // --- Onboarding ---
       skipSmartTankSetup: () => {
@@ -549,6 +569,49 @@ export const useUserStore = create<UserState>()(
         });
       },
 
+      // ── Price Trend actions ─────────────────────────────────────────────
+
+      recordDailyPrice: (observedBestPrice: number, fuelType: FuelType) => {
+        const today = new Date();
+        const dateKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        set((state) => {
+          const existing = state.priceHistory;
+          // Update today's entry if it already exists (keep the lowest observed price)
+          const todayIdx = existing.findIndex(e => e.dateKey === dateKey);
+          let updated: DailyPriceEntry[];
+          if (todayIdx >= 0) {
+            updated = [...existing];
+            // Keep the lower of the two observations for the same day
+            if (observedBestPrice < updated[todayIdx].observedBestPrice) {
+              updated[todayIdx] = { dateKey, observedBestPrice, fuelType };
+            }
+          } else {
+            updated = [...existing, { dateKey, observedBestPrice, fuelType }];
+          }
+          // FIFO: keep only last PRICE_HISTORY_MAX entries
+          if (updated.length > PRICE_HISTORY_MAX) {
+            updated = updated.slice(updated.length - PRICE_HISTORY_MAX);
+          }
+          console.log(`[UserStore] recordDailyPrice: ${dateKey} → ${observedBestPrice.toFixed(3)} (${updated.length} entries)`);
+          return { priceHistory: updated };
+        });
+      },
+
+      pushIntradaySnapshot: (snapshot: PriceSnapshot) => {
+        set((state) => {
+          let updated = [...state.intradaySnapshots, snapshot];
+          // FIFO: keep only last INTRADAY_SNAPSHOT_MAX
+          if (updated.length > INTRADAY_SNAPSHOT_MAX) {
+            updated = updated.slice(updated.length - INTRADAY_SNAPSHOT_MAX);
+          }
+          return { intradaySnapshots: updated };
+        });
+      },
+
+      clearIntradaySnapshots: () => {
+        set({ intradaySnapshots: [] });
+      },
+
       // C: Full Reset — clears everything, returns to pre-onboarding
       fullReset: () => {
         console.log('[UserStore] FULL RESET: All data cleared');
@@ -568,6 +631,8 @@ export const useUserStore = create<UserState>()(
           notificationWeekCount: 0,
           notificationWeekStartMs: Date.now(),
           lastPromptedMs: 0,
+          priceHistory: [],
+          intradaySnapshots: [],
         });
       },
     }),
@@ -596,6 +661,15 @@ export const useUserStore = create<UserState>()(
           if ((state as any).language === undefined) {
             (state as any).language = 'de';
             console.log('[UserStore] Migration v4: language initialized to de');
+          }
+          // Migration: add price trend fields if missing
+          if ((state as any).priceHistory === undefined) {
+            (state as any).priceHistory = [];
+            console.log('[UserStore] Migration v5: priceHistory initialized to []');
+          }
+          if ((state as any).intradaySnapshots === undefined) {
+            (state as any).intradaySnapshots = [];
+            console.log('[UserStore] Migration v5: intradaySnapshots initialized to []');
           }
           // Sync i18n module with persisted language on boot
           setAppLanguage((state as any).language ?? 'de');

@@ -73,6 +73,42 @@ export interface DecisionResult {
   readiness: ReadinessLevel;
   zone: DecisionZone;
   confidenceLevel: 'high' | 'medium' | 'low';
+
+  // Decision Engine v2 — dual-mode output
+  /** App state: normal (silent), plan_soon (when+where), refuel_soon (now+where) */
+  mode: 'normal' | 'plan_soon' | 'refuel_soon';
+  /** Plan Soon only: time recommendation in German (e.g. "Heute nach Feierabend") */
+  when?: string;
+  /** Multi-day price trend for optional UI badge */
+  dayTrend?: DayTrend;
+}
+
+// --- Price Trend Module ---
+
+/** A single intraday price observation, geo-bound to prevent location-switch noise. */
+export interface PriceSnapshot {
+  ts: number;                // fetch timestamp
+  observedBestPrice: number; // min price of all open stations in this fetch
+  regionKey: string;         // lat/lng rounded to SNAPSHOT_REGION_PRECISION (~5km grid)
+}
+
+/** Daily price observation for multi-day trend analysis. */
+export interface DailyPriceEntry {
+  dateKey: string;            // 'YYYY-MM-DD'
+  observedBestPrice: number;  // best price we saw that day (NOT guaranteed day minimum)
+  fuelType: FuelType;
+}
+
+/** Intraday price direction within one region. */
+export interface IntradayTrend {
+  direction: 'falling' | 'rising' | 'stable';
+  confidence: 'low' | 'medium' | 'high';
+}
+
+/** Multi-day price level relative to recent history. */
+export interface DayTrend {
+  level: 'CHEAP_DAY' | 'NORMAL' | 'EXPENSIVE';
+  confidence: 'low' | 'medium' | 'high';
 }
 
 // --- Shadow Tank State ---

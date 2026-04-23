@@ -510,8 +510,8 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* ── Corridor Banner ── */}
-      {corridorStation && corridorStation.price !== null && (
+      {/* ── Corridor Banner (hidden in refuel_soon — user needs nearest station, not corridor) ── */}
+      {corridorStation && corridorStation.price !== null && decision?.mode !== 'refuel_soon' && (
         <View style={styles.corridorBanner}>
           <Text style={styles.corridorBannerText}>
             {'🚗 '}

@@ -7,12 +7,13 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Station, FuelType, GeoLocation, DecisionResult } from '../utils/types';
+import { Station, FuelType, GeoLocation, DecisionResult, PriceSnapshot } from '../utils/types';
 import { fetchNearbyStations } from '../data/fuelApi';
 import { computeDecision } from '../core/decisionEngine';
 import { estimateRemainingKm } from '../core/shadowTank';
 import { computeRefuelUrgency, computeConfidence } from '../core/smartTank';
-import { STATION_CACHE_TTL_MS } from '../utils/constants';
+import { computeIntradayTrend, computeDayTrend, makeRegionKey, todayDateKey } from '../core/priceTrend';
+import { STATION_CACHE_TTL_MS, SNAPSHOT_REGION_PRECISION } from '../utils/constants';
 import { useUserStore } from './userStore';
 import { fetchRoadMetrics } from '../utils/routingDistance';
 import { findCorridorStation, CorridorStation } from '../utils/routeCorridor';
@@ -118,7 +119,7 @@ export const useFuelStore = create<FuelStoreState>()(
       const tankCapacityL = smartTank?.tankCapacityL ?? shadowTank.tankCapacityL ?? 50;
       const confidence   = smartTank ? computeConfidence(smartTank) : 0.5;
 
-      // Step 3a: Find best on-route corridor station (home → work)
+      // Step 3a: Find best on-route corridor station (bidirectional)
       const homeLoc = commonAreas[0]?.loc ?? null;
       const workLoc = commonAreas[1]?.loc ?? null;
       let corridorStation: CorridorStation | null = null;
@@ -129,11 +130,51 @@ export const useFuelStore = create<FuelStoreState>()(
             ? openPrices[Math.floor(openPrices.length / 2)]
             : (openPrices[Math.floor(openPrices.length / 2) - 1] + openPrices[Math.floor(openPrices.length / 2)]) / 2)
           : 0;
-        corridorStation = findCorridorStation(homeLoc, workLoc, stations, medianPrice, tankCapacityL);
+        // Bidirectional: compute both directions, pick based on time of day
+        const corridorHW = findCorridorStation(homeLoc, workLoc, stations, medianPrice, tankCapacityL);
+        const corridorWH = findCorridorStation(workLoc, homeLoc, stations, medianPrice, tankCapacityL);
+        const currentHour = new Date().getHours();
+        // Morning/midday → commute to work; afternoon/evening → commute home
+        corridorStation = currentHour < 14 ? (corridorHW ?? corridorWH) : (corridorWH ?? corridorHW);
       }
 
-      // Step 3b: Compute decision (pass corridor for convenient mode)
-      const decision = computeDecision(stations, remainingKm, fuelType, location, smartTank, refuelingStyle, tankCapacityL, confidence, corridorStation);
+      // Step 3b: Record price trend data
+      const openStations = stations.filter(s => s.isOpen && s.price !== null);
+      if (openStations.length > 0) {
+        const bestPrice = Math.min(...openStations.map(s => s.price as number));
+        const regionKey = makeRegionKey(location.lat, location.lng);
+
+        // Check if we need to clear intraday snapshots (new day)
+        const today = todayDateKey();
+        const { intradaySnapshots, priceHistory } = useUserStore.getState();
+        if (intradaySnapshots.length > 0) {
+          const lastSnapshotDate = new Date(intradaySnapshots[intradaySnapshots.length - 1].ts);
+          const lastDateKey = `${lastSnapshotDate.getFullYear()}-${String(lastSnapshotDate.getMonth() + 1).padStart(2, '0')}-${String(lastSnapshotDate.getDate()).padStart(2, '0')}`;
+          if (lastDateKey !== today) {
+            useUserStore.getState().clearIntradaySnapshots();
+          }
+        }
+
+        // Push intraday snapshot
+        const snapshot: PriceSnapshot = { ts: now, observedBestPrice: bestPrice, regionKey };
+        useUserStore.getState().pushIntradaySnapshot(snapshot);
+
+        // Record daily price
+        useUserStore.getState().recordDailyPrice(bestPrice, fuelType);
+      }
+
+      // Step 3c: Compute price trends
+      const { intradaySnapshots: snaps, priceHistory: hist } = useUserStore.getState();
+      const intradayTrend = computeIntradayTrend(snaps);
+      const todayBest = openStations.length > 0
+        ? Math.min(...openStations.map(s => s.price as number))
+        : 0;
+      // Exclude today from history for fair comparison
+      const histWithoutToday = hist.filter(e => e.dateKey !== todayDateKey());
+      const dayTrend = todayBest > 0 ? computeDayTrend(histWithoutToday, todayBest) : { level: 'NORMAL' as const, confidence: 'low' as const };
+
+      // Step 3d: Compute decision (pass corridor + trends)
+      const decision = computeDecision(stations, remainingKm, fuelType, location, smartTank, refuelingStyle, tankCapacityL, confidence, corridorStation, intradayTrend, dayTrend);
 
 
       console.log(
@@ -193,7 +234,7 @@ export const useFuelStore = create<FuelStoreState>()(
     const remainingKm  = estimateRemainingKm(shadowTank);
     const confidence   = smartTank ? computeConfidence(smartTank) : 0.5;
 
-    // Recompute corridor
+    // Recompute corridor (bidirectional)
     const homeLoc = commonAreas[0]?.loc ?? null;
     const workLoc = commonAreas[1]?.loc ?? null;
     let corridorStation: CorridorStation | null = null;
@@ -204,11 +245,24 @@ export const useFuelStore = create<FuelStoreState>()(
           ? openPrices[Math.floor(openPrices.length / 2)]
           : (openPrices[Math.floor(openPrices.length / 2) - 1] + openPrices[Math.floor(openPrices.length / 2)]) / 2)
         : 0;
-      corridorStation = findCorridorStation(homeLoc, workLoc, stations, medianPrice, tankCapacityL);
+      const corridorHW = findCorridorStation(homeLoc, workLoc, stations, medianPrice, tankCapacityL);
+      const corridorWH = findCorridorStation(workLoc, homeLoc, stations, medianPrice, tankCapacityL);
+      const currentHour = new Date().getHours();
+      corridorStation = currentHour < 14 ? (corridorHW ?? corridorWH) : (corridorWH ?? corridorHW);
     }
 
+    // Compute trends from stored data
+    const { intradaySnapshots: snaps, priceHistory: hist } = useUserStore.getState();
+    const intradayTrend = computeIntradayTrend(snaps);
+    const openStations = stations.filter(s => s.isOpen && s.price !== null);
+    const todayBest = openStations.length > 0
+      ? Math.min(...openStations.map(s => s.price as number))
+      : 0;
+    const histWithoutToday = hist.filter(e => e.dateKey !== todayDateKey());
+    const dayTrend = todayBest > 0 ? computeDayTrend(histWithoutToday, todayBest) : { level: 'NORMAL' as const, confidence: 'low' as const };
+
     const decision = computeDecision(
-      stations, remainingKm, fuelType, undefined, smartTank, refuelingStyle, tankCapacityL, confidence, corridorStation
+      stations, remainingKm, fuelType, undefined, smartTank, refuelingStyle, tankCapacityL, confidence, corridorStation, intradayTrend, dayTrend
     );
     set({ decision, corridorStation });
     const levelPct = smartTank ? Math.round(computeRefuelUrgency(smartTank).levelPercent) : '?';

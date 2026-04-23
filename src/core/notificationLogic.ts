@@ -115,24 +115,42 @@ export function buildNotificationPayload(
   const urgency = smartTank ? computeRefuelUrgency(smartTank) : null;
   const daysLabel = urgency
     ? urgency.daysUntilEmpty < 1
-      ? 'today'
-      : `~${urgency.daysUntilEmpty.toFixed(0)} day(s) left`
+      ? 'heute'
+      : `~${urgency.daysUntilEmpty.toFixed(0)} Tag(e) übrig`
     : '';
 
-  if (corridorStation && corridorStation.netSavingEur > 0) {
+  // Corridor-aware notification (highest priority)
+  if (corridorStation && corridorStation.netSavingEur > 0 && decision.mode !== 'refuel_soon') {
     const saving = corridorStation.netSavingEur.toFixed(2);
-    const detour = corridorStation.detourKm;
     const name   = corridorStation.brand || corridorStation.name;
     const price  = corridorStation.price?.toFixed(3) ?? '—';
 
     return {
-      title: '⛽️ Refuel on your way — FuelAmpel',
-      body: `${name} en route: ${price} €/L · saves ~${saving} € · only ${detour} km detour${daysLabel ? ` · Tank lasts ${daysLabel}` : ''}`,
+      title: '⛽ Auf dem Weg tanken — FuelAmpel',
+      body: `${name}: ${price} €/L · spart ~${saving} €${daysLabel ? ` · Tank: ${daysLabel}` : ''}`,
     };
   }
 
+  // Mode-aware notifications
+  if (decision.mode === 'refuel_soon') {
+    return {
+      title: decision.zone === 'Critical'
+        ? '🔴 Tank fast leer — jetzt tanken!'
+        : '🟡 Bald tanken — FuelAmpel',
+      body: decision.reason,
+    };
+  }
+
+  if (decision.mode === 'plan_soon' && decision.when) {
+    return {
+      title: '⛽ Tanken planen — FuelAmpel',
+      body: `${decision.when}${daysLabel ? ` · ${daysLabel}` : ''}`,
+    };
+  }
+
+  // Default fallback
   return {
-    title: `⛽️ FuelAmpel — Time to refuel`,
+    title: '⛽ FuelAmpel',
     body: decision.reason + (daysLabel ? ` (${daysLabel})` : ''),
   };
 }

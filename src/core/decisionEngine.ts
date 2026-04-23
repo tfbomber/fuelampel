@@ -1,7 +1,13 @@
 // ====================================================
-// FuelAmpel — Decision Engine
+// FuelAmpel — Decision Engine (v2 — Dual Mode)
 // Pure function. No React, no side effects.
-// Input: stations + user state → Output: Go/Wait/Skip
+// Input: stations + user state + price trend → Output: Go/Wait/Skip + mode
+//
+// v2 changes (2026-04-23):
+//   - Dual-mode output: normal / plan_soon / refuel_soon
+//   - German 2026-04-01 regulation: deleted isGoodWindow 16-19h hardcode
+//   - resolveWhen(): time recommendation based on daysLeft × dayTrend
+//   - Price trend integration (IntradayTrend + DayTrend)
 // ====================================================
 
 import {
@@ -14,6 +20,8 @@ import {
   SmartTankState,
   RefuelingStyle,
   DecisionZone,
+  IntradayTrend,
+  DayTrend,
 } from '../utils/types';
 import {
   THRESHOLD_ACTION_KM,
@@ -33,6 +41,10 @@ import {
   CONFIDENCE_MED,
   GOOD_DEAL_PCT_THRESHOLD,
   CHEAPEST_LEVEL_CEILING_PCT,
+  PLAN_URGENT_DAYS,
+  PLAN_BUFFER_DAYS,
+  NOON_UPWARD_WINDOW_HOUR,
+  ZONE_PLANNING_MAX_PCT,
 } from '../utils/constants';
 import { computeRefuelUrgency, classifyZone } from './smartTank';
 import { computeNetVsNearest, findNearestOpen } from '../utils/ranking';
@@ -136,18 +148,79 @@ export function scoreStations(
     .sort((a, b) => b.score - a.score);
 }
 
+// ─── resolveWhen: Plan Soon time recommendation ──────────────────────────────
+
+/**
+ * Determine WHEN the user should refuel (Plan Soon mode only).
+ *
+ * Based on:
+ *   - daysLeft: urgency from SmartTank
+ *   - dayTrend: today's price vs recent average
+ *   - intradayTrend: real-time price direction
+ *   - hour: current local hour
+ *
+ * Design rules:
+ *   - Never predict tomorrow's price — only say "morgen erneut prüfen"
+ *   - 12:00 = only allowed upward price window (German regulation 2026-04-01)
+ *   - Low confidence trends → generic advice (no trend claim)
+ */
+function resolveWhen(
+  daysLeft: number,
+  dayTrend: DayTrend,
+  intradayTrend: IntradayTrend,
+  hour: number,
+): string {
+  // ── Urgent: must refuel today regardless of price ──
+  if (daysLeft < PLAN_URGENT_DAYS) {
+    if (hour < NOON_UPWARD_WINDOW_HOUR)
+      return 'Bald tanken. Vor dem 12-Uhr-Fenster oft günstiger.';
+    if (hour >= 12 && hour < 14)
+      return 'Bald tanken nötig. Preise könnten später noch etwas fallen.';
+    return 'Heute noch tanken.';
+  }
+
+  // ── Cheap day: seize the opportunity ──
+  if (dayTrend.level === 'CHEAP_DAY' && dayTrend.confidence !== 'low') {
+    if (hour < 11)
+      return 'Heute günstiger als üblich. Am besten vor dem 12-Uhr-Fenster.';
+    if (intradayTrend.direction === 'falling' && intradayTrend.confidence !== 'low')
+      return 'Heute günstiger als üblich. Preise fallen gerade.';
+    return 'Heute günstiger als üblich — guter Tag zum Tanken.';
+  }
+
+  // ── Expensive day + buffer ──
+  if (dayTrend.level === 'EXPENSIVE' && dayTrend.confidence !== 'low') {
+    if (daysLeft > PLAN_BUFFER_DAYS)
+      return 'Heute etwas teurer als üblich. Morgen erneut prüfen.';
+    return 'Etwas teurer, aber besser bald tanken.';
+  }
+
+  // ── Normal day / low confidence ──
+  if (hour < 11)
+    return 'Später Vormittag vor 12 Uhr könnte günstig sein.';
+  if (intradayTrend.direction === 'falling' && intradayTrend.confidence !== 'low')
+    return 'Preise fallen gerade — könnte ein guter Zeitpunkt sein.';
+  if (hour > 19)
+    return 'Morgen gegen späten Vormittag erneut prüfen.';
+  return 'Später heute oder morgen erneut prüfen.';
+}
+
 // ─── Step 4: Final Decision ───────────────────────────────────────────────────
 
 /**
- * Main decision function.
+ * Main decision function (v2 — dual mode).
  *
- * @param stations      Raw stations from API
- * @param remainingKm   Estimated km remaining (legacy fallback; used when smartTank is null)
- * @param fuelType      Which fuel the user wants
- * @param userLocation  Optional user GPS location
- * @param smartTank     SmartTankState v2 (preferred over remainingKm when available)
- * @param refuelingStyle User's preferred refueling strategy ('nearEmpty' or 'cheapest')
- * @param tankCapacityL User's tank capacity in litres
+ * @param stations       Raw stations from API
+ * @param remainingKm    Estimated km remaining (legacy fallback)
+ * @param fuelType       Which fuel the user wants
+ * @param userLocation   Optional user GPS location
+ * @param smartTank      SmartTankState v2
+ * @param refuelingStyle User's preferred refueling strategy
+ * @param tankCapacityL  User's tank capacity in litres
+ * @param confidence     0.0–1.0 confidence in levelPercent
+ * @param corridorStation Best on-route corridor station (home→work or work→home)
+ * @param intradayTrend  Real-time price direction (from priceTrend module)
+ * @param dayTrend       Today vs 7-day average (from priceTrend module)
  */
 export function computeDecision(
   stations: Station[],
@@ -157,10 +230,10 @@ export function computeDecision(
   smartTank?: SmartTankState | null,
   refuelingStyle: RefuelingStyle | null = null,
   tankCapacityL: number = 50,
-  /** 0.0–1.0 confidence in levelPercent; affects Trust Gate */
   confidence: number = 0.5,
-  /** Best on-route corridor station (from fuelStore); used by 'convenient' mode */
   corridorStation?: { brand: string; name: string; price: number | null; netSavingEur: number } | null,
+  intradayTrend: IntradayTrend = { direction: 'stable', confidence: 'low' },
+  dayTrend: DayTrend = { level: 'NORMAL', confidence: 'low' },
 ): DecisionResult {
 
   // --- Resolve current level % ---
@@ -206,6 +279,7 @@ export function computeDecision(
       readiness,
       zone,
       confidenceLevel,
+      mode: zone === 'Safe' ? 'normal' : zone === 'Planning' ? 'plan_soon' : 'refuel_soon',
     };
   }
 
@@ -230,6 +304,7 @@ export function computeDecision(
       readiness,
       zone,
       confidenceLevel,
+      mode: zone === 'Safe' ? 'normal' : zone === 'Planning' ? 'plan_soon' : 'refuel_soon',
     };
   }
 
@@ -245,114 +320,182 @@ export function computeDecision(
     : `${netSavingEur.toFixed(2)} €`;
   const tankPctStr  = `${Math.round(levelPercent)}%`;
 
-  // --- Step 4: Decision logic (V1 Logic Tree) ---
-  
-  // Rule 1: Emergency override
-  if (levelPercent <= 15) {
+  // --- Step 4: Decision logic (V2 — Dual-Mode) ---
+
+  // Resolve daysUntilEmpty for resolveWhen()
+  let daysLeft = 99;
+  if (smartTank) {
+    const urgency = computeRefuelUrgency(smartTank);
+    daysLeft = urgency.daysUntilEmpty;
+  }
+
+  // Value check (kept from V1)
+  const cheapThreshold = regionMedian * (1 - GOOD_DEAL_PCT_THRESHOLD);
+  const isGoodDeal = (station.price as number) <= cheapThreshold;
+
+  // Effective ceiling: how high can the tank be before we ignore a good deal?
+  const effectiveCeiling =
+    refuelingStyle === 'nearEmpty' ? 30 : CHEAPEST_LEVEL_CEILING_PCT;
+
+  // ── Mode: derive from zone ──
+  const mode: DecisionResult['mode'] =
+    zone === 'Safe' ? 'normal' :
+    zone === 'Planning' ? 'plan_soon' : 'refuel_soon';
+
+  // Corridor info for reason text
+  const corridorLabel = corridorStation && corridorStation.price !== null
+    ? ` ${corridorStation.brand} auf dem Weg — ${corridorStation.price.toFixed(3)} €/L.`
+    : '';
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // REFUEL SOON — Critical + Low zones: direct action, no trend analysis
+  // ═══════════════════════════════════════════════════════════════════════
+
+  if (zone === 'Critical') {
     return {
       recommendation: 'Go',
       station,
       saving_estimate: savingVsMedian,
-      reason: `🔴 Tank kritisch leer (${tankPctStr}). Jetzt tanken bei ${brandName} — ${priceStr} €/L`,
+      reason: `🔴 Tank fast leer (${tankPctStr}). Jetzt tanken bei ${brandName} — ${priceStr} €/L.`,
       readiness: 'Action',
       zone: 'Critical',
       confidenceLevel,
+      mode: 'refuel_soon',
     };
   }
 
-  // Rule 2: Value Check V1
-  const cheapThreshold = regionMedian * (1 - GOOD_DEAL_PCT_THRESHOLD);
-  const isGoodDeal = (station.price as number) <= cheapThreshold;
-  const currentHour = new Date().getHours();
-  const currentDow   = new Date().getDay(); // 0=Sun, 6=Sat
-  const isWeekday    = currentDow >= 1 && currentDow <= 5;
-  // German fuel price intraday dip: weekdays 16-19h only
-  const isGoodWindow = isWeekday && currentHour >= 16 && currentHour < 19;
-
-  // ── Effective ceiling: how high can the tank be before we ignore a good deal?
-  // 'nearEmpty' users only want alerts when genuinely low (30%).
-  // All others (cheapest / null) use the global ceiling (60%).
-  const effectiveCeiling =
-    refuelingStyle === 'nearEmpty' ? 30 : CHEAPEST_LEVEL_CEILING_PCT;
-
-  if (levelPercent < 30) {
-    if (isGoodWindow || isGoodDeal) {
+  if (zone === 'Low') {
+    // Low zone: always Go or Wait, action-oriented
+    if (isGoodDeal) {
       return {
-        recommendation: 'Go',
+        recommendation: trustCapAtWait ? 'Wait' : 'Go',
         station,
         saving_estimate: savingVsMedian,
-        reason: isGoodDeal
-          ? `🟢 Guter Preis: ${priceStr} €/L — ${(savingVsMedian * 100).toFixed(1)}¢/L unter Schnitt. Vollgetankt ca. ${netSavingStr} gespart.`
-          : `🟡 Günstige Tageszeit (16–19 Uhr) — Tank bei ${tankPctStr}, jetzt ${priceStr} €/L.`,
+        reason: `🟢 Tank niedrig (${tankPctStr}). ${brandName} ${priceStr} €/L — ${(savingVsMedian * 100).toFixed(1)}¢ günstiger. Vollgetankt ca. ${netSavingStr} gespart.`,
         readiness: 'Action',
         zone: 'Low',
         confidenceLevel,
+        mode: 'refuel_soon',
       };
-    } else {
+    }
+    // Low + intradayTrend falling: encourage action now
+    if (intradayTrend.direction === 'falling' && intradayTrend.confidence !== 'low') {
+      return {
+        recommendation: trustCapAtWait ? 'Wait' : 'Go',
+        station,
+        saving_estimate: savingVsMedian,
+        reason: `🟡 Tank niedrig (${tankPctStr}). Preise fallen gerade — ${brandName} ${priceStr} €/L.`,
+        readiness: 'Action',
+        zone: 'Low',
+        confidenceLevel,
+        mode: 'refuel_soon',
+      };
+    }
+    // Low + no deal + not falling: wait if possible
+    return {
+      recommendation: 'Wait',
+      station,
+      saving_estimate: savingVsMedian,
+      reason: `🟡 Tank bei ${tankPctStr} — Preis aktuell durchschnittlich (${priceStr} €/L). Bald tanken.`,
+      readiness: 'Monitor',
+      zone: 'Low',
+      confidenceLevel,
+      mode: 'refuel_soon',
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // PLAN SOON — Planning zone: when + where
+  // ═══════════════════════════════════════════════════════════════════════
+
+  if (zone === 'Planning') {
+    const currentHour = new Date().getHours();
+    const when = resolveWhen(daysLeft, dayTrend, intradayTrend, currentHour);
+
+    // Good deal in Planning zone → Go (but respect ceiling)
+    if (isGoodDeal && levelPercent <= effectiveCeiling) {
+      return {
+        recommendation: trustCapAtWait ? 'Wait' : 'Go',
+        station,
+        saving_estimate: savingVsMedian,
+        reason: `🟢 ${brandName} ${priceStr} €/L — ${(savingVsMedian * 100).toFixed(1)}¢ günstiger. ${when}`,
+        readiness: 'Monitor',
+        zone: 'Planning',
+        confidenceLevel,
+        mode: 'plan_soon',
+        when,
+        dayTrend: dayTrend.confidence !== 'low' ? dayTrend : undefined,
+      };
+    }
+
+    // Convenient mode: corridor station recommendation
+    if (
+      refuelingStyle === 'convenient' &&
+      corridorStation &&
+      corridorStation.netSavingEur > 0 &&
+      levelPercent <= effectiveCeiling
+    ) {
+      const corridorName = corridorStation.brand || corridorStation.name;
+      const corridorPriceStr = corridorStation.price !== null
+        ? corridorStation.price.toFixed(3)
+        : '—';
       return {
         recommendation: 'Wait',
         station,
         saving_estimate: savingVsMedian,
-        reason: `🟡 Tank bei ${tankPctStr} — Preis aktuell durchschnittlich (${priceStr} €/L). Abwarten.`,
+        reason: `🟡 ${when}${corridorLabel ? ' ' + corridorName + ' auf dem Weg — ' + corridorPriceStr + ' €/L.' : ''}`,
         readiness: 'Monitor',
-        zone: 'Low',
+        zone: 'Planning',
         confidenceLevel,
+        mode: 'plan_soon',
+        when,
+        dayTrend: dayTrend.confidence !== 'low' ? dayTrend : undefined,
       };
     }
-  } else if (isGoodDeal) {
-    // ── Ceiling Gate: suppress good-deal Go if tank is above effective ceiling ──
+
+    // Planning zone + no deal + above ceiling → subtle hint
     if (levelPercent > effectiveCeiling) {
       return {
         recommendation: 'Skip',
         station,
         saving_estimate: savingVsMedian,
-        reason: `Tank bei ${tankPctStr} — ${priceStr} €/L ist gut, aber noch kein Bedarf.`,
+        reason: `Tank bei ${tankPctStr} — ${priceStr} €/L, noch kein Bedarf.`,
         readiness: 'NotNeeded',
-        zone,
+        zone: 'Planning',
         confidenceLevel,
+        mode: 'plan_soon',
+        when,
+        dayTrend: dayTrend.confidence !== 'low' ? dayTrend : undefined,
       };
     }
+
+    // Default Planning: Wait with when recommendation
     return {
-      recommendation: 'Go',
+      recommendation: 'Wait',
       station,
       saving_estimate: savingVsMedian,
-      reason: `🟢 ${brandName} ${priceStr} €/L — ${(savingVsMedian * 100).toFixed(1)}¢/L günstiger als Umgebung. Vollgetankt ca. ${netSavingStr} gespart.`,
+      reason: `🟡 Tank bei ${tankPctStr}. ${when}`,
       readiness: 'Monitor',
       zone: 'Planning',
       confidenceLevel,
-    };
-  } else if (
-    // ── Rule 2.5: Convenient mode — prefer on-route corridor station ──
-    refuelingStyle === 'convenient' &&
-    corridorStation &&
-    corridorStation.netSavingEur > 0 &&
-    levelPercent < effectiveCeiling
-  ) {
-    const corridorPriceStr = corridorStation.price !== null
-      ? corridorStation.price.toFixed(3)
-      : '—';
-    const corridorName = corridorStation.brand || corridorStation.name;
-    return {
-      recommendation: levelPercent < 30 ? 'Go' : 'Wait',
-      station,
-      saving_estimate: savingVsMedian,
-      reason: levelPercent < 30
-        ? `🟢 ${corridorName} liegt auf deinem Weg — ${corridorPriceStr} €/L, ca. ${corridorStation.netSavingEur.toFixed(2)} € gespart.`
-        : `🟡 ${corridorName} auf dem Weg — ${corridorPriceStr} €/L. Tank bei ${tankPctStr}.`,
-      readiness: levelPercent < 30 ? 'Action' : 'Monitor',
-      zone: levelPercent < 30 ? 'Low' : 'Planning',
-      confidenceLevel,
-    };
-  } else {
-    // Silent
-    return {
-      recommendation: 'Skip',
-      station,
-      saving_estimate: savingVsMedian,
-      reason: `Tank bei ${tankPctStr} — ${priceStr} €/L, keine besseren Angebote in der Nähe.`,
-      readiness: 'NotNeeded',
-      zone,
-      confidenceLevel,
+      mode: 'plan_soon',
+      when,
+      dayTrend: dayTrend.confidence !== 'low' ? dayTrend : undefined,
     };
   }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // NORMAL — Safe zone: silent
+  // ═══════════════════════════════════════════════════════════════════════
+
+  return {
+    recommendation: 'Skip',
+    station,
+    saving_estimate: savingVsMedian,
+    reason: `Tank bei ${tankPctStr} — kein Handlungsbedarf.`,
+    readiness: 'NotNeeded',
+    zone,
+    confidenceLevel,
+    mode: 'normal',
+  };
 }
