@@ -48,6 +48,23 @@ export const DEFAULT_AVG_CONSUMPTION = 7.5;  // L/100km
 export const DEFAULT_TANK_CAPACITY = 50;     // Litres
 export const DEFAULT_REMAINING_KM = 300;     // Initial assumption if user hasn't set
 
+// --- Car-Type → Tank Capacity Mapping ---
+// Used by onboarding and Settings to seed smarter defaults.
+export const CAR_TYPE_TANK_CAPACITY: Record<string, number> = {
+  small:   40,   // Klein (<45 L)
+  regular: 55,   // Familie (45–65 L)
+  large:   70,   // Groß / SUV (65L+)
+  unknown: 50,   // Fallback
+};
+
+// --- Car-Type → Avg Consumption Mapping ---
+export const CAR_TYPE_AVG_CONSUMPTION: Record<string, number> = {
+  small:   6.5,  // L/100km
+  regular: 7.5,
+  large:   9.0,
+  unknown: 7.5,  // Fallback
+};
+
 // --- Notification Cooldown ---
 export const NOTIFICATION_COOLDOWN_MS = 4 * 60 * 60 * 1000; // 4 hours in ms
 export const MIN_SAVINGS_FOR_NOTIFICATION = 0.02; // €/L minimum to notify

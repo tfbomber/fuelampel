@@ -24,6 +24,10 @@ import {
 import { Language } from '../src/utils/i18n';
 import { t } from '../src/utils/i18n';
 import { LiveAddressInput } from '../src/components/LiveAddressInput';
+import {
+  CAR_TYPE_TANK_CAPACITY,
+  CAR_TYPE_AVG_CONSUMPTION,
+} from '../src/utils/constants';
 
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -252,6 +256,20 @@ export default function SettingsScreen() {
     }
   }
 
+  function handleCarTypeChange(type: CarType) {
+    setCarType(type);
+    // Sync local input fields to match the new car-type defaults
+    // so the user sees the updated values immediately.
+    const newCapacity    = CAR_TYPE_TANK_CAPACITY[type]   ?? 50;
+    const newConsumption = CAR_TYPE_AVG_CONSUMPTION[type]  ?? 7.5;
+    setCapacityInput(newCapacity.toString());
+    setConsumptionInput(newConsumption.toString());
+    setConsumptionDirty(false);
+    setCapacityDirty(false);
+    recomputeDecision();
+    console.log('[Settings] CarType changed →', type, '— input fields synced.');
+  }
+
   function handleRefuelingStyleChange(style: RefuelingStyle) {
     setRefuelingStyle(style);
     recomputeDecision();
@@ -414,7 +432,7 @@ export default function SettingsScreen() {
 
       {/* Car Type */}
       <Section title={t('vehicleType')}>
-        <OptionRow<CarType> options={CAR_TYPE_OPTIONS} value={carType} onSelect={setCarType} />
+        <OptionRow<CarType> options={CAR_TYPE_OPTIONS} value={carType} onSelect={handleCarTypeChange} />
       </Section>
 
       {/* Full Tank Cost */}

@@ -59,11 +59,29 @@ export function LiveAddressInput({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef    = useRef<AbortController | null>(null);
 
+  // Track whether the input has blurred while a search is still in-flight.
+  // When the search completes, auto-pick the first result instead of
+  // showing a dropdown that the user can no longer interact with.
+  const blurredWhileLoadingRef = useRef(false);
+
+  // Ref mirror of results for use in blur timeout (avoids stale closure)
+  const resultsRef = useRef<AddressSuggestion[]>([]);
+  resultsRef.current = results;
+
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
   function cancelPending() {
     if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; }
     if (abortRef.current)    { abortRef.current.abort();          abortRef.current    = null; }
+  }
+
+  /** Silently commit an AddressSuggestion without dismissing keyboard (already gone). */
+  function autoPickResult(s: AddressSuggestion) {
+    setQuery(s.shortName);
+    setResults([]);
+    setLoading(false);
+    onSelect({ plz: '', displayName: s.shortName, loc: s.loc });
+    console.log(`[LiveAddressInput] Auto-picked first result: ${s.shortName}`);
   }
 
   async function runSearch(q: string) {
@@ -79,9 +97,21 @@ export function LiveAddressInput({
       if (ac.signal.aborted) return;
       abortRef.current = null;
       setLoading(false);
-      setResults(r);              // Always show dropdown — user confirms selection explicitly
+
+      // If the user already blurred while this search was running,
+      // auto-pick the first result immediately instead of showing a
+      // dropdown the user can no longer see or interact with.
+      if (blurredWhileLoadingRef.current && r.length > 0) {
+        blurredWhileLoadingRef.current = false;
+        autoPickResult(r[0]);
+        return;
+      }
+      blurredWhileLoadingRef.current = false;
+
+      setResults(r);              // Show dropdown — user confirms selection explicitly
     } catch {
       if (!ac?.signal.aborted) setLoading(false);
+      blurredWhileLoadingRef.current = false;
     }
   }
 
@@ -124,7 +154,30 @@ export function LiveAddressInput({
     setQuery('');
     setResults([]);
     setLoading(false);
+    blurredWhileLoadingRef.current = false;
     onClear();
+  }
+
+  /**
+   * On blur: if results are already available, auto-pick the first one
+   * so the user's typed address is not silently lost.
+   * If a search is still in-flight (loading), mark the ref so the
+   * search callback will auto-pick when it resolves.
+   */
+  function handleBlur() {
+    setTimeout(() => {
+      const currentResults = resultsRef.current;
+      if (currentResults.length > 0) {
+        // Results already available — auto-pick first
+        autoPickResult(currentResults[0]);
+      } else if (loading) {
+        // Search still running — defer auto-pick to runSearch callback
+        blurredWhileLoadingRef.current = true;
+      } else {
+        // No results and no pending search — just clear dropdown
+        setResults([]);
+      }
+    }, 200); // 200ms delay so a suggestion tap can still register first
   }
 
   // ── Derived state ───────────────────────────────────────────────────────────
@@ -154,10 +207,7 @@ export function LiveAddressInput({
           placeholder={placeholder}
           placeholderTextColor="#4B5563"
           returnKeyType="search"
-          // onBlur: only delays closing by 200ms so a suggestion tap registers.
-          // We deliberately do NOT cancel the debounce here—the search should
-          // still fire even if the user dismissed the keyboard before 400ms.
-          onBlur={() => setTimeout(() => setResults([]), 200)}
+          onBlur={handleBlur}
           accessibilityLabel={label ?? placeholder}
         />
         <View style={livStyles.adornment}>

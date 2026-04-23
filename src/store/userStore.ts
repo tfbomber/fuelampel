@@ -13,6 +13,12 @@ import {
 } from '../utils/types';
 import { Language, setAppLanguage } from '../utils/i18n';
 import {
+  CAR_TYPE_TANK_CAPACITY,
+  CAR_TYPE_AVG_CONSUMPTION,
+  DEFAULT_AVG_CONSUMPTION,
+  DEFAULT_TANK_CAPACITY,
+} from '../utils/constants';
+import {
   createDefaultShadowTank,
   resetShadowTank,
   updateConsumption,
@@ -167,13 +173,19 @@ export const useUserStore = create<UserState>()(
         const homeLocFromArea = data.commonAreas[0]?.loc ?? null;
         const home = data.commonAreas[0];
         const work = data.commonAreas[1];
-        const { shadowTank } = get();
-        // Initialise SmartTank with the PLZ data collected during onboarding
+
+        // --- Dynamic defaults by car type (replaces hardcoded 7.5 / 50) ---
+        const carKey = data.carType ?? 'unknown';
+        const typedCapacity    = CAR_TYPE_TANK_CAPACITY[carKey]    ?? DEFAULT_TANK_CAPACITY;
+        const typedConsumption = CAR_TYPE_AVG_CONSUMPTION[carKey]  ?? DEFAULT_AVG_CONSUMPTION;
+        console.log(`[UserStore] Car-type defaults: carType=${carKey}, capacity=${typedCapacity}L, consumption=${typedConsumption}L/100km`);
+
+        // Initialise SmartTank with car-type-aware defaults
         const newSmartTank = createDefaultSmartTank(
           home, work,
           data.initialPct ?? 50,
-          shadowTank.avgConsumptionPer100km,
-          shadowTank.tankCapacityL,
+          typedConsumption,
+          typedCapacity,
         );
         set({
           hasCompletedOnboarding: true,
@@ -184,6 +196,8 @@ export const useUserStore = create<UserState>()(
           lastRefuelAmount: data.lastRefuelAmount,
           homeLocation: homeLocFromArea,
           smartTank: newSmartTank,
+          // Sync legacy shadowTank with typed defaults too
+          shadowTank: { ...get().shadowTank, tankCapacityL: typedCapacity, avgConsumptionPer100km: typedConsumption },
         });
 
         // Async OSRM road distance refinement
@@ -214,15 +228,16 @@ export const useUserStore = create<UserState>()(
       },
 
       setCommonAreas: (areas) => {
-        console.log(`[UserStore] Common areas updated: ${areas.map(a => a.plz).join(', ')}`);
+        console.log(`[UserStore] Common areas updated: ${areas.map(a => a.displayName).join(', ')}`);
         const homeLocFromArea = areas[0]?.loc ?? null;
         set({ commonAreas: areas, homeLocation: homeLocFromArea });
 
-        // Update SmartTank baseline if it exists
-        const { smartTank } = get();
+        const { smartTank, shadowTank, carType } = get();
+        const home = areas[0];
+        const work = areas[1];
+
         if (smartTank) {
-          const home = areas[0];
-          const work = areas[1];
+          // SmartTank already exists — update commute distance
           if (home?.loc && work?.loc) {
             const dummyStation = { lat: work.loc.lat, lng: work.loc.lng } as any;
             fetchRoadMetrics(home.loc, [dummyStation]).then((metrics) => {
@@ -237,6 +252,32 @@ export const useUserStore = create<UserState>()(
             // Fallback: Use 0 km for work -> triggers 15km/day default
             set({ smartTank: updateCommuteDistance(smartTank, 0) });
           }
+        } else if (home) {
+          // ── AUTO-BOOTSTRAP: SmartTank was null (skip-onboarding user) ──
+          // Now that the user has provided a home address in Settings,
+          // we can finally initialise the SmartTank engine.
+          const carKey = carType ?? 'unknown';
+          const typedCapacity    = CAR_TYPE_TANK_CAPACITY[carKey]    ?? DEFAULT_TANK_CAPACITY;
+          const typedConsumption = CAR_TYPE_AVG_CONSUMPTION[carKey]  ?? DEFAULT_AVG_CONSUMPTION;
+          const bootstrapped = createDefaultSmartTank(
+            home, work, 50,
+            typedConsumption, typedCapacity,
+          );
+          set({ smartTank: bootstrapped });
+          console.log(`[UserStore] SmartTank auto-bootstrapped from Settings: home=${home.displayName}`);
+
+          // Async OSRM refinement for the freshly bootstrapped tank
+          if (home.loc && work?.loc) {
+            const dummyStation = { lat: work.loc.lat, lng: work.loc.lng } as any;
+            fetchRoadMetrics(home.loc, [dummyStation]).then((metrics) => {
+              if (metrics && metrics[0]) {
+                const currentSmartTank = get().smartTank;
+                if (currentSmartTank) {
+                  set({ smartTank: updateCommuteDistance(currentSmartTank, metrics[0].distKm) });
+                }
+              }
+            }).catch(err => console.warn('[UserStore] OSRM bootstrap fetch failed:', err));
+          }
         }
       },
 
@@ -248,6 +289,23 @@ export const useUserStore = create<UserState>()(
       setCarType: (type) => {
         console.log(`[UserStore] Car type → ${type}`);
         set({ carType: type });
+
+        // Propagate car-type-aware defaults to tank engines
+        if (type) {
+          const newCapacity    = CAR_TYPE_TANK_CAPACITY[type]   ?? DEFAULT_TANK_CAPACITY;
+          const newConsumption = CAR_TYPE_AVG_CONSUMPTION[type] ?? DEFAULT_AVG_CONSUMPTION;
+          set((state) => ({
+            shadowTank: {
+              ...state.shadowTank,
+              tankCapacityL: newCapacity,
+              avgConsumptionPer100km: newConsumption,
+            },
+            smartTank: state.smartTank
+              ? { ...state.smartTank, tankCapacityL: newCapacity, consumptionPer100km: newConsumption }
+              : state.smartTank,
+          }));
+          console.log(`[UserStore] Car-type defaults applied: capacity=${newCapacity}L, consumption=${newConsumption}L/100km`);
+        }
       },
 
       setLastRefuelAmount: (amount) => {
