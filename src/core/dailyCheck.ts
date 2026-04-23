@@ -1,8 +1,23 @@
 // ====================================================
 // FuelAmpel — Daily Check Scheduler (v2 — 4-Gate)
 //
-// Schedules a local push notification for 16:00 based
+// Schedules a local push notification for 11:30 based
 // on the PROJECTED tank level at that time.
+//
+// 11:30 rationale: before the 12:00 upward price adjustment
+// window (German regulation 2026-04-01). This ensures users
+// get planning advice while prices may still fall.
+//
+// v2 upgrades (Phase 8):
+//   - Integrates shouldNotify() 4-Gate model (Need/Value/Trust/Budget)
+//   - Uses buildNotificationPayload() for corridor-aware rich content
+//   - Records notification budget via onNotificationSent() callback
+//   - Fallback to hardcoded strings when decision is unavailable
+//
+// v2.5.0 upgrades:
+//   - Notification time changed: 16:00 → 11:30 (2026-04-01 regulation)
+//   - Planning zone (plan_soon) now passes through to 4-Gate
+//   - buildContent handles Planning zone with softer message
 //
 // v2 upgrades (Phase 8):
 //   - Integrates shouldNotify() 4-Gate model (Need/Value/Trust/Budget)
@@ -49,13 +64,17 @@ function projectLevelAtMs(state: SmartTankState, targetMs: number): number {
 // ─── Internal: target time computation ────────────────────────────────────────
 
 /**
- * Returns the next 16:00 (local time).
- * If it's already past 16:00 today, returns tomorrow's 16:00.
+ * Returns the next 11:30 (local time).
+ * If it's already past 11:30 today, returns tomorrow's 11:30.
+ *
+ * Rationale: 11:30 is just before the 12:00 upward price adjustment
+ * window mandated by German fuel regulation 2026-04-01. Notifying
+ * here gives users time to refuel before prices may rise.
  */
-function getNext16h(): Date {
+function getNextNotifTime(): Date {
   const now = new Date();
   const target = new Date();
-  target.setHours(16, 0, 0, 0);
+  target.setHours(11, 30, 0, 0);
   if (now >= target) {
     target.setDate(target.getDate() + 1);
   }
@@ -65,8 +84,9 @@ function getNext16h(): Date {
 // ─── Internal: build notification content ────────────────────────────────────
 
 function buildContent(
-  zone: 'Low' | 'Critical',
+  zone: 'Low' | 'Critical' | 'Planning',
   projectedPct: number,
+  when?: string,
 ): Notifications.NotificationContentInput {
   const pct = Math.round(projectedPct);
 
@@ -79,8 +99,17 @@ function buildContent(
     };
   }
 
+  if (zone === 'Planning') {
+    return {
+      title: '⛽ Tanken planen — FuelAmpel',
+      body: when ?? `Tank bei ~${pct}% — heute wäre ein guter Zeitpunkt.`,
+      data: { type: 'daily_check', zone: 'Planning' },
+      sound: false,
+    };
+  }
+
   return {
-    title: '🟡 Jetzt tanken?',
+    title: '🟡 Bald tanken?',
     body: `Tank bei ~${pct}% — App öffnen für die besten Preise in der Nähe.`,
     data: { type: 'daily_check', zone: 'Low' },
     sound: false,
@@ -90,17 +119,18 @@ function buildContent(
 // ─── Public: scheduleDailyCheck ───────────────────────────────────────────────
 
 /**
- * Schedule (or cancel) the 16:00 daily check notification.
+ * Schedule (or cancel) the 11:30 daily check notification.
  *
  * Logic (v2 - 4-Gate):
  *   1. Always cancel existing daily notification.
- *   2. Project tank level at next 16:00.
+ *   2. Project tank level at next 11:30.
  *   3. Classify projected zone.
- *   4. Zone = Safe or Planning → stay silent (do not schedule).
- *   5. Zone = Low or Critical:
- *      - If decision available: run 4-Gate check (`shouldNotify`). If blocked, stay silent.
- *      - If decision missing (fallback): schedule v1 notification.
- *   6. Record notification sent (if scheduled).
+ *   4. Zone = Safe → silent.
+ *      Zone = Planning: only proceed if current decision.mode is plan_soon.
+ *   5. Zone = Low or Critical: always proceed.
+ *   6. Run 4-Gate (shouldNotify). If blocked, stay silent.
+ *      Fallback: if no decision, use hardcoded strings.
+ *   7. Record notification sent (if scheduled).
  */
 export async function scheduleDailyCheck(
   smartTank: SmartTankState | null,
@@ -121,20 +151,25 @@ export async function scheduleDailyCheck(
     return;
   }
 
-  // Step 2: Project level at next 16:00
-  const target = getNext16h();
+  // Step 2: Project level at next 11:30
+  const target = getNextNotifTime();
   const projectedLevel = projectLevelAtMs(smartTank, target.getTime());
   const zone = classifyZone(projectedLevel);
 
   const pctStr = Math.round(projectedLevel);
   console.log(
-    `[DailyCheck] Next 16:00 = ${target.toLocaleString()}, ` +
+    `[DailyCheck] Next notif = ${target.toLocaleString()}, ` +
     `projected level = ${pctStr}% → zone = ${zone}`
   );
 
-  // Step 3: Only notify for Low or Critical
-  if (zone !== 'Low' && zone !== 'Critical') {
-    console.log(`[DailyCheck] Zone is ${zone} — silent, no notification scheduled`);
+  // Step 3: Determine if we should proceed
+  const isPlanSoonDecision = decision?.mode === 'plan_soon';
+  if (zone === 'Safe') {
+    console.log(`[DailyCheck] Zone is Safe — silent, no notification scheduled`);
+    return;
+  }
+  if (zone === 'Planning' && !isPlanSoonDecision) {
+    console.log(`[DailyCheck] Zone is Planning but no plan_soon decision — silent`);
     return;
   }
 
@@ -155,8 +190,12 @@ export async function scheduleDailyCheck(
       sound: zone === 'Critical',
     };
   } else {
-    // Fallback to v1 hardcoded strings
-    content = buildContent(zone, projectedLevel);
+    // Fallback to hardcoded strings (pass decision.when for Planning zone if available)
+    content = buildContent(
+      zone as 'Low' | 'Critical' | 'Planning',
+      projectedLevel,
+      decision?.when,
+    );
   }
 
   // Step 5: Schedule the notification

@@ -50,8 +50,10 @@ function isNewWeek(weekStartMs: number): boolean {
 /**
  * Decide whether to send a push notification now.
  *
- * Gate 1 — Need:    Zone must be Low or Critical; Planning/Safe blocked (in-app only).
- * Gate 2 — Value:   Savings must exceed threshold (Critical: €0, others: MIN_SAVINGS).
+ * Gate 1 — Need:    Zone must be Low/Critical OR mode must be plan_soon (with non-Skip rec).
+ *                   Planning+normal and Safe are always silent (in-app only).
+ * Gate 2 — Value:   Savings must exceed threshold. Exception: plan_soon with a 'when'
+ *                   recommendation passes regardless (the timing advice is the value).
  * Gate 3 — Trust:   Confidence must be medium/high (Critical bypasses).
  * Gate 4 — Budget:  Cooldown (4h always) + weekly cap (≤3; Critical bypasses cap).
  */
@@ -60,18 +62,25 @@ export function shouldNotify(
   notifState: NotificationState,
 ): GateResult {
   const isCritical = decision.zone === 'Critical';
+  const isPlanSoon  = decision.mode === 'plan_soon' && decision.recommendation !== 'Skip';
 
   // ── Gate 1: Need ────────────────────────────────────────────────────────────
-  if (decision.zone === 'Safe' || decision.zone === 'Planning') {
+  // Low/Critical: always actionable.
+  // Planning + plan_soon: timing recommendation is actionable.
+  // Planning + normal, Safe: in-app only — never push.
+  const isUrgent = decision.zone === 'Low' || decision.zone === 'Critical';
+  if (!isUrgent && !isPlanSoon) {
     return { allowed: false, reason: 'need_not_met' };
   }
-  if (decision.recommendation === 'Skip') {
+  if (decision.recommendation === 'Skip' && !isPlanSoon) {
     return { allowed: false, reason: 'skip_recommendation' };
   }
 
   // ── Gate 2: Value ───────────────────────────────────────────────────────────
+  // plan_soon bypass: the 'when' timing recommendation is itself the value.
+  const hasPlanSoonValue = isPlanSoon && decision.when !== undefined;
   const minSaving = isCritical ? 0 : MIN_SAVINGS_FOR_NOTIFICATION;
-  if (decision.saving_estimate < minSaving) {
+  if (!hasPlanSoonValue && decision.saving_estimate < minSaving) {
     return { allowed: false, reason: 'value_insufficient' };
   }
 

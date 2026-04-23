@@ -443,7 +443,7 @@ export function computeDecision(
         recommendation: 'Wait',
         station,
         saving_estimate: savingVsMedian,
-        reason: `🟡 ${when}${corridorLabel ? ' ' + corridorName + ' auf dem Weg — ' + corridorPriceStr + ' €/L.' : ''}`,
+        reason: `🟡 ${when}${corridorLabel}`,
         readiness: 'Monitor',
         zone: 'Planning',
         confidenceLevel,
