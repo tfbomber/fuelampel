@@ -47,8 +47,11 @@ export function FuelSlider({
   // ─── PanResponder — replaces native Slider ────────────────────────────────
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
+      // Don't capture on initial touch — let ScrollView handle taps/vertical scrolls
+      onStartShouldSetPanResponder: () => false,
+      // Only capture when horizontal drag exceeds vertical drag (+ 4px dead-zone)
+      onMoveShouldSetPanResponder: (_, { dx, dy }) =>
+        Math.abs(dx) > Math.abs(dy) + 4,
 
       onPanResponderGrant: (_, gestureState) => {
         isDraggingRef.current = true;
@@ -85,7 +88,10 @@ export function FuelSlider({
     setLocal(pct);
     localRef.current = pct;
     animatedFill?.setValue(pct);
-    onValueChange?.(pct);
+    // Snap the *reported* value to step so parent UI never shows decimals,
+    // while keeping internal local/ref at continuous float for smooth thumb.
+    const snapped = Math.max(0, Math.min(100, Math.round(pct / step) * step));
+    onValueChange?.(snapped);
   }
 
   // ─── Layout measurement ───────────────────────────────────────────────────

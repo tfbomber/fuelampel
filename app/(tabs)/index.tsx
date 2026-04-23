@@ -18,9 +18,10 @@ import { useFocusEffect } from '@react-navigation/native';
 import { FuelSlider } from '../../src/components/FuelSlider';
 import { SmartTankState } from '../../src/utils/types';
 
-// ─── TankGaugeSlider ──────────────────────────────────────────────────────────
-// Single combined component: animated fill bar + thumb slider overlaid in one.
-function TankGaugeSlider({
+// ─── InteractiveTankBar ───────────────────────────────────────────────────────
+// Always-interactive fuel bar: label row + FuelSlider with directional gesture.
+// Replaces the old ShadowTankBar + TankGaugeSlider dual-layer architecture.
+function InteractiveTankBar({
   value, onValueChange, onSlidingComplete, totalRangeKm, animatedPct, isEstimated, fuelTypeLabel,
 }: {
   value: number;
@@ -32,16 +33,17 @@ function TankGaugeSlider({
   fuelTypeLabel?: string;
 }) {
   const color = value > 50 ? '#22C55E' : value > 25 ? '#F59E0B' : '#EF4444';
+  const prefix = isEstimated ? '~' : '';
   const rightLabel = totalRangeKm
-    ? `${Math.round(value)}% · ${Math.round((value / 100) * totalRangeKm)} km`
-    : `${Math.round(value)}%`;
+    ? `${prefix}${Math.round(value)}% · ${Math.round((value / 100) * totalRangeKm)} km`
+    : `${prefix}${Math.round(value)}%`;
   return (
-    <View style={tgs.container}>
-      <View style={tgs.labelRow}>
-        <Text style={tgs.left}>
+    <View style={itb.container}>
+      <View style={itb.labelRow}>
+        <Text style={itb.left}>
           {isEstimated ? t('tankLabelEst') : t('tankLabel')}{fuelTypeLabel ? `  ·  ${fuelTypeLabel}` : ''}
         </Text>
-        <Text style={[tgs.right, { color }]}>{rightLabel}</Text>
+        <Text style={[itb.right, { color }]}>{rightLabel}</Text>
       </View>
       <FuelSlider
         value={value}
@@ -53,7 +55,7 @@ function TankGaugeSlider({
     </View>
   );
 }
-const tgs = StyleSheet.create({
+const itb = StyleSheet.create({
   container: { marginHorizontal: 20, gap: 6 },
   labelRow:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 },
   left:      { color: '#6B7280', fontSize: 12, fontWeight: '500' },
@@ -74,7 +76,6 @@ import { CONFIDENCE_HIGH } from '../../src/utils/constants';
 import { TrafficLight } from '../../src/components/TrafficLight';
 import { ReasonCard } from '../../src/components/ReasonCard';
 import { StationCard } from '../../src/components/StationCard';
-import { ShadowTankBar } from '../../src/components/ShadowTankBar';
 import { PatternConfirmBanner } from '../../src/components/PatternConfirmBanner';
 import { useRefuelConfirm } from '../../src/hooks/useRefuelConfirm';
 import { formatFuelType } from '../../src/utils/formatters';
@@ -115,24 +116,20 @@ export default function HomeScreen() {
   const animatedPct = useRef(new Animated.Value(fuelPct)).current;
 
   // Post-refuel Mode state
-  type AppMode = 'normal' | 'animating' | 'adjusting' | 'soft_confirm';
+  type AppMode = 'normal' | 'animating';
   const [mode, setMode] = useState<AppMode>('normal');
-  const [sliderValue, setSliderValue]   = useState(100);
+  const [sliderValue, setSliderValue]   = useState(Math.round(fuelPct));
   const [euroInput, setEuroInput]       = useState('');
 
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** true = mode was triggered by "ich habe getankt"; false = manual long-press adjust */
-  const isRefuelModeRef = useRef(false);
   /** Deep-copy of smartTank captured just before a refuel is recorded — enables true state rollback. */
   const smartTankSnapshotRef = useRef<SmartTankState | null>(null);
   /** Suppress low-tank banner for 10s after any manual level adjustment */
   const suppressBannerUntilRef = useRef(0);
-  /** For double-tap detection on ShadowTankBar */
-  const lastTankTapRef = useRef(0);
 
   // ── Rück button: spring in/out ────────────────────────────────────────────
   const ruckAnim = useRef(new Animated.Value(0)).current;
-  const showUndo = mode === 'animating' || mode === 'adjusting' || mode === 'soft_confirm';
+  const showUndo = mode === 'animating';
   useEffect(() => {
     Animated.spring(ruckAnim, {
       toValue: showUndo ? 1 : 0,
@@ -143,20 +140,13 @@ export default function HomeScreen() {
     }).start();
   }, [showUndo]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Tank crossfade: dual-opacity, both components always in tree ──────────
-  // barOpacity=1 / sliderOpacity=0 → ShadowTankBar visible (normal mode)
-  // barOpacity=0 / sliderOpacity=1 → TankGaugeSlider visible (adjusting mode)
-  // Animated in parallel → zero flicker, zero layout shift
-  const isSliderMode = (m: AppMode) => m === 'adjusting';
-  const barOpacity    = useRef(new Animated.Value(1)).current;
-  const sliderOpacity = useRef(new Animated.Value(0)).current;
+  // Keep slider in sync with engine-computed fuelPct when in normal mode
   useEffect(() => {
-    const toSlider = isSliderMode(mode);
-    Animated.parallel([
-      Animated.timing(barOpacity,    { toValue: toSlider ? 0 : 1, duration: 180, useNativeDriver: true }),
-      Animated.timing(sliderOpacity, { toValue: toSlider ? 1 : 0, duration: 180, useNativeDriver: true }),
-    ]).start();
-  }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (mode === 'normal') {
+      setSliderValue(Math.round(fuelPct));
+      animatedPct.setValue(fuelPct);
+    }
+  }, [fuelPct, mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useFocusEffect(
     useCallback(() => {
@@ -181,12 +171,7 @@ export default function HomeScreen() {
         Animated.timing(highlightAnim, { toValue: 1, duration: 300, useNativeDriver: false }),
         Animated.timing(highlightAnim, { toValue: 0, duration: 800, useNativeDriver: false }),
       ]).start();
-
-      // Automatically open the slider thumb for adjustment
-      if (mode === 'normal') {
-        // use a slight timeout so the animation draws attention first
-        setTimeout(() => handleManualAdjust(), 600);
-      }
+      // Slider is always interactive — highlight animation draws attention
     }
   }, [params.action]);
 
@@ -221,7 +206,6 @@ export default function HomeScreen() {
     smartTankSnapshotRef.current = smartTank ? JSON.parse(JSON.stringify(smartTank)) : null;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); // strong, felt on all Android devices
     prevFuelPctRef.current = fuelPct;
-    isRefuelModeRef.current = true;
     const eurosSpent = parseFloat(euroInput) || 0;
     // Convert euros to litres using current fuel price
     const pricePerL = decision?.station?.price ?? 0;
@@ -237,8 +221,8 @@ export default function HomeScreen() {
       toValue: 100, duration: 500, useNativeDriver: false,
     }).start(() => {
       setSliderValue(100);
-      setMode('adjusting');
-      // Recompute after fill animation; store already has the refuel recorded
+      // Return to normal after fill animation; slider stays at 100%
+      setMode('normal');
       setTimeout(() => recomputeDecision(), 50);
     });
     console.log(`[HomeScreen] Refuel tapped — prev level=${prevFuelPctRef.current}%`);
@@ -248,23 +232,18 @@ export default function HomeScreen() {
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
     const prev = prevFuelPctRef.current;
 
-    if (isRefuelModeRef.current && smartTankSnapshotRef.current) {
+    if (smartTankSnapshotRef.current) {
       // True rollback: restore the exact state that existed before the refuel button was tapped.
       // This eliminates the ghost refuel event from refuelHistory (important for EMA accuracy).
       restoreSmartTankSnapshot(smartTankSnapshotRef.current);
       smartTankSnapshotRef.current = null;
       console.log(`[HomeScreen] Undo — full snapshot restored to ${prev}%`);
-    } else {
-      // Manual adjust undo — no refuel event recorded, just correct the level
-      adjustLevelManually(prev);
-      console.log(`[HomeScreen] Undo — manual adjust reverted to ${prev}%`);
     }
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); // distinct from "success" tap
     Animated.timing(animatedPct, {
       toValue: prev, duration: 400, useNativeDriver: false,
     }).start();
-    isRefuelModeRef.current = false;
     setMode('normal');
     // Recompute decision with reverted level (no network call)
     setTimeout(() => recomputeDecision(), 50);
@@ -276,55 +255,10 @@ export default function HomeScreen() {
       toValue: val, duration: 300, useNativeDriver: false,
     }).start();
     suppressBannerUntilRef.current = Date.now() + 10_000;
-    setMode('normal');
     // Recompute decision with new level (no network call)
     setTimeout(() => recomputeDecision(), 50);
     console.log(`[HomeScreen] Level adjusted to ${val}%`);
   }
-
-  function handleBlankTap() {
-    if (mode === 'adjusting') {
-      // Commit the current slider value before exiting adjust mode.
-      // Without this, the bar stays at the dragged position visually but
-      // the store retains the old value, causing a mismatch on next render.
-      handleSliderCommit(sliderValue);
-      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
-    }
-  }
-
-  /**
-   * Long-press on the ShadowTankBar (normal mode) — enter manual adjust
-   * WITHOUT recording a refuel event. Slider starts at current fuelPct.
-   * Undo reverts to pre-drag value; no store record is written until
-   * handleSliderCommit is called.
-   */
-  function handleManualAdjust() {
-    if (mode !== 'normal') return;
-    prevFuelPctRef.current = fuelPct;
-    isRefuelModeRef.current = false;
-    setSliderValue(Math.round(fuelPct));
-    animatedPct.setValue(fuelPct);
-    setMode('adjusting');
-    console.log(`[HomeScreen] Manual adjust via long-press/double-tap at ${fuelPct}%`);
-  }
-
-  /** Double-tap handler for ShadowTankBar — same trigger as long-press */
-  function handleTankTap() {
-    if (mode !== 'normal') return;
-    const now = Date.now();
-    if (now - lastTankTapRef.current < 350) {
-      // Double-tap detected
-      lastTankTapRef.current = 0;
-      handleManualAdjust();
-    } else {
-      lastTankTapRef.current = now;
-    }
-  }
-
-  // Determine slider display label
-  const sliderLabel = totalRangeKm
-    ? `≈ ${Math.round((sliderValue / 100) * totalRangeKm)} km`
-    : `${Math.round(sliderValue)}%`;
 
   return (
     <View style={styles.screen}>
@@ -332,7 +266,6 @@ export default function HomeScreen() {
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.content}
-        scrollEnabled={mode !== 'adjusting'}
         refreshControl={
           <RefreshControl
             refreshing={isLoading}
@@ -342,9 +275,6 @@ export default function HomeScreen() {
           />
         }
       >
-      {mode === 'adjusting' && (
-        <Pressable style={styles.absoluteOverlay} onPress={handleBlankTap} />
-      )}
 
 
       {/* ── Priority Banner Stack ── */}
@@ -393,45 +323,20 @@ export default function HomeScreen() {
         </View>
       ) : null}
 
-      {/* ── Tank area — fixed height, dual-opacity overlay ─────────────── */}
+      {/* ── Tank area — always-interactive ─────────────────────────────── */}
       <Animated.View style={[
         styles.tankArea,
-        (mode === 'adjusting' || mode === 'soft_confirm') ? { zIndex: 20 } : undefined,
         { backgroundColor: tankBgColor, borderColor: tankBorderColor, borderWidth: 1, borderRadius: 16, marginHorizontal: -12, paddingHorizontal: 12, paddingVertical: 8 }
       ]}>
-        {/* Fixed-height container — both components rendered, opacity crossfade */}
-        <View style={styles.tankLayerContainer}>
-          {/* ShadowTankBar layer — visible when NOT in slider mode */}
-          <Animated.View
-            style={[StyleSheet.absoluteFillObject, { opacity: barOpacity }]}
-            pointerEvents={isSliderMode(mode) ? 'none' : 'auto'}
-          >
-            <ShadowTankBar
-              fuelLevelPercent={fuelPct}
-              totalRangeKm={totalRangeKm}
-              isEstimated={isEstimated}
-              fuelTypeLabel={formatFuelType(fuelType)}
-              onLongPress={mode === 'normal' ? handleManualAdjust : undefined}
-              onPress={mode === 'normal' ? handleTankTap : undefined}
-            />
-          </Animated.View>
-
-          {/* TankGaugeSlider layer — visible when in slider mode */}
-          <Animated.View
-            style={[StyleSheet.absoluteFillObject, { opacity: sliderOpacity }]}
-            pointerEvents={isSliderMode(mode) ? 'auto' : 'none'}
-          >
-            <TankGaugeSlider
-              value={sliderValue}
-              onValueChange={setSliderValue}
-              onSlidingComplete={handleSliderCommit}
-              totalRangeKm={totalRangeKm}
-              animatedPct={animatedPct}
-              isEstimated={isEstimated}
-              fuelTypeLabel={formatFuelType(fuelType)}
-            />
-          </Animated.View>
-        </View>
+        <InteractiveTankBar
+          value={sliderValue}
+          onValueChange={setSliderValue}
+          onSlidingComplete={handleSliderCommit}
+          totalRangeKm={totalRangeKm}
+          animatedPct={animatedPct}
+          isEstimated={isEstimated}
+          fuelTypeLabel={formatFuelType(fuelType)}
+        />
 
         {/* Undo row — fixed height, spring in/out, no layout shift */}
         <View style={styles.undoRow}>
@@ -457,7 +362,7 @@ export default function HomeScreen() {
       </Animated.View>
 
       <Text style={styles.tankHint}>
-        {mode === 'adjusting' ? t('tankAdjustingHint') : t('tankAdjustHint')}
+        {t('tankAdjustHint')}
       </Text>
 
       {/* ── Traffic Light ── */}
@@ -522,7 +427,7 @@ export default function HomeScreen() {
       )}
 
       {/* ── Bottom Actions ── */}
-      <View style={[styles.actions, (mode === 'adjusting' || mode === 'soft_confirm') ? { zIndex: 20 } : undefined]}>
+      <View style={styles.actions}>
         <View style={styles.getanktRow}>
           <Pressable
             style={({ pressed }) => [
@@ -572,11 +477,7 @@ const styles = StyleSheet.create({
   },
   subtitle:    { fontSize: 13, color: '#6B7280' },
   // (settingsBtnFixed removed — settings now in tab header right)
-  // Fixed-height tank layer container — gives both overlay components a stable size
-  tankLayerContainer: {
-    height: 82, // ShadowTankBar ≈ 68px + TankGaugeSlider ≈ 76px → 82 fits both
-    position: 'relative',
-  },
+
   lightContainer: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -697,10 +598,7 @@ const styles = StyleSheet.create({
   setupBannerText: { color: '#A5B4FC', fontSize: 13, flex: 1, lineHeight: 18 },
   setupBannerCta:  { color: '#6366F1', fontSize: 14, fontWeight: '700' },
 
-  absoluteOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 10,
-  },
+
 
   // Floating undo button — absolutely positioned, no layout shift
   undoFloating: {

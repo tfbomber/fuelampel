@@ -17,9 +17,10 @@
 import React, { useState, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList,
-  ActivityIndicator, StyleSheet, Keyboard, ViewStyle,
+  ActivityIndicator, StyleSheet, Keyboard, ViewStyle, Alert,
 } from 'react-native';
-import { searchAddressWithFallback, AddressSuggestion } from '../utils/geocoding';
+import * as Location from 'expo-location';
+import { searchAddressWithFallback, AddressSuggestion, reverseGeocode } from '../utils/geocoding';
 import { CommonArea } from '../utils/types';
 import { t } from '../utils/i18n';
 
@@ -33,10 +34,22 @@ interface LiveAddressInputProps {
   onSelect: (area: CommonArea) => void;
   onClear: () => void;
   containerStyle?: ViewStyle;
+  /** The other address field's resolved area — used for same-location detection (<500m). */
+  otherArea?: CommonArea | null;
   /** Minimum query length before searching. Default 3. */
   minLength?: number;
   /** Debounce delay in ms. Default 400 (real-time feel). */
   debounceMs?: number;
+}
+
+// ── Haversine distance (metres) ───────────────────────────────────────────────
+function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6_371_000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -49,12 +62,14 @@ export function LiveAddressInput({
   onSelect,
   onClear,
   containerStyle,
+  otherArea,
   minLength = 3,
   debounceMs = 400,
 }: LiveAddressInputProps) {
   const [query,   setQuery]   = useState(selectedArea?.displayName ?? '');
   const [results, setResults] = useState<AddressSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
+  const [gpsLoading, setGpsLoading] = useState(false);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef    = useRef<AbortController | null>(null);
@@ -158,6 +173,66 @@ export function LiveAddressInput({
     onClear();
   }
 
+  // ── GPS current location ────────────────────────────────────────────────────
+
+  async function handleGpsPress() {
+    if (gpsLoading || loading) return;
+    setGpsLoading(true);
+    cancelPending();
+    setResults([]);
+
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Standort', 'Bitte erlaube den Standort­zugriff in den Geräte­einstellungen.');
+        setGpsLoading(false);
+        return;
+      }
+
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const result = await reverseGeocode(pos.coords.latitude, pos.coords.longitude);
+      setGpsLoading(false);
+
+      if (!result) {
+        Alert.alert('Standort', 'Adresse konnte nicht ermittelt werden.');
+        return;
+      }
+
+      // Same-location soft warning (<500m)
+      if (otherArea?.loc) {
+        const dist = haversineM(
+          result.loc.lat, result.loc.lng,
+          otherArea.loc.lat, otherArea.loc.lng,
+        );
+        if (dist < 500) {
+          Alert.alert(
+            'Gleicher Standort',
+            'Diese Adresse ist sehr nah an deiner anderen Adresse. Trotzdem verwenden?',
+            [
+              { text: 'Abbrechen', style: 'cancel' },
+              { text: 'Verwenden', onPress: () => commitGpsResult(result) },
+            ],
+          );
+          return;
+        }
+      }
+
+      commitGpsResult(result);
+    } catch (err) {
+      setGpsLoading(false);
+      console.error('[LiveAddressInput] GPS error:', err);
+      Alert.alert('Standort', 'Standort konnte nicht abgerufen werden.');
+    }
+  }
+
+  function commitGpsResult(s: AddressSuggestion) {
+    setQuery(s.shortName);
+    setResults([]);
+    Keyboard.dismiss();
+    onSelect({ plz: '', displayName: s.shortName, loc: s.loc });
+    console.log(`[LiveAddressInput] GPS location set: ${s.shortName}`);
+  }
+
   /**
    * On blur: if results are already available, auto-pick the first one
    * so the user's typed address is not silently lost.
@@ -211,9 +286,18 @@ export function LiveAddressInput({
           accessibilityLabel={label ?? placeholder}
         />
         <View style={livStyles.adornment}>
-          {loading && <ActivityIndicator size="small" color="#6366F1" />}
-          {!loading && resolved && <Text style={livStyles.check}>✓</Text>}
-          {!loading && query.length > 0 && (
+          {(loading || gpsLoading) && <ActivityIndicator size="small" color="#6366F1" />}
+          {!loading && !gpsLoading && resolved && <Text style={livStyles.check}>✓</Text>}
+          {!loading && !gpsLoading && (
+            <TouchableOpacity
+              onPress={handleGpsPress}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityLabel="Aktuellen Standort verwenden"
+            >
+              <Text style={livStyles.gpsIcon}>📍</Text>
+            </TouchableOpacity>
+          )}
+          {!loading && !gpsLoading && query.length > 0 && (
             <TouchableOpacity
               onPress={handleClear}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -269,6 +353,7 @@ export const livStyles = StyleSheet.create({
   adornment:   { flexDirection: 'row', alignItems: 'center', gap: 8 },
   check:       { color: '#22C55E', fontSize: 16, fontWeight: '700' },
   clear:       { color: '#4B5563', fontSize: 13, fontWeight: '700' },
+  gpsIcon:     { fontSize: 16, opacity: 0.7 },
   dropdown:    {
     marginTop: 4,
     backgroundColor: '#1E2130',

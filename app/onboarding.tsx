@@ -117,6 +117,7 @@ function SmartTankInitScreen({ onDone }: { onDone: (pct: number) => void }) {
   const [pct,     setPct]     = useState(50);
   const [carType, setCarType] = useState<CarType | null>(null);
   const carTypes = getCarTypes();
+  const storeRangeKm = useUserStore(s => s.smartTank?.totalRangeKm ?? null);
 
   return (
     <View style={s.screen}>
@@ -136,6 +137,9 @@ function SmartTankInitScreen({ onDone }: { onDone: (pct: number) => void }) {
           <View style={levelS.box}>
             <Text style={levelS.pct}>{pct}%</Text>
             <Text style={levelS.label}>{getTankLevelLabel(pct)}</Text>
+            {storeRangeKm != null && storeRangeKm > 0 && (
+              <Text style={levelS.kmHint}>≈ {Math.round((pct / 100) * storeRangeKm)} km</Text>
+            )}
           </View>
 
           <FuelSlider
@@ -342,6 +346,7 @@ export default function OnboardingScreen() {
                 selectedArea={homeArea}
                 onSelect={setHomeArea}
                 onClear={() => setHomeArea(null)}
+                otherArea={workArea}
               />
             </View>
             <View style={s.options}>
@@ -352,6 +357,7 @@ export default function OnboardingScreen() {
                 selectedArea={workArea}
                 onSelect={setWorkArea}
                 onClear={() => setWorkArea(null)}
+                otherArea={homeArea}
               />
             </View>
           </View>
@@ -422,6 +428,12 @@ export default function OnboardingScreen() {
             <View style={levelS.box}>
               <Text style={levelS.pct}>{tankPct}%</Text>
               <Text style={levelS.label}>{getTankLevelLabel(tankPct)}</Text>
+              {(() => {
+                const rkm = parseFloat(totalRangeKm);
+                return !isNaN(rkm) && rkm >= 50 ? (
+                  <Text style={levelS.kmHint}>≈ {Math.round((tankPct / 100) * rkm)} km</Text>
+                ) : null;
+              })()}
             </View>
 
             {/* Combined visual bar + slider — one element via FuelSlider */}
@@ -504,6 +516,7 @@ const levelS = StyleSheet.create({
   trackWrap: { position: 'relative', height: 40, justifyContent: 'center' },
   overlay:   { position: 'absolute', left: -8, right: -8, height: 40 },
   hint:      { color: '#4B5563', fontSize: 11, textAlign: 'center' },
+  kmHint:    { color: '#6366F1', fontSize: 14, fontWeight: '600', marginTop: 2 },
 });
 // ── Step 3: Range Input Styles ────────────────────────────────────────────────
 const rangeS = StyleSheet.create({

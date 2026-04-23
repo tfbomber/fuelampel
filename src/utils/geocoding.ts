@@ -32,6 +32,50 @@ export interface AddressSuggestion {
   loc: GeoLocation;
 }
 
+// ── Reverse geocoding (GPS → address) ─────────────────────────────────────────
+
+/**
+ * Reverse-geocode a lat/lng coordinate to a street-level address via Nominatim.
+ * Used by the GPS "current location" button in LiveAddressInput.
+ * @returns AddressSuggestion or null on failure/timeout.
+ */
+export async function reverseGeocode(
+  lat: number,
+  lng: number,
+): Promise<AddressSuggestion | null> {
+  const url = `${NOMINATIM_BASE}/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1&zoom=18`;
+  console.log(`[Geocoding] Reverse lookup: ${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+
+  const ac = new AbortController();
+  const timeout = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(url, { headers: NOMINATIM_HEADERS, signal: ac.signal });
+    clearTimeout(timeout);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data?.lat || !data?.lon) return null;
+
+    const addr = data.address ?? {};
+    const cityPart = addr.city ?? addr.town ?? addr.village ?? addr.county ?? '';
+    const roadPart = addr.road ?? addr.pedestrian ?? addr.path ?? '';
+    const plzPart  = addr.postcode ?? '';
+    const shortName = roadPart
+      ? [roadPart, cityPart].filter(Boolean).join(', ')
+      : [plzPart, cityPart].filter(Boolean).join(' ') || data.display_name?.split(',')[0] || 'GPS';
+    const displayName = (data.display_name ?? shortName).slice(0, 70);
+
+    return {
+      displayName,
+      shortName,
+      loc: { lat: parseFloat(data.lat), lng: parseFloat(data.lon) },
+    };
+  } catch {
+    clearTimeout(timeout);
+    return null;
+  }
+}
+
 // ─── PLZ-only lookup ──────────────────────────────────────────────────────────
 
 /**

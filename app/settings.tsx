@@ -401,6 +401,7 @@ export default function SettingsScreen() {
           selectedArea={homeArea}
           onSelect={updateHome}
           onClear={clearHome}
+          otherArea={workArea}
         />
         <LiveAddressInput
           label={t('workArea')}
@@ -409,6 +410,7 @@ export default function SettingsScreen() {
           selectedArea={workArea}
           onSelect={updateWork}
           onClear={clearWork}
+          otherArea={homeArea}
         />
       </Section>
 
