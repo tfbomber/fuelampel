@@ -471,11 +471,11 @@ export default function HomeScreen() {
               activeOpacity={0.82}
               accessibilityLabel={t('goStationsA11y')}
             >
-              <TrafficLight recommendation={decision.recommendation} size={164} />
+              <TrafficLight recommendation={decision.recommendation} size={140} />
               <Text style={styles.goHint}>{t('viewStations')}</Text>
             </TouchableOpacity>
           ) : (
-            <TrafficLight recommendation={decision.recommendation} size={164} />
+            <TrafficLight recommendation={decision.recommendation} size={140} />
           )
         ) : error ? (
           <View style={styles.errorBox}>
@@ -561,7 +561,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   screen:     { flex: 1, backgroundColor: '#0D0F14' },
   scrollView: { flex: 1 },
-  content:    { paddingBottom: 48, gap: 16 },
+  content:    { paddingBottom: 24, gap: 14 },
   headerRow: {
     paddingHorizontal: 20,
     paddingTop: 16,
@@ -577,8 +577,8 @@ const styles = StyleSheet.create({
   lightContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 24,
-    minHeight: 200,
+    paddingVertical: 12,
+    minHeight: 160,
   },
   loadingBox:  { alignItems: 'center', gap: 12 },
   loadingText: { color: '#6B7280', fontSize: 14 },
@@ -604,7 +604,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
     marginHorizontal: 24,
-    marginTop: -4,
+    marginTop: -8,
   },
   stationSection: { gap: 8 },
   sectionLabel: {

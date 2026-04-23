@@ -697,11 +697,13 @@ export function StationMapView({
               filter={['!=', ['get', 'state'], 'closed'] as any}
               style={{
                 textField: ['get', 'price'] as any,
-                textSize: 9,
+                textSize: 11,
                 textColor: '#FFFFFF',
-                // CARTO Dark Matter uses Open Sans — Noto Sans Bold is not in this tile stack
                 textFont: ['Open Sans Bold', 'Arial Unicode MS Bold'],
-                textAnchor: 'center',
+                textAnchor: 'bottom',
+                textOffset: [0, -1.5],
+                textHaloColor: 'rgba(13,15,20,0.85)',
+                textHaloWidth: 1.2,
                 textIgnorePlacement: true,
                 textAllowOverlap: true,
               } as any}
@@ -739,10 +741,12 @@ export function StationMapView({
             id="selectedLabel"
             style={{
               textField: ['get', 'price'] as any,
-              textSize: 9,
+              textSize: 11,
               textColor: '#1A1D26',
               textFont: ['Open Sans Bold', 'Arial Unicode MS Bold'],
               textAnchor: 'center',
+              textHaloColor: 'rgba(251,191,36,0.4)',
+              textHaloWidth: 0.8,
               textIgnorePlacement: true,
               textAllowOverlap: true,
             } as any}

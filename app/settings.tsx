@@ -10,7 +10,7 @@
 import React, { useState, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Alert, Pressable,
+  TextInput, Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Stack } from 'expo-router';
@@ -86,7 +86,7 @@ export default function SettingsScreen() {
     language,
     setFuelType, setCommonAreas, setRefuelingStyle, setCarType, setLastRefuelAmount,
     setLanguage,
-    recordRefuel, recordSmartRefuel, setAvgConsumption, setTankCapacity, setTotalRangeKm,
+    setAvgConsumption, setTankCapacity, setTotalRangeKm,
     fullReset,
   } = useUserStore();
 
@@ -111,6 +111,7 @@ export default function SettingsScreen() {
   // Global save button state — true whenever any numeric field is dirty
   const [globalDirty,      setGlobalDirty]      = useState(false);
   const [globalSaved,      setGlobalSaved]      = useState(false);
+  const [showAdvanced,     setShowAdvanced]     = useState(false);
   const globalSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Translated options — re-computed on each render (language reactive via store subscription)
@@ -276,20 +277,6 @@ export default function SettingsScreen() {
     console.log('[Settings] RefuelingStyle changed →', style, '— decision recomputed.');
   }
 
-  function handleRefueled() {
-    Alert.alert(t('alertResetTankTitle'), t('alertResetTankBody'), [
-      { text: t('alertCancel'), style: 'cancel' },
-      { text: t('alertYesRefueled'), onPress: () => {
-        if (smartTank) {
-          recordSmartRefuel(0, 'user_tap');
-          console.log('[Settings] SmartTank refuel recorded → level reset to ~100%');
-        }
-        recordRefuel();
-        recomputeDecision();
-        showSaved('refuel');
-      }},
-    ]);
-  }
 
   function confirmFullReset() {
     Alert.alert(t('alertFullResetTitle'), t('alertFullResetBody'), [
@@ -425,135 +412,131 @@ export default function SettingsScreen() {
         />
       </Section>
 
-      {/* Refueling Style */}
+      {/* Refueling Style + Full Tank Cost (merged) */}
       <Section title={t('refuelingStyle')}>
         <OptionRow<RefuelingStyle> options={REFUELING_STYLE_OPTIONS} value={refuelingStyle} onSelect={handleRefuelingStyleChange} />
+        <View style={styles.settingRow}>
+          <Text style={styles.settingLabel}>{t('fullTankCost')}</Text>
+          <OptionRow<LastRefuelAmount> options={AMOUNT_OPTIONS} value={lastRefuelAmount} onSelect={setLastRefuelAmount} />
+        </View>
       </Section>
 
-      {/* Car Type */}
-      <Section title={t('vehicleType')}>
+      {/* Fahrzeug & Tank (merged Car Type + Shadow Tank) */}
+      <Section title={t('vehicleAndTank')}>
         <OptionRow<CarType> options={CAR_TYPE_OPTIONS} value={carType} onSelect={handleCarTypeChange} />
-      </Section>
 
-      {/* Full Tank Cost */}
-      <Section title={t('fullTankCost')}>
-        <OptionRow<LastRefuelAmount> options={AMOUNT_OPTIONS} value={lastRefuelAmount} onSelect={setLastRefuelAmount} />
-      </Section>
-
-      {/* Shadow Tank — auto-save inputs */}
-      <Section title={t('shadowTank')}>
-
-        {/* Avg Consumption */}
-        <View style={styles.settingRow}>
-          <View style={styles.settingLabelRow}>
-            <Text style={styles.settingLabel}>{t('avgConsumption')}</Text>
-            {savedField === 'consumption' && <Text style={styles.savedHint}>{t('saved')}</Text>}
-          </View>
-          <TextInput
-            style={styles.input}
-            value={consumptionInput}
-            onChangeText={(v) => { setConsumptionInput(v); setConsumptionDirty(true); setGlobalDirty(true); }}
-            keyboardType="decimal-pad"
-            returnKeyType="done"
-            onEndEditing={saveConsumption}
-            onSubmitEditing={saveConsumption}
-            placeholderTextColor="#4B5563"
-            accessibilityLabel={t('avgConsumption')}
-          />
-          {consumptionDirty && (
-            <TouchableOpacity
-              style={styles.applyBtn}
-              onPress={saveConsumption}
-              accessibilityLabel={t('saveConsumptionA11y')}
-            >
-              <Text style={styles.applyBtnText}>{t('applyBtn')}</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Tank Capacity */}
-        <View style={styles.settingRow}>
-          <View style={styles.settingLabelRow}>
-            <Text style={styles.settingLabel}>{t('tankCapacity')}</Text>
-            {savedField === 'capacity' && <Text style={styles.savedHint}>{t('saved')}</Text>}
-          </View>
-          <TextInput
-            style={styles.input}
-            value={capacityInput}
-            onChangeText={(v) => { setCapacityInput(v); setCapacityDirty(true); setGlobalDirty(true); }}
-            keyboardType="decimal-pad"
-            returnKeyType="done"
-            onEndEditing={saveCapacity}
-            onSubmitEditing={saveCapacity}
-            placeholderTextColor="#4B5563"
-            accessibilityLabel={t('tankCapacity')}
-          />
-          {capacityDirty && (
-            <TouchableOpacity
-              style={styles.applyBtn}
-              onPress={saveCapacity}
-              accessibilityLabel={t('saveTankCapacityA11y')}
-            >
-              <Text style={styles.applyBtnText}>{t('applyBtn')}</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Range on full tank */}
-        <View style={styles.settingRow}>
-          <View style={styles.settingLabelRow}>
-            <Text style={styles.settingLabel}>
-            {t('fullTankRange')}{'  '}<Text style={{ color: '#4B5563' }}>{t('optionalLabel')}</Text>
-          </Text>
-            {savedField === 'range' && <Text style={styles.savedHint}>{t('saved')}</Text>}
-          </View>
-          <Text style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>
-            {t('fullTankRangeHint')}
-          </Text>
-          <TextInput
-            style={styles.input}
-            value={rangeInput}
-            onChangeText={(v) => { setRangeInput(v); setRangeDirty(true); setGlobalDirty(true); }}
-            keyboardType="numeric"
-            placeholder={t('rangePlaceholder')}
-            placeholderTextColor="#4B5563"
-            returnKeyType="done"
-            onEndEditing={saveRange}
-            onSubmitEditing={saveRange}
-            accessibilityLabel={t('fullTankRange')}
-          />
-          {rangeDirty && (
-            <TouchableOpacity
-              style={styles.applyBtn}
-              onPress={saveRange}
-              accessibilityLabel={t('saveRangeA11y')}
-            >
-              <Text style={styles.applyBtnText}>{t('applyBtn')}</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Refuel reset button */}
-        <Pressable
-          style={({ pressed }) => [styles.refuelBtn, pressed && { opacity: 0.7 }]}
-          onPress={handleRefueled}
-          accessibilityLabel={t('markRefueledA11y')}
+        {/* ── Advanced toggle ── */}
+        <TouchableOpacity
+          style={styles.advancedToggle}
+          onPress={() => setShowAdvanced(!showAdvanced)}
+          accessibilityLabel={t('advancedSettings')}
         >
-          <Text style={styles.refuelBtnText}>
-            {savedField === 'refuel' ? t('tankReset') : t('refuelReset')}
+          <Text style={styles.advancedToggleText}>
+            {showAdvanced ? '▾' : '▸'}{'  '}{t('advancedSettings')}
           </Text>
-        </Pressable>
+          <Text style={styles.advancedToggleHint}>{t('advancedSettingsHint')}</Text>
+        </TouchableOpacity>
 
+        {showAdvanced && (
+          <>
+            {/* Avg Consumption */}
+            <View style={styles.settingRow}>
+              <View style={styles.settingLabelRow}>
+                <Text style={styles.settingLabel}>{t('avgConsumption')}</Text>
+                {savedField === 'consumption' && <Text style={styles.savedHint}>{t('saved')}</Text>}
+              </View>
+              <TextInput
+                style={styles.input}
+                value={consumptionInput}
+                onChangeText={(v) => { setConsumptionInput(v); setConsumptionDirty(true); setGlobalDirty(true); }}
+                keyboardType="decimal-pad"
+                returnKeyType="done"
+                onEndEditing={saveConsumption}
+                onSubmitEditing={saveConsumption}
+                placeholderTextColor="#4B5563"
+                accessibilityLabel={t('avgConsumption')}
+              />
+              {consumptionDirty && (
+                <TouchableOpacity
+                  style={styles.applyBtn}
+                  onPress={saveConsumption}
+                  accessibilityLabel={t('saveConsumptionA11y')}
+                >
+                  <Text style={styles.applyBtnText}>{t('applyBtn')}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Tank Capacity */}
+            <View style={styles.settingRow}>
+              <View style={styles.settingLabelRow}>
+                <Text style={styles.settingLabel}>{t('tankCapacity')}</Text>
+                {savedField === 'capacity' && <Text style={styles.savedHint}>{t('saved')}</Text>}
+              </View>
+              <TextInput
+                style={styles.input}
+                value={capacityInput}
+                onChangeText={(v) => { setCapacityInput(v); setCapacityDirty(true); setGlobalDirty(true); }}
+                keyboardType="decimal-pad"
+                returnKeyType="done"
+                onEndEditing={saveCapacity}
+                onSubmitEditing={saveCapacity}
+                placeholderTextColor="#4B5563"
+                accessibilityLabel={t('tankCapacity')}
+              />
+              {capacityDirty && (
+                <TouchableOpacity
+                  style={styles.applyBtn}
+                  onPress={saveCapacity}
+                  accessibilityLabel={t('saveTankCapacityA11y')}
+                >
+                  <Text style={styles.applyBtnText}>{t('applyBtn')}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Range on full tank */}
+            <View style={styles.settingRow}>
+              <View style={styles.settingLabelRow}>
+                <Text style={styles.settingLabel}>
+                {t('fullTankRange')}{'  '}<Text style={{ color: '#4B5563' }}>{t('optionalLabel')}</Text>
+              </Text>
+                {savedField === 'range' && <Text style={styles.savedHint}>{t('saved')}</Text>}
+              </View>
+              <Text style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>
+                {t('fullTankRangeHint')}
+              </Text>
+              <TextInput
+                style={styles.input}
+                value={rangeInput}
+                onChangeText={(v) => { setRangeInput(v); setRangeDirty(true); setGlobalDirty(true); }}
+                keyboardType="numeric"
+                placeholder={t('rangePlaceholder')}
+                placeholderTextColor="#4B5563"
+                returnKeyType="done"
+                onEndEditing={saveRange}
+                onSubmitEditing={saveRange}
+                accessibilityLabel={t('fullTankRange')}
+              />
+              {rangeDirty && (
+                <TouchableOpacity
+                  style={styles.applyBtn}
+                  onPress={saveRange}
+                  accessibilityLabel={t('saveRangeA11y')}
+                >
+                  <Text style={styles.applyBtnText}>{t('applyBtn')}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </>
+        )}
       </Section>
 
-      {/* About */}
-      <Section title={t('about')}>
+      {/* About & Reset (merged) */}
+      <Section title={t('aboutAndReset')}>
         <Text style={styles.aboutText}>{t('aboutBody')}</Text>
         <Text style={styles.creditText}>{t('aboutCredit')}</Text>
-      </Section>
-
-      {/* ── DANGER ZONE — Full Reset always at bottom ── */}
-      <Section title={t('dangerZone')}>
+        <View style={styles.resetDivider} />
         <TouchableOpacity style={[styles.resetBtn, styles.resetBtnDanger]} onPress={confirmFullReset} accessibilityLabel={t('fullReset')}>
           <Text style={[styles.resetBtnText, styles.resetBtnTextDanger]}>{t('fullReset')}</Text>
           <Text style={styles.resetBtnDesc}>{t('fullResetDesc')}</Text>
@@ -613,4 +596,10 @@ const styles = StyleSheet.create({
 
   aboutText:  { color: '#6B7280', fontSize: 13, lineHeight: 20 },
   creditText: { color: '#4B5563', fontSize: 12, marginTop: 4 },
+
+  advancedToggle:     { paddingVertical: 8, paddingHorizontal: 4, gap: 4 },
+  advancedToggleText: { color: '#6B7280', fontSize: 13, fontWeight: '600' },
+  advancedToggleHint: { color: '#4B5563', fontSize: 11 },
+
+  resetDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 6 },
 });

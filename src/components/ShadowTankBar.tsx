@@ -116,13 +116,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   track: {
-    height: 6,
+    height: 10,
     backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 3,
+    borderRadius: 5,
     overflow: 'hidden',
   },
   fill: {
-    height: 6,
-    borderRadius: 3,
+    height: 10,
+    borderRadius: 5,
   },
 });
