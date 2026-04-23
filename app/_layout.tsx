@@ -21,6 +21,7 @@ import { Platform } from 'react-native';
 import { useEffect, useState } from 'react';
 import { useUserStore } from '../src/store/userStore';
 import { t } from '../src/utils/i18n';
+import { ensureNotificationPermission } from '../src/utils/notificationPermission';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -68,6 +69,9 @@ function OnboardingGate() {
 
   useEffect(() => {
     if (!hydrated) return;
+
+    // Silent check/request for existing users who skip onboarding
+    ensureNotificationPermission().catch((err) => console.warn(err));
 
     // Already on onboarding — let onboarding drive its own navigation
     const inOnboarding = segments[0] === 'onboarding';

@@ -16,7 +16,7 @@
     },
     "android": {
       "package": "com.fuelampel.app",
-      "versionCode": 47,
+      "versionCode": 48,
       "adaptiveIcon": {
         "backgroundColor": "#0A2A2F",
         "foregroundImage": "./assets/android-icon-foreground.png",

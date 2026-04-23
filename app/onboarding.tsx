@@ -10,9 +10,10 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, KeyboardAvoidingView, Platform,
+  ScrollView, KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { ensureNotificationPermission } from '../src/utils/notificationPermission';
 import { useUserStore } from '../src/store/userStore';
 import { useFuelStore } from '../src/store/fuelStore';
 import {
@@ -199,7 +200,7 @@ export default function OnboardingScreen() {
   if (mode === 'smartTankInit') {
     return (
       <SmartTankInitScreen
-        onDone={(pct) => {
+        onDone={async (pct) => {
           const store = useUserStore.getState();
           if (!store.hasCompletedOnboarding) {
             store.completeOnboarding({
@@ -215,6 +216,8 @@ export default function OnboardingScreen() {
           store.initSmartTank(home, work, pct);
           // Sync decision engine so Home tab shows the correct recommendation immediately
           useFuelStore.getState().recomputeDecision();
+          
+          await ensureNotificationPermission();
           router.replace('/(tabs)');
         }}
       />
@@ -249,7 +252,7 @@ export default function OnboardingScreen() {
    * SmartTank setup as skipped so OnboardingGate won't block on next launch.
    * The HomeScreen will show a soft setup banner instead.
    */
-  function handleSkipAll() {
+  async function handleSkipAll() {
     const areas: CommonArea[] = [];
     if (homeArea) areas.push(homeArea);
     if (workArea) areas.push(workArea);
@@ -262,10 +265,12 @@ export default function OnboardingScreen() {
     // Sync decision engine immediately so Home tab shows correct state on arrival
     useFuelStore.getState().recomputeDecision();
     console.log('[Onboarding] User skipped SmartTank setup');
+    
+    await ensureNotificationPermission();
     router.replace('/(tabs)');
   }
 
-  function commit() {
+  async function commit() {
     const areas: CommonArea[] = [];
     if (homeArea) areas.push(homeArea);
     if (workArea) areas.push(workArea);
@@ -283,6 +288,8 @@ export default function OnboardingScreen() {
     }
     // Sync decision engine so Home tab shows the correct recommendation immediately
     useFuelStore.getState().recomputeDecision();
+    
+    await ensureNotificationPermission();
     router.replace('/(tabs)');
   }
 
