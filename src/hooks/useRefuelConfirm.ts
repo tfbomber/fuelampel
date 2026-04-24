@@ -30,6 +30,10 @@ export function useRefuelConfirm(): { banner: RefuelBannerType } {
   const lastNavigatedMs         = useUserStore(s => s.smartTank?.lastNavigatedToStationMs ?? null);
 
   // ── A. Post-navigation push notification (20 min after Go to station) ──────
+  // One-shot: fires once after navigating to a station, then clears the flag.
+  // Expires after 2 hours — if user didn't refuel, stop bothering them.
+  const clearPending = useUserStore(s => s.clearPendingRefuelConfirm);
+
   useEffect(() => {
     if (!pendingRefuelConfirm) {
       notifScheduled.current = false;
@@ -39,7 +43,17 @@ export function useRefuelConfirm(): { banner: RefuelBannerType } {
     if (!lastNavigatedMs) return;
 
     const elapsed = Date.now() - lastNavigatedMs;
-    const delay   = Math.max(0, REFUEL_CONFIRM_NAVIGATION_DELAY_MS - elapsed);
+
+    // Expiry: if navigation was > 2 hours ago, silently clear the flag.
+    // User either refueled without telling us, or just browsed the route.
+    const EXPIRY_MS = 2 * 60 * 60 * 1000; // 2 hours
+    if (elapsed > EXPIRY_MS) {
+      clearPending();
+      console.log('[useRefuelConfirm] Navigation expired (>2h) — cleared pending flag');
+      return;
+    }
+
+    const delay = Math.max(0, REFUEL_CONFIRM_NAVIGATION_DELAY_MS - elapsed);
 
     notifScheduled.current = true;
 
@@ -57,10 +71,12 @@ export function useRefuelConfirm(): { banner: RefuelBannerType } {
       } catch (err) {
         console.warn('[useRefuelConfirm] Notification failed:', err);
       }
+      // One-shot: clear the flag so it never fires again for this navigation
+      clearPending();
     }, delay);
 
     return () => clearTimeout(timer);
-  }, [pendingRefuelConfirm, lastNavigatedMs]);
+  }, [pendingRefuelConfirm, lastNavigatedMs, clearPending]);
 
   // ── B & C. Inline banner selection (computed during render, no side effects) ─
 

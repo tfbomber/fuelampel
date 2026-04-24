@@ -9,9 +9,7 @@ export type FuelType = 'e5' | 'e10' | 'diesel';
 // --- Refueling Preferences (collected during Onboarding) ---
 export type RefuelingStyle =
   | 'convenient'  // 遵路就加
-  | 'nearEmpty'   // 快没油再加
-  | 'cheapest'    // 哪里便宜去哪里
-  | 'noHabit';   // 没固定习惯
+  | 'nearEmpty';  // 快没油再加
 
 export type CarType =
   | 'small'    // 小车
@@ -19,12 +17,7 @@ export type CarType =
   | 'large'    // 大车 / SUV
   | 'unknown'; // 不确定
 
-export type LastRefuelAmount =
-  | '<40'     // < 40 €
-  | '40-60'   // 40–60 €
-  | '60-80'   // 60–80 €
-  | '80+'     // 80 € +
-  | 'unknown'; // 不记得
+
 
 // Common area user usually refuels in (up to 2; slot 0 = Home, slot 1 = Work)
 export interface CommonArea {

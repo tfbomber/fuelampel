@@ -19,7 +19,7 @@ import { useUserStore } from '../src/store/userStore';
 import { useFuelStore } from '../src/store/fuelStore';
 import { formatFuelType } from '../src/utils/formatters';
 import {
-  FuelType, RefuelingStyle, CarType, LastRefuelAmount, CommonArea,
+  FuelType, RefuelingStyle, CarType, CommonArea,
 } from '../src/utils/types';
 import { Language } from '../src/utils/i18n';
 import { t } from '../src/utils/i18n';
@@ -39,9 +39,8 @@ const LANGUAGE_OPTIONS: { value: Language; label: string; sublabel: string }[] =
   { value: 'en', label: 'English', sublabel: 'English' },
 ];
 
-const REFUELING_STYLE_VALUES: RefuelingStyle[] = ['nearEmpty', 'cheapest', 'convenient'];
+const REFUELING_STYLE_VALUES: RefuelingStyle[] = ['nearEmpty', 'convenient'];
 const CAR_TYPE_VALUES: CarType[] = ['small', 'regular', 'large', 'unknown'];
-const AMOUNT_VALUES: LastRefuelAmount[] = ['<40', '40-60', '60-80', '80+', 'unknown'];
 
 // ── Section wrapper ───────────────────────────────────────────────────────────
 
@@ -82,9 +81,9 @@ function OptionRow<T extends string>({
 export default function SettingsScreen() {
   const router = useRouter();
   const {
-    fuelType, commonAreas, refuelingStyle, carType, lastRefuelAmount, shadowTank, smartTank,
+    fuelType, commonAreas, refuelingStyle, carType, shadowTank, smartTank,
     language,
-    setFuelType, setCommonAreas, setRefuelingStyle, setCarType, setLastRefuelAmount,
+    setFuelType, setCommonAreas, setRefuelingStyle, setCarType,
     setLanguage,
     setAvgConsumption, setTankCapacity, setTotalRangeKm,
     fullReset,
@@ -117,7 +116,6 @@ export default function SettingsScreen() {
   // Translated options — re-computed on each render (language reactive via store subscription)
   const REFUELING_STYLE_OPTIONS = [
     { value: 'nearEmpty'  as RefuelingStyle, label: t('whenNearlyEmpty') },
-    { value: 'cheapest'   as RefuelingStyle, label: t('bestPriceAlways') },
     { value: 'convenient' as RefuelingStyle, label: t('onRouteConvenient') },
   ];
   const CAR_TYPE_OPTIONS = [
@@ -126,13 +124,7 @@ export default function SettingsScreen() {
     { value: 'large'   as CarType, label: t('carLarge') },
     { value: 'unknown' as CarType, label: t('carUnknown') },
   ];
-  const AMOUNT_OPTIONS = [
-    { value: '<40'     as LastRefuelAmount, label: t('below40') },
-    { value: '40-60'   as LastRefuelAmount, label: t('from40to60') },
-    { value: '60-80'   as LastRefuelAmount, label: t('from60to80') },
-    { value: '80+'     as LastRefuelAmount, label: t('above80') },
-    { value: 'unknown' as LastRefuelAmount, label: t('dontRemember') },
-  ];
+
 
   // ── Inline "✓ Saved" feedback — no disruptive Alert pop-ups ──────────────
   const [savedField, setSavedField] = useState<string | null>(null);
@@ -414,13 +406,9 @@ export default function SettingsScreen() {
         />
       </Section>
 
-      {/* Refueling Style + Full Tank Cost (merged) */}
+      {/* Refueling Style */}
       <Section title={t('refuelingStyle')}>
         <OptionRow<RefuelingStyle> options={REFUELING_STYLE_OPTIONS} value={refuelingStyle} onSelect={handleRefuelingStyleChange} />
-        <View style={styles.settingRow}>
-          <Text style={styles.settingLabel}>{t('fullTankCost')}</Text>
-          <OptionRow<LastRefuelAmount> options={AMOUNT_OPTIONS} value={lastRefuelAmount} onSelect={setLastRefuelAmount} />
-        </View>
       </Section>
 
       {/* Fahrzeug & Tank (merged Car Type + Shadow Tank) */}

@@ -3,7 +3,7 @@
 // 4-Gate model: Need + Value + Trust + Budget
 //
 // Push is the last resort. Inline UI is preferred.
-// Critical zone bypasses budget cap, not cooldown.
+// Critical zone bypasses trust gate, not budget.
 // ====================================================
 
 import {
@@ -55,7 +55,7 @@ function isNewWeek(weekStartMs: number): boolean {
  * Gate 2 — Value:   Savings must exceed threshold. Exception: plan_soon with a 'when'
  *                   recommendation passes regardless (the timing advice is the value).
  * Gate 3 — Trust:   Confidence must be medium/high (Critical bypasses).
- * Gate 4 — Budget:  Cooldown (4h always) + weekly cap (≤3; Critical bypasses cap).
+ * Gate 4 — Budget:  Cooldown (4h always) + weekly cap (≤3, all zones).
  */
 export function shouldNotify(
   decision: DecisionResult,
@@ -97,8 +97,9 @@ export function shouldNotify(
     return { allowed: false, reason: 'cooldown_active' };
   }
 
-  // Weekly cap — Critical bypasses
-  if (!isCritical) {
+  // Weekly cap — applies to ALL zones (including Critical) to prevent
+  // notification spam when estimates are stuck at 0% (e.g. skip-onboarding users).
+  {
     const weekReset = isNewWeek(notifState.weekStartMs);
     const effectiveCount = weekReset ? 0 : notifState.weekCount;
     if (effectiveCount >= NOTIFICATION_WEEKLY_CAP) {

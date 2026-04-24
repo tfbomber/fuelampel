@@ -8,7 +8,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   FuelType, GeoLocation, ShadowTankState, SmartTankState,
-  RefuelingStyle, CarType, LastRefuelAmount, CommonArea,
+  RefuelingStyle, CarType, CommonArea,
   RefuelEvent, DaySnapshot, PriceSnapshot, DailyPriceEntry,
 } from '../utils/types';
 import {
@@ -36,6 +36,7 @@ import {
   migrateFromShadowTank,
   setTotalRangeKm as smartSetTotalRangeKm,
   updateCommuteDistance,
+  estimateLevelPercent,
 } from '../core/smartTank';
 import { fetchRoadMetrics } from '../utils/routingDistance';
 
@@ -58,7 +59,6 @@ interface UserState {
   // Preferences (Optional — collected in onboarding or set later)
   refuelingStyle: RefuelingStyle | null;
   carType: CarType | null;
-  lastRefuelAmount: LastRefuelAmount | null;
 
   // Legacy location fields (kept for backward compat with Decide tab)
   homeLocation: GeoLocation | null;
@@ -95,7 +95,6 @@ interface UserState {
     commonAreas: CommonArea[];
     refuelingStyle: RefuelingStyle | null;
     carType: CarType | null;
-    lastRefuelAmount: LastRefuelAmount | null;
     initialPct?: number;
   }) => void;
 
@@ -107,7 +106,7 @@ interface UserState {
   setCommonAreas: (areas: CommonArea[]) => void;
   setRefuelingStyle: (style: RefuelingStyle | null) => void;
   setCarType: (type: CarType | null) => void;
-  setLastRefuelAmount: (amount: LastRefuelAmount | null) => void;
+
 
   // Legacy location setters
   setHomeLocation: (loc: GeoLocation | null) => void;
@@ -168,7 +167,7 @@ export const useUserStore = create<UserState>()(
       commonAreas: [],
       refuelingStyle: null,
       carType: null,
-      lastRefuelAmount: null,
+      lastRefuelAmount: null, // DEPRECATED — kept in persisted state for backward compat, unused
 
       homeLocation: null,
       workLocation: null,
@@ -213,7 +212,7 @@ export const useUserStore = create<UserState>()(
           commonAreas: data.commonAreas,
           refuelingStyle: data.refuelingStyle,
           carType: data.carType,
-          lastRefuelAmount: data.lastRefuelAmount,
+
           homeLocation: homeLocFromArea,
           smartTank: newSmartTank,
           // Sync legacy shadowTank with typed defaults too
@@ -328,10 +327,6 @@ export const useUserStore = create<UserState>()(
         }
       },
 
-      setLastRefuelAmount: (amount) => {
-        console.log(`[UserStore] Last refuel amount → ${amount}`);
-        set({ lastRefuelAmount: amount });
-      },
 
       setHomeLocation: (loc) => {
         console.log('[UserStore] Home location updated');
@@ -494,6 +489,23 @@ export const useUserStore = create<UserState>()(
       recordNavigatedToStation: () => {
         const { smartTank } = get();
         if (!smartTank) return;
+
+        // Gate 1: Tank level — if tank is above Planning zone (>50%),
+        // user is likely just checking prices, not actually going to refuel.
+        const estLevel = estimateLevelPercent(smartTank);
+        if (estLevel > 50) {
+          console.log(`[UserStore] Tank at ~${estLevel}% — too high to ask Aufgetankt, skipping`);
+          return;
+        }
+
+        // Gate 2: 72h cooldown — one ask per refuel cycle is enough.
+        const COOLDOWN_MS = 72 * 60 * 60 * 1000;
+        const lastNav = smartTank.lastNavigatedToStationMs;
+        if (lastNav && (Date.now() - lastNav) < COOLDOWN_MS) {
+          console.log('[UserStore] Navigation cooldown active — skipping refuel confirm');
+          return;
+        }
+
         set({
           smartTank: {
             ...smartTank,
@@ -501,7 +513,7 @@ export const useUserStore = create<UserState>()(
             pendingRefuelConfirm: true,
           },
         });
-        console.log('[UserStore] Navigation to station recorded — pending refuel confirm');
+        console.log(`[UserStore] Navigation recorded (tank ~${estLevel}%) — armed refuel confirm`);
       },
 
       clearPendingRefuelConfirm: () => {
@@ -565,7 +577,7 @@ export const useUserStore = create<UserState>()(
           fuelType: 'e5',
           refuelingStyle: null,
           carType: null,
-          lastRefuelAmount: null,
+
         });
       },
 
@@ -622,7 +634,7 @@ export const useUserStore = create<UserState>()(
           commonAreas: [],
           refuelingStyle: null,
           carType: null,
-          lastRefuelAmount: null,
+
           homeLocation: null,
           workLocation: null,
           shadowTank: createDefaultShadowTank(),

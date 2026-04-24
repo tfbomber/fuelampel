@@ -17,7 +17,7 @@ import { ensureNotificationPermission } from '../src/utils/notificationPermissio
 import { useUserStore } from '../src/store/userStore';
 import { useFuelStore } from '../src/store/fuelStore';
 import {
-  FuelType, RefuelingStyle, CarType, LastRefuelAmount, CommonArea,
+  FuelType, RefuelingStyle, CarType, CommonArea,
 } from '../src/utils/types';
 import { t } from '../src/utils/i18n';
 import { LiveAddressInput } from '../src/components/LiveAddressInput';
@@ -34,7 +34,6 @@ const FUEL_TYPES: { value: FuelType; label: string }[] = [
 function getRefuelingStyles(): { value: RefuelingStyle; label: string; desc: string }[] {
   return [
     { value: 'nearEmpty', label: t('whenNearlyEmpty'), desc: t('refuelStyleNearEmptyDesc') },
-    { value: 'cheapest', label: t('bestPriceAlways'), desc: t('refuelStyleCheapestDesc') },
     { value: 'convenient', label: t('onRouteConvenient'), desc: t('refuelStyleConvenientDesc') },
   ];
 }
@@ -48,15 +47,7 @@ function getCarTypes(): { value: CarType; label: string }[] {
   ];
 }
 
-function getAmounts(): { value: LastRefuelAmount; label: string }[] {
-  return [
-    { value: '<40', label: t('below40') },
-    { value: '40-60', label: t('from40to60') },
-    { value: '60-80', label: t('from60to80') },
-    { value: '80+', label: t('above80') },
-    { value: 'unknown', label: t('dontRemember') },
-  ];
-}
+
 
 function getTankLevelLabel(pct: number): string {
   if (pct >= 75) return t('tankLevelMostlyFull');
@@ -194,7 +185,7 @@ export default function OnboardingScreen() {
   const { completeOnboarding, commonAreas } = useUserStore();
   const refuelingStyles = getRefuelingStyles();
   const carTypes = getCarTypes();
-  const amounts = getAmounts();
+
 
   // ── SmartTank-only init mode (existing users after update) ────────────
   if (mode === 'smartTankInit') {
@@ -208,7 +199,6 @@ export default function OnboardingScreen() {
               commonAreas: [],
               refuelingStyle: null,
               carType: null,
-              lastRefuelAmount: null
             });
           }
           const home = store.commonAreas[0] || { plz: '00000', displayName: 'GPS Default' };
@@ -232,7 +222,7 @@ export default function OnboardingScreen() {
   const [workArea,  setWorkArea]  = useState<CommonArea | null>(null);
   const [refStyle,  setRefStyle]  = useState<RefuelingStyle | null>(null);
   const [carType,   setCarType]   = useState<CarType | null>(null);
-  const [refAmount, setRefAmount] = useState<LastRefuelAmount | null>(null);
+
   const [tankPct,   setTankPct]   = useState(50);
   const [totalRangeKm, setTotalRangeKm] = useState<string>(''); // optional km/full tank
 
@@ -258,7 +248,7 @@ export default function OnboardingScreen() {
     if (workArea) areas.push(workArea);
     completeOnboarding({
       fuelType, commonAreas: areas,
-      refuelingStyle: refStyle, carType, lastRefuelAmount: refAmount,
+      refuelingStyle: refStyle, carType,
       initialPct: tankPct,
     });
     useUserStore.getState().skipSmartTankSetup();
@@ -276,7 +266,7 @@ export default function OnboardingScreen() {
     if (workArea) areas.push(workArea);
     completeOnboarding({
       fuelType, commonAreas: areas,
-      refuelingStyle: refStyle, carType, lastRefuelAmount: refAmount,
+      refuelingStyle: refStyle, carType,
       initialPct: tankPct,
     });
     // Apply user-stated initial tank level (now handled in completeOnboarding)
@@ -398,12 +388,6 @@ export default function OnboardingScreen() {
               ))}
             </View>
 
-            <Text style={[s.sectionLabel, { marginTop: 8 }]}>💰 {t('fullTankCost')}</Text>
-            <View style={s.options}>
-              {amounts.map(a => (
-                <Pill key={a.value} selected={refAmount === a.value} label={a.label} onPress={() => setRefAmount(a.value === refAmount ? null : a.value)} />
-              ))}
-            </View>
 
             {/* Optional: full-tank range */}
             <Text style={[s.sectionLabel, { marginTop: 8 }]}>🛣️ {t('fullTankRange')} {t('optionalLabel')}</Text>

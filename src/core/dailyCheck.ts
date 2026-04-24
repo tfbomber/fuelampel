@@ -190,12 +190,10 @@ export async function scheduleDailyCheck(
       sound: zone === 'Critical',
     };
   } else {
-    // Fallback to hardcoded strings (pass decision.when for Planning zone if available)
-    content = buildContent(
-      zone as 'Low' | 'Critical' | 'Planning',
-      projectedLevel,
-      decision?.when,
-    );
+    // No decision or notifState available — cannot run 4-Gate checks.
+    // Skip notification rather than bypass all anti-spam protections.
+    console.log('[DailyCheck] Missing decision/notifState — skipping (no ungated fallback)');
+    return;
   }
 
   // Step 5: Schedule the notification
