@@ -194,9 +194,16 @@ export default function HomeScreen() {
 
   const onRefresh = useCallback(async () => { await refresh(); }, [refresh]);
   const showEstimateBanner = !pendingPattern
-    && refuelBanner === 'timeout'
+    && (refuelBanner === 'timeout' || refuelBanner === 'low_alert')
     && mode === 'normal'
     && Date.now() > suppressBannerUntilRef.current;
+
+  const setLastPrompted = useUserStore(s => s.setLastPrompted);
+  useEffect(() => {
+    if (refuelBanner === 'low_alert' && showEstimateBanner) {
+      setLastPrompted();
+    }
+  }, [refuelBanner, showEstimateBanner, setLastPrompted]);
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
 
@@ -312,7 +319,7 @@ export default function HomeScreen() {
       ) : showEstimateBanner ? (
         <View style={styles.refuelBanner}>
           <Text style={styles.refuelBannerText}>
-            {t('estimateOutdated')}
+            {refuelBanner === 'low_alert' ? t('tankLowAlert') : t('estimateOutdated')}
           </Text>
           <TouchableOpacity
             onPress={() => recordSmartRefuel(0, 'low_alert')}

@@ -295,6 +295,10 @@ export function recordRefuel(
   const actualLitres = litresAdded === 0 ? state.tankCapacityL : litresAdded;
   const clampedLitres = Math.min(actualLitres, state.tankCapacityL);
 
+  const currentEstimatedPct = estimateLevelPercent(state);
+  const addedPct = (clampedLitres / state.tankCapacityL) * 100;
+  const newLevelPct = litresAdded === 0 ? 100 : Math.min(100, Math.round(currentEstimatedPct + addedPct));
+
   const newEvent: RefuelEvent = {
     timestampMs: now,
     litresAdded: clampedLitres,
@@ -340,7 +344,7 @@ export function recordRefuel(
 
   return {
     ...state,
-    levelPercent: 100,
+    levelPercent: newLevelPct,
     lastConfirmedMs: now,
     lastConfirmedBy: 'refuel',
     confidence: 1.0, // hard truth: refuel = maximum confidence
@@ -629,8 +633,9 @@ export function migrateFromShadowTank(
   work?: CommonArea,
 ): SmartTankState {
   // Estimate current level from old km-based model
-  const hoursElapsed = (Date.now() - old.lastRefuelTimeMs) / 3_600_000;
-  const kmDriven = hoursElapsed * 40; // old model assumption
+  // Use a realistic 30km/day average instead of 40km/h to avoid 0% for users who migrated late.
+  const daysElapsed = (Date.now() - old.lastRefuelTimeMs) / 86_400_000;
+  const kmDriven = daysElapsed * 30;
   const remaining = Math.max(0, old.kmAtLastRefuel - kmDriven);
   const fullRangeKm = (old.tankCapacityL / old.avgConsumptionPer100km) * 100;
   const estimatedPct = Math.min(100, Math.round((remaining / fullRangeKm) * 100));

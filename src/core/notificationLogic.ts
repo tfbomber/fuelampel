@@ -19,7 +19,7 @@ import { CorridorStation } from '../utils/routeCorridor';
 
 export interface NotificationState {
   lastNotifiedMs: number;
-  /** Number of non-Critical push notifications sent in the current week window. */
+  /** Total push notifications sent in the current 7-day window (all zones including Critical). */
   weekCount: number;
   /** Timestamp of when the current 7-day window started (resets on Monday 00:00). */
   weekStartMs: number;

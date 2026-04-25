@@ -275,9 +275,9 @@ export const useFuelStore = create<FuelStoreState>()(
       partialize: (state) => ({
         // stations NOT persisted — real-time price data; schema drift causes switchFuelType to break
         // (old cache lacks priceE5/priceE10/priceDiesel → switchFuelType returns null prices)
+        // decision NOT persisted (BUG-07) — avoids stale decision on cold start when stations are empty
         lastFetchMs: state.lastFetchMs,
         lastFetchLoc: state.lastFetchLoc,
-        decision: state.decision,
         distanceSource: state.distanceSource,
       }),
       onRehydrateStorage: () => (state) => {

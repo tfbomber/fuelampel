@@ -19,7 +19,6 @@
 //   - Planning zone (plan_soon) now passes through to 4-Gate
 //   - buildContent handles Planning zone with softer message
 //
-// v2 upgrades (Phase 8):
 //   - Integrates shouldNotify() 4-Gate model (Need/Value/Trust/Budget)
 //   - Uses buildNotificationPayload() for corridor-aware rich content
 //   - Records notification budget via onNotificationSent() callback
@@ -41,7 +40,7 @@ import { estimateLevelPercent, classifyZone } from './smartTank';
 import { shouldNotify, buildNotificationPayload } from './notificationLogic';
 import { CorridorStation } from '../utils/routeCorridor';
 
-const DAILY_NOTIF_ID = 'fuelampel-daily-16h';
+const DAILY_NOTIF_ID = 'fuelampel-daily-11h30';
 
 // ─── Internal: project future level ──────────────────────────────────────────
 

@@ -1,7 +1,7 @@
 // ====================================================
 // FuelAmpel — useDailyCheckScheduler Hook
 //
-// Automatically reschedules the 16:00 daily check
+// Automatically reschedules the 11:30 daily check
 // notification whenever SmartTankState changes.
 //
 // Mount this once in _layout.tsx — it runs silently

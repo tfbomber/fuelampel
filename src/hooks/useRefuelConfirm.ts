@@ -21,7 +21,7 @@ export type RefuelBannerType = 'low_alert' | 'timeout' | null;
 
 export function useRefuelConfirm(): { banner: RefuelBannerType } {
   const notifScheduled  = useRef(false);
-  const lastBannerMs    = useRef<number>(0);
+  const lastPromptedMs  = useUserStore(s => s.lastPromptedMs);
 
   // KEY FIX: select each field individually so Zustand returns the same
   // reference when nothing changes — object selectors always return new refs.
@@ -89,10 +89,10 @@ export function useRefuelConfirm(): { banner: RefuelBannerType } {
     // B: Low-tank banner — only if cooldown elapsed
     if (
       levelPercent < REFUEL_LOW_ALERT_THRESHOLD_PCT &&
-      now - lastBannerMs.current > 48 * 60 * 60 * 1000
+      now - lastPromptedMs > 48 * 60 * 60 * 1000
     ) {
-      // NOTE: lastBannerMs.current set in the parent (index.tsx) after
-      // the banner is acted upon, to avoid setting a ref in render body.
+      // NOTE: lastPromptedMs set in the parent (index.tsx) after
+      // the banner is acted upon.
       banner = 'low_alert';
     }
     // C: Timeout banner — predicted tank empty > 2 days ago

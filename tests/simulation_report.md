@@ -1,5 +1,5 @@
 # FuelAmpel — User Behavior Simulation Report
-Generated: 2026-04-24T07:50:08.477Z
+Generated: 2026-04-25T08:05:45.470Z
 Simulation Period: 30 days per persona
 
 ---

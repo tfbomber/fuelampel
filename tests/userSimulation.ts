@@ -145,11 +145,10 @@ function shouldNotify(zone: DecisionZone, confidence: number, saving: number,
   const confLevel = confidence >= CONFIDENCE_HIGH ? 'high' : confidence >= CONFIDENCE_MED ? 'medium' : 'low';
   if (!isCritical && confLevel === 'low') return { allowed: false, reason: 'confidence_too_low' };
   if (nowMs - notifState.lastNotifiedMs < NOTIFICATION_COOLDOWN_MS) return { allowed: false, reason: 'cooldown_active' };
-  if (!isCritical) {
-    const weekReset = nowMs - notifState.weekStartMs >= 7 * 86_400_000;
-    const effectiveCount = weekReset ? 0 : notifState.weekCount;
-    if (effectiveCount >= NOTIFICATION_WEEKLY_CAP) return { allowed: false, reason: 'weekly_budget_exhausted' };
-  }
+  const weekReset = nowMs - notifState.weekStartMs >= 7 * 86_400_000;
+  const effectiveCount = weekReset ? 0 : notifState.weekCount;
+  if (effectiveCount >= NOTIFICATION_WEEKLY_CAP) return { allowed: false, reason: 'weekly_budget_exhausted' };
+
   return { allowed: true, reason: 'all_gates_passed' };
 }
 

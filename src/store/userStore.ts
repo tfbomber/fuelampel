@@ -72,7 +72,7 @@ interface UserState {
 
   // Notification tracking
   lastNotifiedMs: number;
-  /** Non-Critical pushes sent in the current 7-day window. */
+  /** Total push notifications sent in the current 7-day window (all zones including Critical). */
   notificationWeekCount: number;
   /** Timestamp when the current weekly window started. */
   notificationWeekStartMs: number;
@@ -548,18 +548,19 @@ export const useUserStore = create<UserState>()(
 
       /**
        * Record a push notification was sent.
-       * Non-Critical pushes count against the weekly budget.
+       * All pushes (including Critical) count against the weekly budget.
        * Weekly window resets automatically after 7 days.
        */
       recordNotificationSent: (isCritical = false) => {
         const { notificationWeekCount, notificationWeekStartMs } = get();
         const weekReset = Date.now() - notificationWeekStartMs >= 7 * 24 * 60 * 60 * 1000;
+        const newCount = weekReset ? 1 : notificationWeekCount + 1;
         set({
           lastNotifiedMs: Date.now(),
-          notificationWeekCount: isCritical ? notificationWeekCount : (weekReset ? 1 : notificationWeekCount + 1),
+          notificationWeekCount: newCount,
           notificationWeekStartMs: weekReset ? Date.now() : notificationWeekStartMs,
         });
-        console.log(`[UserStore] Notification sent — isCritical=${isCritical}, weekCount=${isCritical ? notificationWeekCount : (weekReset ? 1 : notificationWeekCount + 1)}`);
+        console.log(`[UserStore] Notification sent — isCritical=${isCritical}, weekCount=${newCount}`);
       },
 
       // --- Reset actions ---
