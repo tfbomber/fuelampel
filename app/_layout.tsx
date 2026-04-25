@@ -98,7 +98,7 @@ export default function RootLayout() {
   const _lang = useUserStore(s => s.language);
   // Silently takes location snapshots (foreground only, 3h gap-gated)
   useLocationSnapshot();
-  // Pre-schedules 16:00 daily check notification whenever SmartTank changes
+  // Pre-schedules 11:30 daily check notification whenever SmartTank changes
   useDailyCheckScheduler();
 
   return (

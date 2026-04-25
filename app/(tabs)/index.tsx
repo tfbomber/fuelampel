@@ -11,7 +11,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, RefreshControl, TouchableOpacity,
-  ActivityIndicator, StyleSheet, Pressable, Animated, Linking, TextInput,
+  StyleSheet, Pressable, Animated, Linking, TextInput,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -60,6 +60,68 @@ const itb = StyleSheet.create({
   labelRow:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 },
   left:      { color: '#6B7280', fontSize: 12, fontWeight: '500' },
   right:     { fontSize: 12, fontWeight: '700' },
+});
+
+// ─── Skeleton Components (cold-start placeholders) ────────────────────────────
+// Lightweight shimmer placeholders shown while decision data loads.
+// Uses native Animated opacity pulse — zero external dependencies.
+
+function SkeletonPulse({ style }: { style?: any }) {
+  const pulse = useRef(new Animated.Value(0.3)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 0.6, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0.3, duration: 900, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+  return <Animated.View style={[skel.base, style, { opacity: pulse }]} />;
+}
+
+function SkeletonCircle({ size = 140 }: { size?: number }) {
+  return (
+    <View style={skel.circleWrap}>
+      <SkeletonPulse style={[skel.circle, { width: size, height: size, borderRadius: size / 2 }]} />
+    </View>
+  );
+}
+
+function SkeletonCard() {
+  return (
+    <View style={skel.card}>
+      <View style={skel.cardRow}>
+        <SkeletonPulse style={skel.cardBrand} />
+        <SkeletonPulse style={skel.cardPrice} />
+      </View>
+      <SkeletonPulse style={skel.cardAddr} />
+      <SkeletonPulse style={skel.cardDist} />
+    </View>
+  );
+}
+
+function SkeletonReason() {
+  return (
+    <View style={skel.reason}>
+      <SkeletonPulse style={skel.reasonLine1} />
+      <SkeletonPulse style={skel.reasonLine2} />
+    </View>
+  );
+}
+
+const skel = StyleSheet.create({
+  base:       { backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 8 },
+  circleWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 12, minHeight: 160 },
+  circle:     { backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 2, borderColor: 'rgba(255,255,255,0.06)' },
+  card:       { marginHorizontal: 16, backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 14, padding: 14, gap: 10 },
+  cardRow:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  cardBrand:  { width: 100, height: 16, borderRadius: 6 },
+  cardPrice:  { width: 60, height: 18, borderRadius: 6 },
+  cardAddr:   { width: '70%', height: 12, borderRadius: 4 },
+  cardDist:   { width: '40%', height: 12, borderRadius: 4 },
+  reason:     { marginHorizontal: 16, backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 14, padding: 14, gap: 8 },
+  reasonLine1:{ width: '85%', height: 14, borderRadius: 6 },
+  reasonLine2:{ width: '55%', height: 14, borderRadius: 6 },
 });
 // ────────────────────────────────────────────────────────────────────────────────
 import { useDecision } from '../../src/hooks/useDecision';
@@ -126,6 +188,21 @@ export default function HomeScreen() {
   const smartTankSnapshotRef = useRef<SmartTankState | null>(null);
   /** Suppress low-tank banner for 10s after any manual level adjustment */
   const suppressBannerUntilRef = useRef(0);
+
+  // ─── Content fade-in (skeleton → real content transition) ─────────────────
+  const contentFade = useRef(new Animated.Value(0)).current;
+  const hasShownContent = useRef(false);
+
+  useEffect(() => {
+    if (decision && !hasShownContent.current) {
+      hasShownContent.current = true;
+      Animated.timing(contentFade, {
+        toValue: 1,
+        duration: 250,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [decision]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Rück button: spring in/out ────────────────────────────────────────────
   const ruckAnim = useRef(new Animated.Value(0)).current;
@@ -374,53 +451,63 @@ export default function HomeScreen() {
 
       {/* ── Traffic Light ── */}
       <View style={styles.lightContainer}>
-        {isLoading && !decision ? (
-          <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color="#6366F1" />
-            <Text style={styles.loadingText}>{t('checkingPrices')}</Text>
-          </View>
-        ) : decision ? (
-          decision.recommendation === 'Go' ? (
-            <TouchableOpacity
-              onPress={() => router.push({ pathname: '/stations', params: { highlightId: decision.station?.id ?? '' } })}
-              activeOpacity={0.82}
-              accessibilityLabel={t('goStationsA11y')}
-            >
+        {decision ? (
+          <Animated.View style={{ opacity: contentFade }}>
+            {decision.recommendation === 'Go' ? (
+              <TouchableOpacity
+                onPress={() => router.push({ pathname: '/stations', params: { highlightId: decision.station?.id ?? '' } })}
+                activeOpacity={0.82}
+                accessibilityLabel={t('goStationsA11y')}
+              >
+                <TrafficLight recommendation={decision.recommendation} size={140} />
+                <Text style={styles.goHint}>{t('viewStations')}</Text>
+              </TouchableOpacity>
+            ) : (
               <TrafficLight recommendation={decision.recommendation} size={140} />
-              <Text style={styles.goHint}>{t('viewStations')}</Text>
-            </TouchableOpacity>
-          ) : (
-            <TrafficLight recommendation={decision.recommendation} size={140} />
-          )
+            )}
+          </Animated.View>
         ) : error ? (
           <View style={styles.errorBox}>
             <Text style={styles.errorEmoji}>⚠️</Text>
             <Text style={styles.errorText}>{t('couldNotLoad')}</Text>
             <Text style={styles.errorDetail}>{error}</Text>
           </View>
-        ) : null}
+        ) : (
+          <SkeletonCircle size={140} />
+        )}
       </View>
 
       {/* ── Reason Card ── */}
-      {decision && (
-        <ReasonCard
-          reason={decision.reason}
-          recommendation={decision.recommendation}
-        />
-      )}
+      {decision ? (
+        <Animated.View style={{ opacity: contentFade }}>
+          <ReasonCard
+            reason={decision.reason}
+            recommendation={decision.recommendation}
+          />
+        </Animated.View>
+      ) : !error ? (
+        <SkeletonReason />
+      ) : null}
 
       {/* ── Best Station ── */}
-      {decision?.recommendation !== 'Skip' && decision?.station && (
+      {decision?.recommendation !== 'Skip' && decision?.station ? (
+        <Animated.View style={{ opacity: contentFade }}>
+          <View style={styles.stationSection}>
+            <Text style={styles.sectionLabel}>{t('bestOptionNearby')}</Text>
+            <TouchableOpacity onPress={() => router.push({ pathname: '/stations', params: { highlightId: decision.station?.id ?? '' } })} activeOpacity={0.7}>
+              <StationCard
+                station={decision.station}
+                saving={decision.saving_estimate}
+              />
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      ) : !decision && !error ? (
         <View style={styles.stationSection}>
-          <Text style={styles.sectionLabel}>{t('bestOptionNearby')}</Text>
-          <TouchableOpacity onPress={() => router.push({ pathname: '/stations', params: { highlightId: decision.station?.id ?? '' } })} activeOpacity={0.7}>
-            <StationCard
-              station={decision.station}
-              saving={decision.saving_estimate}
-            />
-          </TouchableOpacity>
+          <SkeletonPulse style={{ width: 120, height: 11, borderRadius: 4, marginLeft: 20, marginBottom: 8 }} />
+          <SkeletonCard />
         </View>
-      )}
+      ) : null}
 
       {/* ── Corridor Banner (hidden in refuel_soon — user needs nearest station, not corridor) ── */}
       {corridorStation && corridorStation.price !== null && decision?.mode !== 'refuel_soon' && (
@@ -491,8 +578,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     minHeight: 160,
   },
-  loadingBox:  { alignItems: 'center', gap: 12 },
-  loadingText: { color: '#6B7280', fontSize: 14 },
+  // (loadingBox/loadingText removed — replaced by SkeletonCircle)
   errorBox:    { alignItems: 'center', gap: 8 },
   errorEmoji:  { fontSize: 40 },
   errorText:   { color: '#EF4444', fontSize: 16, fontWeight: '600' },
