@@ -9,7 +9,8 @@ export type FuelType = 'e5' | 'e10' | 'diesel';
 // --- Refueling Preferences (collected during Onboarding) ---
 export type RefuelingStyle =
   | 'convenient'  // 遵路就加
-  | 'nearEmpty';  // 快没油再加
+  | 'nearEmpty'   // 快没油再加
+  | 'cheapest';   // 主动找最便宜 (active price hunter)
 
 export type CarType =
   | 'small'    // 小车

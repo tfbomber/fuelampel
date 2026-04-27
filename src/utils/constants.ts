@@ -21,7 +21,17 @@ export const NEAREMPTY_THRESHOLD_PCT      = 15;   // %
 export const CHEAPEST_LEVEL_CEILING_PCT   = 60;   // %  (>60% → ignore good deals)
 export const CHEAPEST_MIN_SAVING_GO_EUR   = 2.0;  // €
 export const CHEAPEST_MIN_SAVING_WAIT_EUR = 1.0;  // €
-export const GOOD_DEAL_PCT_THRESHOLD      = 0.03; // 3% cheaper than median is a GOOD DEAL
+export const GOOD_DEAL_PCT_THRESHOLD      = 0.03; // 3% cheaper than savingBase is a GOOD DEAL
+
+// Strong deal detection — Planning zone only.
+// BOTH conditions must be true to qualify as isStrongDeal:
+//   priceDiff       = savingBase − station.price
+//   fillableL       = (1 − levelPercent/100) × tankCapacityL
+//   netSavingActual = priceDiff × fillableL
+// At 50% tank (25L fillable): needs ≥ 3.0/25 = 0.12 €/L → only exceptional deals pass.
+// At 20% tank (40L fillable): needs ≥ 3.0/40 = 0.075 €/L → easier when tank is low.
+export const STRONG_DEAL_PER_LITER        = 0.08; // €/L: min absolute price advantage
+export const STRONG_DEAL_NET_EUR          = 3.0;  // €: min net saving considering current tank level
 export const TANK_CONFIRM_LOCK_DAYS       = 5;    // Days to wait before showing confirm modal again
 
 // --- Decision Zones (internal classification, maps from levelPercent) ---

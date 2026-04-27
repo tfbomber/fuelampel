@@ -33,8 +33,9 @@ const FUEL_TYPES: { value: FuelType; label: string }[] = [
 
 function getRefuelingStyles(): { value: RefuelingStyle; label: string; desc: string }[] {
   return [
-    { value: 'nearEmpty', label: t('whenNearlyEmpty'), desc: t('refuelStyleNearEmptyDesc') },
-    { value: 'convenient', label: t('onRouteConvenient'), desc: t('refuelStyleConvenientDesc') },
+    { value: 'nearEmpty',  label: t('whenNearlyEmpty'),        desc: t('refuelStyleNearEmptyDesc') },
+    { value: 'convenient', label: t('onRouteConvenient'),       desc: t('refuelStyleConvenientDesc') },
+    { value: 'cheapest',   label: t('refuelStyleCheapestLabel'), desc: t('refuelStyleCheapestDesc') },
   ];
 }
 

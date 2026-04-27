@@ -40,6 +40,7 @@ const translations = {
     // Refueling styles
     whenNearlyEmpty:   'Kurz vor leer',
     onRouteConvenient: 'Auf dem Weg tanken',
+    refuelStyleCheapestLabel: 'Preis-Jäger',
     refuelStyleConvenientDesc: 'Ich tanke am liebsten auf dem Arbeitsweg, wenn es passt.',
     // Car types
     carSmall:          'Klein (<45 L)',
@@ -221,6 +222,7 @@ const translations = {
     addrPlaceholder:   'Address, city or postal code…',
     whenNearlyEmpty:   'When nearly empty',
     onRouteConvenient: 'Refuel on the way',
+    refuelStyleCheapestLabel: 'Price Hunter',
     refuelStyleConvenientDesc: 'I prefer to refuel on my commute when convenient.',
     carSmall:          'Small  (< 45 L)',
     carFamily:         'Family  (45–65 L)',

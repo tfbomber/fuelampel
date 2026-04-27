@@ -45,6 +45,8 @@ import {
   PLAN_BUFFER_DAYS,
   NOON_UPWARD_WINDOW_HOUR,
   ZONE_PLANNING_MAX_PCT,
+  STRONG_DEAL_PER_LITER,
+  STRONG_DEAL_NET_EUR,
 } from '../utils/constants';
 import { computeRefuelUrgency, classifyZone } from './smartTank';
 import { computeNetVsNearest, findNearestOpen } from '../utils/ranking';
@@ -97,6 +99,27 @@ function computeMedian(sorted: number[]): number | null {
   return sorted.length % 2 !== 0
     ? sorted[mid]
     : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
+ * Compute the "saving base" reference price — the upper median.
+ *
+ * Unlike filterBase (true median used in filterStations), this represents
+ * "what a non-optimizing driver would typically pay" — a more honest savings baseline.
+ *
+ * Rules:
+ *   1 station  → itself
+ *   2 stations → the more expensive one (direct comparison)
+ *   odd ≥ 3   → middle element (= true median)
+ *   even ≥ 4  → upper of the two middle values
+ */
+function computeSavingBase(sorted: number[]): number {
+  const n = sorted.length;
+  if (n === 0) return 0;
+  if (n === 1) return sorted[0];
+  if (n === 2) return sorted[1]; // use the more expensive one
+  if (n % 2 !== 0) return sorted[Math.floor(n / 2)]; // true middle
+  return sorted[n / 2]; // upper of the two middles for even count
 }
 
 // ─── Step 3: Station Scoring ──────────────────────────────────────────────────
@@ -329,9 +352,21 @@ export function computeDecision(
     daysLeft = urgency.daysUntilEmpty;
   }
 
-  // Value check (kept from V1)
-  const cheapThreshold = regionMedian * (1 - GOOD_DEAL_PCT_THRESHOLD);
+  // Value check — uses savingBase (upper median) for a more realistic comparison
+  const savingBase      = computeSavingBase(sortedPrices);
+  const fillableL       = (1 - levelPercent / 100) * tankCapacityL;
+  const priceDiff       = savingBase - (station.price as number);
+  const savingVsBase    = Math.max(0, priceDiff);
+  const netSavingActual = priceDiff * fillableL;
+
+  const cheapThreshold = savingBase * (1 - GOOD_DEAL_PCT_THRESHOLD);
   const isGoodDeal = (station.price as number) <= cheapThreshold;
+
+  // isStrongDeal: BOTH gates must pass
+  //   Gate 1: absolute per-liter price advantage ≥ STRONG_DEAL_PER_LITER
+  //   Gate 2: actual saving considering current tank level ≥ STRONG_DEAL_NET_EUR
+  const isStrongDeal = priceDiff >= STRONG_DEAL_PER_LITER
+                    && netSavingActual >= STRONG_DEAL_NET_EUR;
 
   // Effective ceiling: how high can the tank be before we ignore a good deal?
   const effectiveCeiling =
@@ -370,8 +405,8 @@ export function computeDecision(
       return {
         recommendation: trustCapAtWait ? 'Wait' : 'Go',
         station,
-        saving_estimate: savingVsMedian,
-        reason: `🟢 Tank niedrig (${tankPctStr}). ${brandName} ${priceStr} €/L — ${(savingVsMedian * 100).toFixed(1)}¢ günstiger. Vollgetankt ca. ${netSavingStr} gespart.`,
+        saving_estimate: savingVsBase,
+        reason: `🟢 Tank niedrig (${tankPctStr}). ${brandName} ${priceStr} €/L — ${(savingVsBase * 100).toFixed(1)}¢ günstiger. Vollgetankt ca. ${netSavingStr} gespart.`,
         readiness: 'Action',
         zone: 'Low',
         confidenceLevel,
@@ -383,7 +418,7 @@ export function computeDecision(
       return {
         recommendation: trustCapAtWait ? 'Wait' : 'Go',
         station,
-        saving_estimate: savingVsMedian,
+        saving_estimate: savingVsBase,
         reason: `🟡 Tank niedrig (${tankPctStr}). Preise fallen gerade — ${brandName} ${priceStr} €/L.`,
         readiness: 'Action',
         zone: 'Low',
@@ -395,7 +430,7 @@ export function computeDecision(
     return {
       recommendation: 'Wait',
       station,
-      saving_estimate: savingVsMedian,
+      saving_estimate: savingVsBase,
       reason: `🟡 Tank bei ${tankPctStr} — Preis aktuell durchschnittlich (${priceStr} €/L). Bald tanken.`,
       readiness: 'Monitor',
       zone: 'Low',
@@ -405,77 +440,79 @@ export function computeDecision(
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // PLAN SOON — Planning zone: when + where
+  // PLAN SOON — Planning zone: 4-path decision tree (v2.7.0)
   // ═══════════════════════════════════════════════════════════════════════
 
   if (zone === 'Planning') {
     const currentHour = new Date().getHours();
     const when = resolveWhen(daysLeft, dayTrend, intradayTrend, currentHour);
 
-    // Good deal in Planning zone → Go (but respect ceiling)
-    if (isGoodDeal && levelPercent <= effectiveCeiling) {
-      return {
-        recommendation: trustCapAtWait ? 'Wait' : 'Go',
-        station,
-        saving_estimate: savingVsMedian,
-        reason: `🟢 ${brandName} ${priceStr} €/L — ${(savingVsMedian * 100).toFixed(1)}¢ günstiger. ${when}`,
-        readiness: 'Monitor',
-        zone: 'Planning',
-        confidenceLevel,
-        mode: 'plan_soon',
-        when,
-        dayTrend: dayTrend.confidence !== 'low' ? dayTrend : undefined,
-      };
-    }
-
-    // Convenient mode: corridor station recommendation
-    if (
-      refuelingStyle === 'convenient' &&
-      corridorStation &&
-      corridorStation.netSavingEur > 0 &&
-      levelPercent <= effectiveCeiling
-    ) {
-      const corridorName = corridorStation.brand || corridorStation.name;
-      const corridorPriceStr = corridorStation.price !== null
-        ? corridorStation.price.toFixed(3)
-        : '—';
-      return {
-        recommendation: 'Wait',
-        station,
-        saving_estimate: savingVsMedian,
-        reason: `🟡 ${when}${corridorLabel}`,
-        readiness: 'Monitor',
-        zone: 'Planning',
-        confidenceLevel,
-        mode: 'plan_soon',
-        when,
-        dayTrend: dayTrend.confidence !== 'low' ? dayTrend : undefined,
-      };
-    }
-
-    // Planning zone + no deal + above ceiling → subtle hint
-    if (levelPercent > effectiveCeiling) {
+    // ── Path A: nearEmpty persona → always silent in Planning ──────────────
+    if (refuelingStyle === 'nearEmpty') {
       return {
         recommendation: 'Skip',
         station,
-        saving_estimate: savingVsMedian,
-        reason: `Tank bei ${tankPctStr} — ${priceStr} €/L, noch kein Bedarf.`,
+        saving_estimate: savingVsBase,
+        reason: `Tank bei ${tankPctStr} — kein Handlungsbedarf.`,
         readiness: 'NotNeeded',
         zone: 'Planning',
         confidenceLevel,
         mode: 'plan_soon',
         when,
+      };
+    }
+
+    // ── Path B: cheapest persona + strong deal + not expensive day → Go ───
+    const isCheapestPersona = refuelingStyle === 'cheapest' || refuelingStyle === null;
+    if (
+      isCheapestPersona &&
+      isStrongDeal &&
+      dayTrend.level !== 'EXPENSIVE' &&
+      levelPercent <= effectiveCeiling &&
+      !trustCapAtWait
+    ) {
+      return {
+        recommendation: 'Go',
+        station,
+        saving_estimate: savingVsBase,
+        reason: `🟢 ${brandName} ${priceStr} €/L — deutlich günstiger als andere (ca. ${netSavingActual.toFixed(0)} € gespart bei aktuellem Tank). ${when}`,
+        readiness: 'Monitor',
+        zone: 'Planning',
+        confidenceLevel,
+        mode: 'plan_soon',
+        when,
         dayTrend: dayTrend.confidence !== 'low' ? dayTrend : undefined,
       };
     }
 
-    // Default Planning: Wait with when recommendation
+    // ── Path C: strong deal (any) OR good deal on cheap day → Wait + station
+    const isCheapDaySignal =
+      isGoodDeal &&
+      dayTrend.level === 'CHEAP_DAY' &&
+      dayTrend.confidence !== 'low';
+
+    if ((isStrongDeal || isCheapDaySignal) && levelPercent <= effectiveCeiling) {
+      return {
+        recommendation: 'Wait',
+        station,
+        saving_estimate: savingVsBase,
+        reason: `🟡 ${brandName} ${priceStr} €/L — guter Preis, wenn du vorbeikommst. ${when}`,
+        readiness: 'Monitor',
+        zone: 'Planning',
+        confidenceLevel,
+        mode: 'plan_soon',
+        when,
+        dayTrend: dayTrend.confidence !== 'low' ? dayTrend : undefined,
+      };
+    }
+
+    // ── Path D: no signal → Skip (silent) ──────────────────────────────────
     return {
-      recommendation: 'Wait',
+      recommendation: 'Skip',
       station,
-      saving_estimate: savingVsMedian,
-      reason: `🟡 Tank bei ${tankPctStr}. ${when}`,
-      readiness: 'Monitor',
+      saving_estimate: savingVsBase,
+      reason: `Tank bei ${tankPctStr} — kein besonderes Angebot im Moment.`,
+      readiness: 'NotNeeded',
       zone: 'Planning',
       confidenceLevel,
       mode: 'plan_soon',
