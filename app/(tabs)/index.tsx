@@ -157,7 +157,7 @@ export default function HomeScreen() {
   const restoreSmartTankSnapshot = useUserStore(s => s.restoreSmartTankSnapshot);
   const confirmTripPattern  = useUserStore(s => s.confirmTripPattern);
   const commonAreas         = useUserStore(s => s.commonAreas);
-  const corridorStation     = useFuelStore(s => s.corridorStation);
+  // corridorStation no longer used in UI — corridor override handled in fuelStore (isCorridorPick)
   // i18n reactive dependency — re-renders this component when language changes
   const _lang = useUserStore(s => s.language); // eslint-disable-line @typescript-eslint/no-unused-vars
 
@@ -498,6 +498,7 @@ export default function HomeScreen() {
               <StationCard
                 station={decision.station}
                 saving={decision.saving_estimate}
+                isCorridorPick={decision.isCorridorPick}
               />
             </TouchableOpacity>
           </View>
@@ -509,16 +510,7 @@ export default function HomeScreen() {
         </View>
       ) : null}
 
-      {/* ── Corridor Banner (hidden in refuel_soon — user needs nearest station, not corridor) ── */}
-      {corridorStation && corridorStation.price !== null && decision?.mode !== 'refuel_soon' && (
-        <View style={styles.corridorBanner}>
-          <Text style={styles.corridorBannerText}>
-            {'🚗 '}
-            <Text style={styles.corridorBannerBrand}>{corridorStation.brand}</Text>
-            {` liegt auf deinem Weg — ${corridorStation.price.toFixed(3)} €/L · ca. ${corridorStation.netSavingEur.toFixed(2)} € gespart`}
-          </Text>
-        </View>
-      )}
+      {/* Corridor banner removed — corridor station now shown via isCorridorPick in StationCard */}
 
       {/* ── Bottom Actions ── */}
       <View style={styles.actions}>
@@ -715,17 +707,6 @@ const styles = StyleSheet.create({
     paddingRight: 4,
     alignItems: 'center',
   },
-  corridorBanner: {
-    marginHorizontal: 16,
-    backgroundColor: 'rgba(34,197,94,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(34,197,94,0.22)',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  corridorBannerText: { color: '#86EFAC', fontSize: 13, lineHeight: 18 },
-  corridorBannerBrand: { fontWeight: '700', color: '#4ADE80' },
   litresInput: {
     backgroundColor: 'rgba(99,102,241,0.10)',
     borderWidth: 1,

@@ -123,13 +123,14 @@ export const useFuelStore = create<FuelStoreState>()(
       const homeLoc = commonAreas[0]?.loc ?? null;
       const workLoc = commonAreas[1]?.loc ?? null;
       let corridorStation: CorridorStation | null = null;
+      // Compute median price (hoisted — reused for corridor override saving_estimate)
+      const openPricesForMedian = stations.filter(s => s.isOpen && s.price !== null).map(s => s.price as number).sort((a, b) => a - b);
+      const medianPrice = openPricesForMedian.length > 0
+        ? (openPricesForMedian.length % 2 !== 0
+          ? openPricesForMedian[Math.floor(openPricesForMedian.length / 2)]
+          : (openPricesForMedian[Math.floor(openPricesForMedian.length / 2) - 1] + openPricesForMedian[Math.floor(openPricesForMedian.length / 2)]) / 2)
+        : 0;
       if (homeLoc && workLoc) {
-        const openPrices = stations.filter(s => s.isOpen && s.price !== null).map(s => s.price as number).sort((a, b) => a - b);
-        const medianPrice = openPrices.length > 0
-          ? (openPrices.length % 2 !== 0
-            ? openPrices[Math.floor(openPrices.length / 2)]
-            : (openPrices[Math.floor(openPrices.length / 2) - 1] + openPrices[Math.floor(openPrices.length / 2)]) / 2)
-          : 0;
         // Bidirectional: compute both directions, pick based on time of day
         const corridorHW = findCorridorStation(homeLoc, workLoc, stations, medianPrice, tankCapacityL);
         const corridorWH = findCorridorStation(workLoc, homeLoc, stations, medianPrice, tankCapacityL);
@@ -176,9 +177,22 @@ export const useFuelStore = create<FuelStoreState>()(
       // Step 3d: Compute decision (pass corridor + trends)
       const decision = computeDecision(stations, remainingKm, fuelType, location, smartTank, refuelingStyle, tankCapacityL, confidence, corridorStation, intradayTrend, dayTrend);
 
+      // Step 3e: Corridor override for convenient mode — single station display
+      if (
+        refuelingStyle === 'convenient' &&
+        corridorStation &&
+        corridorStation.netSavingEur > 0 &&
+        decision.mode !== 'refuel_soon' &&
+        decision.station
+      ) {
+        decision.station = corridorStation;
+        decision.isCorridorPick = true;
+        decision.saving_estimate = Math.max(0, medianPrice - (corridorStation.price ?? 0));
+        console.log(`[FuelStore] Corridor override: ${corridorStation.brand} replaces decision.station (convenient mode)`);
+      }
 
       console.log(
-        `[FuelStore] Decision: ${decision.recommendation} | Readiness: ${decision.readiness} | Saving: ${(decision.saving_estimate * 100).toFixed(1)}¢/L | Distance source: ${distanceSource}${corridorStation ? ` | Corridor: ${corridorStation.brand}` : ''}`
+        `[FuelStore] Decision: ${decision.recommendation} | Readiness: ${decision.readiness} | Saving: ${(decision.saving_estimate * 100).toFixed(1)}¢/L | Distance source: ${distanceSource}${corridorStation ? ` | Corridor: ${corridorStation.brand}` : ''}${decision.isCorridorPick ? ' [CORRIDOR_PICK]' : ''}`
       );
 
       set({
@@ -238,13 +252,14 @@ export const useFuelStore = create<FuelStoreState>()(
     const homeLoc = commonAreas[0]?.loc ?? null;
     const workLoc = commonAreas[1]?.loc ?? null;
     let corridorStation: CorridorStation | null = null;
+    // Compute median price (hoisted — reused for corridor override saving_estimate)
+    const openPricesForMedian = stations.filter(s => s.isOpen && s.price !== null).map(s => s.price as number).sort((a, b) => a - b);
+    const medianPrice = openPricesForMedian.length > 0
+      ? (openPricesForMedian.length % 2 !== 0
+        ? openPricesForMedian[Math.floor(openPricesForMedian.length / 2)]
+        : (openPricesForMedian[Math.floor(openPricesForMedian.length / 2) - 1] + openPricesForMedian[Math.floor(openPricesForMedian.length / 2)]) / 2)
+      : 0;
     if (homeLoc && workLoc) {
-      const openPrices = stations.filter(s => s.isOpen && s.price !== null).map(s => s.price as number).sort((a, b) => a - b);
-      const medianPrice = openPrices.length > 0
-        ? (openPrices.length % 2 !== 0
-          ? openPrices[Math.floor(openPrices.length / 2)]
-          : (openPrices[Math.floor(openPrices.length / 2) - 1] + openPrices[Math.floor(openPrices.length / 2)]) / 2)
-        : 0;
       const corridorHW = findCorridorStation(homeLoc, workLoc, stations, medianPrice, tankCapacityL);
       const corridorWH = findCorridorStation(workLoc, homeLoc, stations, medianPrice, tankCapacityL);
       const currentHour = new Date().getHours();
@@ -264,9 +279,24 @@ export const useFuelStore = create<FuelStoreState>()(
     const decision = computeDecision(
       stations, remainingKm, fuelType, undefined, smartTank, refuelingStyle, tankCapacityL, confidence, corridorStation, intradayTrend, dayTrend
     );
+
+    // Corridor override for convenient mode — single station display
+    if (
+      refuelingStyle === 'convenient' &&
+      corridorStation &&
+      corridorStation.netSavingEur > 0 &&
+      decision.mode !== 'refuel_soon' &&
+      decision.station
+    ) {
+      decision.station = corridorStation;
+      decision.isCorridorPick = true;
+      decision.saving_estimate = Math.max(0, medianPrice - (corridorStation.price ?? 0));
+      console.log(`[FuelStore] Corridor override: ${corridorStation.brand} replaces decision.station (convenient mode)`);
+    }
+
     set({ decision, corridorStation });
     const levelPct = smartTank ? Math.round(computeRefuelUrgency(smartTank).levelPercent) : '?';
-    console.log(`[FuelStore] recomputeDecision → ${decision.recommendation} (level=${levelPct}%)`);
+    console.log(`[FuelStore] recomputeDecision → ${decision.recommendation} (level=${levelPct}%)${decision.isCorridorPick ? ' [CORRIDOR_PICK]' : ''}`);
     },
     }),
     {

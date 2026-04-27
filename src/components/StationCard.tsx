@@ -12,9 +12,10 @@ import { t } from '../utils/i18n';
 interface Props {
   station: Station;
   saving?: number;
+  isCorridorPick?: boolean;
 }
 
-export function StationCard({ station, saving }: Props) {
+export function StationCard({ station, saving, isCorridorPick }: Props) {
   return (
     <View style={styles.card}>
       <View style={styles.header}>
@@ -28,6 +29,12 @@ export function StationCard({ station, saving }: Props) {
           )}
         </View>
       </View>
+
+      {isCorridorPick && (
+        <View style={styles.corridorBadge}>
+          <Text style={styles.corridorBadgeText}>🚗 Auf dem Weg</Text>
+        </View>
+      )}
 
       <Text style={styles.address} numberOfLines={1}>
         {station.street}, {station.place}
@@ -105,5 +112,18 @@ const styles = StyleSheet.create({
   metaDot: {
     color: '#374151',
     fontSize: 12,
+  },
+  corridorBadge: {
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    alignSelf: 'flex-start',
+    marginBottom: 4,
+  },
+  corridorBadgeText: {
+    color: '#F59E0B',
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

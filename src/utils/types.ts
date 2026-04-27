@@ -74,6 +74,8 @@ export interface DecisionResult {
   when?: string;
   /** Multi-day price trend for optional UI badge */
   dayTrend?: DayTrend;
+  /** True when station was overridden by the corridor on-route pick (convenient mode). */
+  isCorridorPick?: boolean;
 }
 
 // --- Price Trend Module ---
