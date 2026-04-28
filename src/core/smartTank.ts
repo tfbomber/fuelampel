@@ -17,6 +17,7 @@ import {
 import {
   SMART_TANK_EMA_ALPHA,
   SMART_TANK_CONSERVATIVE_FACTOR,
+  SMART_TANK_MAX_DECAY_DAYS,
   SMART_TANK_HOME_RADIUS_KM,
   SMART_TANK_WORK_RADIUS_KM,
   SMART_TANK_SNAPSHOT_MAX,
@@ -264,9 +265,10 @@ export function updateCommuteDistance(
 export function estimateLevelPercent(state: SmartTankState): number {
   const { totalKmEstimate } = estimateDailyKm(state);
   const daysSinceConfirmed = (Date.now() - state.lastConfirmedMs) / 86_400_000;
+  const cappedDays = Math.min(daysSinceConfirmed, SMART_TANK_MAX_DECAY_DAYS);
 
   const fullRangeKm = (state.tankCapacityL / state.consumptionPer100km) * 100;
-  const kmConsumed = daysSinceConfirmed * totalKmEstimate;
+  const kmConsumed = cappedDays * totalKmEstimate;
   const litresConsumed = (kmConsumed / 100) * state.consumptionPer100km;
   const litresUsedPct = (litresConsumed / state.tankCapacityL) * 100;
 

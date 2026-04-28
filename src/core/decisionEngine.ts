@@ -47,6 +47,7 @@ import {
   ZONE_PLANNING_MAX_PCT,
   STRONG_DEAL_PER_LITER,
   STRONG_DEAL_NET_EUR,
+  PLANNING_MIN_STATIONS_FOR_GO,
 } from '../utils/constants';
 import { computeRefuelUrgency, classifyZone } from './smartTank';
 import { computeNetVsNearest, findNearestOpen } from '../utils/ranking';
@@ -463,10 +464,15 @@ export function computeDecision(
     }
 
     // ── Path B: cheapest persona + strong deal + not expensive day → Go ───
+    // Station count gate: with ≤4 open stations, savingBase is unreliable
+    // (one expensive station skews the upper median → phantom "strong deals")
+    // Demote to Wait (Path C) instead of Go when market sample is too thin.
     const isCheapestPersona = refuelingStyle === 'cheapest' || refuelingStyle === null;
+    const hasEnoughStations = validStations.length >= PLANNING_MIN_STATIONS_FOR_GO;
     if (
       isCheapestPersona &&
       isStrongDeal &&
+      hasEnoughStations &&
       dayTrend.level !== 'EXPENSIVE' &&
       levelPercent <= effectiveCeiling &&
       !trustCapAtWait

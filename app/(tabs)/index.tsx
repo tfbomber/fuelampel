@@ -445,9 +445,6 @@ export default function HomeScreen() {
         </View>
       </Animated.View>
 
-      <Text style={styles.tankHint}>
-        {t('tankAdjustHint')}
-      </Text>
 
       {/* ── Traffic Light ── */}
       <View style={styles.lightContainer}>
@@ -588,13 +585,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     opacity: 0.7,
   },
-  tankHint: {
-    color: '#6B7280',
-    fontSize: 12,
-    textAlign: 'center',
-    marginHorizontal: 24,
-    marginTop: -8,
-  },
+  // (tankHint removed — slider is always interactive, tip no longer needed)
   stationSection: { gap: 8 },
   sectionLabel: {
     color: '#6B7280',

@@ -32,6 +32,7 @@ export const GOOD_DEAL_PCT_THRESHOLD      = 0.03; // 3% cheaper than savingBase 
 // At 20% tank (40L fillable): needs ≥ 3.0/40 = 0.075 €/L → easier when tank is low.
 export const STRONG_DEAL_PER_LITER        = 0.08; // €/L: min absolute price advantage
 export const STRONG_DEAL_NET_EUR          = 3.0;  // €: min net saving considering current tank level
+export const PLANNING_MIN_STATIONS_FOR_GO = 5;    // Minimum open stations to trust savingBase for Go in Planning zone
 export const TANK_CONFIRM_LOCK_DAYS       = 5;    // Days to wait before showing confirm modal again
 
 // --- Decision Zones (internal classification, maps from levelPercent) ---
@@ -108,6 +109,7 @@ export const SMART_TANK_REFUEL_HISTORY_MAX    = 10;
 
 // Conservative consumption factor applied to all estimates
 export const SMART_TANK_CONSERVATIVE_FACTOR   = 1.10;
+export const SMART_TANK_MAX_DECAY_DAYS        = 5.0;  // max days to decay level (prevents weekend/vacation phantom consumption)
 
 // Defaults for new users (before any refuel events or location data)
 export const SMART_TANK_DEFAULT_COMMUTE_DAYS  = 5.0;  // assume 5 days/week (most conservative)
