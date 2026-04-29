@@ -13,7 +13,7 @@ import { computeDecision } from '../core/decisionEngine';
 import { estimateRemainingKm } from '../core/shadowTank';
 import { computeRefuelUrgency, computeConfidence } from '../core/smartTank';
 import { computeIntradayTrend, computeDayTrend, makeRegionKey, todayDateKey } from '../core/priceTrend';
-import { STATION_CACHE_TTL_MS, SNAPSHOT_REGION_PRECISION } from '../utils/constants';
+import { STATION_CACHE_TTL_MS, SNAPSHOT_REGION_PRECISION, MAX_DATA_AGE_HOURS } from '../utils/constants';
 import { useUserStore } from './userStore';
 import { fetchRoadMetrics } from '../utils/routingDistance';
 import { findCorridorStation, CorridorStation } from '../utils/routeCorridor';
@@ -238,9 +238,21 @@ export const useFuelStore = create<FuelStoreState>()(
   },
 
   recomputeDecision: () => {
-    const { stations } = get();
+    const { stations, lastFetchMs } = get();
     if (stations.length === 0) {
       console.log('[FuelStore] recomputeDecision skipped — no cached stations');
+      return;
+    }
+    // BUG-07 fix: refuse to recompute on stale data.
+    // MAX_DATA_AGE_HOURS is the same threshold used in filterStations() —
+    // if the data is too old for filtering it is too old for recommendations.
+    const staleMs = MAX_DATA_AGE_HOURS * 3_600_000;
+    if (Date.now() - lastFetchMs > staleMs) {
+      console.log(
+        `[FuelStore] recomputeDecision skipped — station data is stale ` +
+        `(age=${((Date.now() - lastFetchMs) / 3_600_000).toFixed(1)}h > MAX=${MAX_DATA_AGE_HOURS}h). ` +
+        `Open the app for a fresh fetch.`
+      );
       return;
     }
     const { smartTank, fuelType, refuelingStyle, shadowTank, commonAreas } = useUserStore.getState();

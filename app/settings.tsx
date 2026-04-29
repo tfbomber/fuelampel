@@ -375,8 +375,7 @@ export default function SettingsScreen() {
           {FUEL_TYPES.map(ft => (
             <TouchableOpacity key={ft} style={[styles.tab, fuelType === ft && styles.tabActive]} onPress={() => {
               setFuelType(ft);
-              switchFuelType(ft);
-              recomputeDecision();
+              switchFuelType(ft); // switchFuelType already calls recomputeDecision() internally
             }}>
               <Text style={[styles.tabText, fuelType === ft && styles.tabTextA]}>{formatFuelType(ft)}</Text>
             </TouchableOpacity>

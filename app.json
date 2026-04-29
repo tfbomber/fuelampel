@@ -2,7 +2,7 @@
   "expo": {
     "name": "Fuel Ampel",
     "slug": "fuelampel",
-    "version": "2.7.0",
+    "version": "2.7.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -16,7 +16,7 @@
     },
     "android": {
       "package": "com.fuelampel.app",
-      "versionCode": 54,
+      "versionCode": 55,
       "adaptiveIcon": {
         "backgroundColor": "#0A2A2F",
         "foregroundImage": "./assets/adaptive-icon.png",

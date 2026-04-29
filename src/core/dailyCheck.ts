@@ -1,44 +1,49 @@
 // ====================================================
-// FuelAmpel — Daily Check Scheduler (v2 — 4-Gate)
+// FuelAmpel — Daily Check Scheduler (v3 — Zone-Based)
 //
 // Schedules a local push notification for 11:30 based
 // on the PROJECTED tank level at that time.
 //
 // 11:30 rationale: before the 12:00 upward price adjustment
-// window (German regulation 2026-04-01). This ensures users
-// get planning advice while prices may still fall.
+// window (German regulation 2026-04-01).
 //
-// v2 upgrades (Phase 8):
-//   - Integrates shouldNotify() 4-Gate model (Need/Value/Trust/Budget)
-//   - Uses buildNotificationPayload() for corridor-aware rich content
-//   - Records notification budget via onNotificationSent() callback
-//   - Fallback to hardcoded strings when decision is unavailable
+// v3 redesign (2026-04-29):
+//   - BUG-01 FIX: Notification content is NO LONGER generated
+//     from the current decision object. The old approach froze
+//     price data, station names, and time recommendations at
+//     schedule time (e.g. 21:00), but notifications fire
+//     hours later (11:30) when prices may have completely changed.
+//   - Notifications are now ZONE-BASED TRIGGERS only:
+//     they tell the user the tank level zone and prompt them
+//     to open the app for fresh, real-time recommendations.
+//   - BUG-06 FIX: resolveWhen() output is no longer embedded
+//     in notifications (it used current hour at schedule time,
+//     not delivery time — always wrong).
+//   - Planning zone: notifications DISABLED. Planning zone
+//     recommendations depend on price data which becomes stale.
+//     Only Low (≤30%) and Critical (≤15%) zones notify.
+//   - Gate model simplified: zone-based (SmartTank only),
+//     no price/decision dependency. Decision object no longer
+//     needed for scheduling.
 //
-// v2.5.0 upgrades:
-//   - Notification time changed: 16:00 → 11:30 (2026-04-01 regulation)
-//   - Planning zone (plan_soon) now passes through to 4-Gate
-//   - buildContent handles Planning zone with softer message
-//
-//   - Integrates shouldNotify() 4-Gate model (Need/Value/Trust/Budget)
-//   - Uses buildNotificationPayload() for corridor-aware rich content
-//   - Records notification budget via onNotificationSent() callback
-//   - Fallback to v1 hardcoded strings when decision is unavailable
-//
-// Called whenever SmartTankState or DecisionResult changes:
+// Called whenever SmartTankState changes:
 //   - On app open
 //   - After recordSmartRefuel
 //   - After adjustLevelManually
 //   - After fuelStore.refresh()
 //
-// No network required — uses only cached decision + local SmartTank data.
-// When user taps the notification → app opens → live GPS + API fetch.
+// No network required — uses only local SmartTank data.
+// When user taps notification → app opens → live GPS + API fetch.
 // ====================================================
 
 import * as Notifications from 'expo-notifications';
-import { SmartTankState, DecisionResult } from '../utils/types';
-import { estimateLevelPercent, classifyZone } from './smartTank';
-import { shouldNotify, buildNotificationPayload } from './notificationLogic';
-import { CorridorStation } from '../utils/routeCorridor';
+import { SmartTankState } from '../utils/types';
+import { estimateLevelPercent, classifyZone, computeConfidence } from './smartTank';
+import {
+  NOTIFICATION_COOLDOWN_MS,
+  NOTIFICATION_WEEKLY_CAP,
+  CONFIDENCE_MED,
+} from '../utils/constants';
 
 const DAILY_NOTIF_ID = 'fuelampel-daily-11h30';
 
@@ -67,8 +72,7 @@ function projectLevelAtMs(state: SmartTankState, targetMs: number): number {
  * If it's already past 11:30 today, returns tomorrow's 11:30.
  *
  * Rationale: 11:30 is just before the 12:00 upward price adjustment
- * window mandated by German fuel regulation 2026-04-01. Notifying
- * here gives users time to refuel before prices may rise.
+ * window mandated by German fuel regulation 2026-04-01.
  */
 function getNextNotifTime(): Date {
   const now = new Date();
@@ -80,39 +84,96 @@ function getNextNotifTime(): Date {
   return target;
 }
 
-// ─── Internal: build notification content ────────────────────────────────────
+// ─── Internal: zone-based notification content ───────────────────────────────
 
+/**
+ * Build notification content from zone + projected level ONLY.
+ *
+ * v3 design: NO price data, NO station names, NO resolveWhen() output.
+ * Notifications are triggers — they prompt the user to open the app
+ * for real-time, freshly-fetched recommendations.
+ *
+ * This prevents BUG-01 (stale price data frozen at schedule time)
+ * and BUG-06 (resolveWhen output based on wrong hour).
+ */
 function buildContent(
-  zone: 'Low' | 'Critical' | 'Planning',
+  zone: 'Low' | 'Critical',
   projectedPct: number,
-  when?: string,
 ): Notifications.NotificationContentInput {
   const pct = Math.round(projectedPct);
 
   if (zone === 'Critical') {
     return {
       title: '🔴 Tank fast leer — Jetzt tanken!',
-      body: `Dein Tank wird auf ~${pct}% geschätzt. Bitte rechtzeitig tanken.`,
+      body: `Dein Tank wird auf ~${pct}% geschätzt. App öffnen für günstige Preise in der Nähe.`,
       data: { type: 'daily_check', zone: 'Critical' },
       sound: true,
     };
   }
 
-  if (zone === 'Planning') {
-    return {
-      title: '⛽ Tanken planen — FuelAmpel',
-      body: when ?? `Tank bei ~${pct}% — heute wäre ein guter Zeitpunkt.`,
-      data: { type: 'daily_check', zone: 'Planning' },
-      sound: false,
-    };
-  }
-
+  // Low zone
   return {
     title: '🟡 Bald tanken?',
-    body: `Tank bei ~${pct}% — App öffnen für die besten Preise in der Nähe.`,
+    body: `Tank bei ~${pct}% — App öffnen für aktuelle Preise und Empfehlung.`,
     data: { type: 'daily_check', zone: 'Low' },
     sound: false,
   };
+}
+
+// ─── Internal: zone-based gate check ─────────────────────────────────────────
+
+interface ZoneGateResult {
+  allowed: boolean;
+  reason: string;
+}
+
+/**
+ * Simplified zone-based gate.
+ *
+ * v3: No price/decision dependency. Only checks:
+ *   Gate 1 — Zone: must be Low or Critical (Planning = disabled, Safe = silent)
+ *   Gate 2 — Trust: SmartTank confidence must be sufficient
+ *   Gate 3 — Budget: cooldown (4h always) + weekly cap (≤3)
+ *
+ * Planning zone is intentionally excluded:
+ *   Planning zone recommendations depend on real-time price data.
+ *   A notification scheduled at 21:00 for 11:30 cannot contain
+ *   valid price-based advice — by then prices have changed.
+ *   Users in Planning zone see in-app guidance when they open the app.
+ */
+function shouldScheduleNotification(
+  projectedZone: 'Low' | 'Critical',
+  smartTank: SmartTankState,
+  notifState: { lastNotifiedMs: number; weekCount: number; weekStartMs: number },
+): ZoneGateResult {
+  const isCritical = projectedZone === 'Critical';
+
+  // Gate 2: Trust — SmartTank confidence must be sufficient
+  // Critical bypasses: we must warn even with uncertain estimates
+  if (!isCritical) {
+    const confidence = computeConfidence(smartTank);
+    if (confidence < CONFIDENCE_MED) {
+      return { allowed: false, reason: `confidence_too_low (${confidence.toFixed(2)} < ${CONFIDENCE_MED})` };
+    }
+  }
+
+  // Gate 3: Budget
+  const now = Date.now();
+
+  // Cooldown: always applies (even Critical)
+  if (now - notifState.lastNotifiedMs < NOTIFICATION_COOLDOWN_MS) {
+    const hoursLeft = ((NOTIFICATION_COOLDOWN_MS - (now - notifState.lastNotifiedMs)) / 3_600_000).toFixed(1);
+    return { allowed: false, reason: `cooldown_active (${hoursLeft}h remaining)` };
+  }
+
+  // Weekly cap: all zones (including Critical) to prevent spam
+  const weekReset = now - notifState.weekStartMs >= 7 * 24 * 60 * 60 * 1000;
+  const effectiveCount = weekReset ? 0 : notifState.weekCount;
+  if (effectiveCount >= NOTIFICATION_WEEKLY_CAP) {
+    return { allowed: false, reason: `weekly_budget_exhausted (${effectiveCount}/${NOTIFICATION_WEEKLY_CAP})` };
+  }
+
+  return { allowed: true, reason: 'all_gates_passed' };
 }
 
 // ─── Public: scheduleDailyCheck ───────────────────────────────────────────────
@@ -120,21 +181,23 @@ function buildContent(
 /**
  * Schedule (or cancel) the 11:30 daily check notification.
  *
- * Logic (v2 - 4-Gate):
+ * Logic (v3 — Zone-Based):
  *   1. Always cancel existing daily notification.
- *   2. Project tank level at next 11:30.
- *   3. Classify projected zone.
- *   4. Zone = Safe → silent.
- *      Zone = Planning: only proceed if current decision.mode is plan_soon.
- *   5. Zone = Low or Critical: always proceed.
- *   6. Run 4-Gate (shouldNotify). If blocked, stay silent.
- *      Fallback: if no decision, use hardcoded strings.
- *   7. Record notification sent (if scheduled).
+ *   2. Require SmartTank (tank level source of truth).
+ *   3. Project tank level at next 11:30.
+ *   4. Zone = Safe → silent (no notification).
+ *      Zone = Planning → silent (price data would be stale at delivery time).
+ *      Zone = Low / Critical → proceed.
+ *   5. Run zone-based gate (confidence + cooldown + weekly cap).
+ *   6. Build content from zone + projected level ONLY (no prices/stations).
+ *   7. Schedule notification. Record budget usage.
+ *
+ * @param smartTank      Current SmartTank state (required)
+ * @param notifState     Notification budget state
+ * @param onNotificationSent  Callback to record budget usage
  */
 export async function scheduleDailyCheck(
   smartTank: SmartTankState | null,
-  decision?: DecisionResult | null,
-  corridorStation?: CorridorStation | null,
   notifState?: { lastNotifiedMs: number; weekCount: number; weekStartMs: number },
   onNotificationSent?: (isCritical: boolean) => void,
 ): Promise<void> {
@@ -161,41 +224,39 @@ export async function scheduleDailyCheck(
     `projected level = ${pctStr}% → zone = ${zone}`
   );
 
-  // Step 3: Determine if we should proceed
-  const isPlanSoonDecision = decision?.mode === 'plan_soon';
+  // Step 3: Zone gate
+  // Safe → always silent
   if (zone === 'Safe') {
-    console.log(`[DailyCheck] Zone is Safe — silent, no notification scheduled`);
+    console.log('[DailyCheck] Zone is Safe — silent, no notification scheduled');
     return;
   }
-  if (zone === 'Planning' && !isPlanSoonDecision) {
-    console.log(`[DailyCheck] Zone is Planning but no plan_soon decision — silent`);
-    return;
-  }
-
-  // Step 4: Notification Content & Gate Check
-  let content: Notifications.NotificationContentInput;
-
-  if (decision && notifState && onNotificationSent) {
-    const gate = shouldNotify(decision, notifState);
-    if (!gate.allowed) {
-      console.log(`[DailyCheck] 4-Gate blocked: ${gate.reason} — no notification scheduled`);
-      return;
-    }
-    const payload = buildNotificationPayload(decision, corridorStation, smartTank);
-    content = {
-      title: payload.title,
-      body: payload.body,
-      data: { type: 'daily_check', zone },
-      sound: zone === 'Critical',
-    };
-  } else {
-    // No decision or notifState available — cannot run 4-Gate checks.
-    // Skip notification rather than bypass all anti-spam protections.
-    console.log('[DailyCheck] Missing decision/notifState — skipping (no ungated fallback)');
+  // Planning → silent (stale price data risk — BUG-01 prevention)
+  if (zone === 'Planning') {
+    console.log(
+      '[DailyCheck] Zone is Planning — notification suppressed. ' +
+      'Planning-zone advice depends on real-time price data which would be stale at delivery. ' +
+      'In-app guidance is shown when user opens the app.'
+    );
     return;
   }
 
-  // Step 5: Schedule the notification
+  // Step 4: notifState guard
+  if (!notifState || !onNotificationSent) {
+    console.log('[DailyCheck] Missing notifState/callback — skipping (no ungated fallback)');
+    return;
+  }
+
+  // Step 5: Zone-based gate (confidence + cooldown + weekly cap)
+  const gate = shouldScheduleNotification(zone, smartTank, notifState);
+  if (!gate.allowed) {
+    console.log(`[DailyCheck] Gate blocked: ${gate.reason} — no notification scheduled`);
+    return;
+  }
+
+  // Step 6: Build content (zone + projected level ONLY — no prices, no stations, no resolveWhen)
+  const content = buildContent(zone, projectedLevel);
+
+  // Step 7: Schedule
   try {
     await Notifications.scheduleNotificationAsync({
       identifier: DAILY_NOTIF_ID,
@@ -206,12 +267,10 @@ export async function scheduleDailyCheck(
       },
     });
     console.log(
-      `[DailyCheck] ✅ Notification scheduled for ${target.toLocaleString()} — zone=${zone}, ~${pctStr}%`
+      `[DailyCheck] ✅ Notification scheduled for ${target.toLocaleString()} ` +
+      `— zone=${zone}, ~${pctStr}%`
     );
-    // Record that we scheduled a notification
-    if (onNotificationSent) {
-      onNotificationSent(zone === 'Critical');
-    }
+    onNotificationSent(zone === 'Critical');
   } catch (err) {
     console.warn('[DailyCheck] ❌ Failed to schedule notification:', err);
   }
