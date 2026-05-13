@@ -37,7 +37,8 @@ interface SimTankState {
   levelPercent: number;
   lastConfirmedMs: number;
   lastConfirmedBy: 'refuel' | 'manual' | 'low_alert_confirm';
-  confidence: number;
+  levelConfidence: number;
+  modelConfidence: number;
   refuelIntervalEMA: number | null;
   dailyKmEMA: number;
   consumptionPer100km: number;
@@ -45,6 +46,7 @@ interface SimTankState {
   totalRangeKm: number | null;
   commuteDaysPerWeekEMA: number;
   refuelCount: number;
+  calibrationHistory: { errorPct: number }[];
 }
 
 interface NotifState {
@@ -96,13 +98,11 @@ function computeRefuelUrgency(state: SimTankState, nowMs: number) {
 }
 
 function computeConfidence(state: SimTankState, nowMs: number): number {
-  const baseMap: Record<string, number> = { refuel: 1.0, manual: 0.8, low_alert_confirm: 0.5 };
-  const base = baseMap[state.lastConfirmedBy] ?? 0.5;
   const hoursElapsed = (nowMs - state.lastConfirmedMs) / 3_600_000;
   const ageFactor = Math.max(0.15, 1.0 - hoursElapsed / (7 * 24));
-  let bonus = 0;
-  if (state.refuelIntervalEMA !== null) bonus += 0.15;
-  return Math.min(1.0, Math.max(0.0, base * ageFactor + bonus));
+  const currentLevelConf = state.levelConfidence * ageFactor;
+  let effective = Math.min(currentLevelConf, state.modelConfidence);
+  return Math.min(1.0, Math.max(0.0, effective));
 }
 
 function recordRefuel(state: SimTankState, litresAdded: number, nowMs: number): SimTankState {
@@ -129,10 +129,48 @@ function recordRefuel(state: SimTankState, litresAdded: number, nowMs: number): 
     levelPercent: 100,
     lastConfirmedMs: nowMs,
     lastConfirmedBy: 'refuel',
-    confidence: 1.0,
+    levelConfidence: 1.0,
     refuelIntervalEMA: newIntervalEMA,
     dailyKmEMA: newDailyKmEMA,
     refuelCount: state.refuelCount + 1,
+  };
+}
+
+function recordManualAdjustment(state: SimTankState, actualPct: number, nowMs: number): SimTankState {
+  const predictedPct = estimateLevelPercent(state, nowMs);
+  const errorPct = predictedPct - actualPct;
+  
+  const newHistory = [...state.calibrationHistory, { errorPct }].slice(-5);
+  let newModelConf = state.modelConfidence;
+  let newDailyKmEMA = state.dailyKmEMA;
+
+  if (newHistory.length >= 3) {
+    const signs = newHistory.slice(-3).map(h => Math.sign(h.errorPct));
+    const allSameSign = signs.every(s => s === signs[0] && s !== 0);
+    
+    if (allSameSign) {
+      const avgError = newHistory.slice(-3).reduce((acc, val) => acc + val.errorPct, 0) / 3;
+      if (Math.abs(avgError) > 5.0) {
+        const correctionFactor = 1.0 + (avgError / 100) * 0.5;
+        newDailyKmEMA *= correctionFactor;
+        newModelConf = Math.min(0.9, newModelConf + 0.10);
+      } else {
+        newModelConf = Math.min(0.9, newModelConf + 0.05);
+      }
+    } else {
+      newModelConf = Math.max(0.2, newModelConf - 0.05);
+    }
+  }
+
+  return {
+    ...state,
+    levelPercent: actualPct,
+    lastConfirmedMs: nowMs,
+    lastConfirmedBy: 'manual',
+    levelConfidence: 0.85,
+    modelConfidence: newModelConf,
+    dailyKmEMA: newDailyKmEMA,
+    calibrationHistory: newHistory,
   };
 }
 
@@ -167,6 +205,7 @@ interface Persona {
   irregularDays?: number[]; // DOW (0=Sun) with long trips
   irregularTripKm?: number;
   appOpenFrequency: 'daily' | 'every_other_day' | 'twice_weekly';
+  manualAdjustFrequencyDays?: number; // Simulate manual calibration
 }
 
 const PERSONAS: Persona[] = [
@@ -216,6 +255,21 @@ const PERSONAS: Persona[] = [
     extraWeeklyKm: 50, refuelingStyle: 'nearEmpty', refuelAtPercent: 20,
     initialPct: 50, appOpenFrequency: 'twice_weekly',
   },
+  {
+    name: 'BiasTracker Test (Continuous Under-estimator)',
+    description: 'Engine underestimates actual usage (real life uses more fuel). Should learn after 3 manual adjustments.',
+    carType: 'regular', commuteOnewayKm: 30, commuteDaysPerWeek: 5,
+    extraWeeklyKm: 0, refuelingStyle: 'nearEmpty', refuelAtPercent: 5,
+    initialPct: 100, appOpenFrequency: 'daily',
+    manualAdjustFrequencyDays: 5, // manually calibrates every 5 days
+  },
+  {
+    name: 'Push Spam Test (Hovering at 40%)',
+    description: 'Stays in the Low/Planning threshold constantly. Should hit weekly cap of 3.',
+    carType: 'regular', commuteOnewayKm: 2, commuteDaysPerWeek: 5,
+    extraWeeklyKm: 0, refuelingStyle: 'convenient', refuelAtPercent: 35,
+    initialPct: 40, appOpenFrequency: 'daily',
+  },
 ];
 
 // ─── Simulation Engine ───────────────────────────────────────────────────────
@@ -249,7 +303,8 @@ function simulatePersona(p: Persona, simDays: number): DayLog[] {
     levelPercent: p.initialPct,
     lastConfirmedMs: 0,
     lastConfirmedBy: 'manual',
-    confidence: 1.0,
+    levelConfidence: 1.0,
+    modelConfidence: 0.5,
     refuelIntervalEMA: null,
     dailyKmEMA: commuteDaily,
     consumptionPer100km: consumption,
@@ -257,6 +312,7 @@ function simulatePersona(p: Persona, simDays: number): DayLog[] {
     totalRangeKm: null,
     commuteDaysPerWeekEMA: p.commuteDaysPerWeek || SMART_TANK_DEFAULT_COMMUTE_DAYS,
     refuelCount: 0,
+    calibrationHistory: [],
   };
 
   let notifState: NotifState = { lastNotifiedMs: -999_999_999, weekCount: 0, weekStartMs: 0 };
@@ -307,10 +363,20 @@ function simulatePersona(p: Persona, simDays: number): DayLog[] {
 
     // ── Refuel decision (based on REAL level, like a real user would) ──
     let refueled = false;
-    if (realPct <= p.refuelAtPercent) {
+    let manualAdjusted = false;
+    
+    // Test persona override: if spam test, magically refuel back to 42% when hitting 35%
+    if (p.name.includes('Spam Test') && realPct <= 35) {
+       realLitres = capacity * 0.42;
+       tank = recordRefuel(tank, capacity * 0.07, nowMs);
+       refueled = true;
+    } else if (realPct <= p.refuelAtPercent) {
       realLitres = capacity; // fill up
       tank = recordRefuel(tank, 0, nowMs); // full tank
       refueled = true;
+    } else if (p.manualAdjustFrequencyDays && day > 0 && day % p.manualAdjustFrequencyDays === 0) {
+      tank = recordManualAdjustment(tank, realPct, nowMs);
+      manualAdjusted = true;
     }
 
     const drift = Math.round((estPct - realPct) * 10) / 10;
@@ -366,13 +432,12 @@ function generateReport(): string {
     report += `| Final Estimated | ${logs[logs.length - 1].estimatedPct}% |\n`;
     report += `\n`;
 
-    // Day-by-day table (key days only)
     report += `### Day Log\n`;
-    report += `| Day | DOW | Driven | Real% | Est% | Drift | Zone | DaysLeft | Conf | Notif | Refuel |\n`;
-    report += `|-----|-----|--------|-------|------|-------|------|----------|------|-------|--------|\n`;
+    report += `| Day | DOW | Real% | Est% | Drift | Zone | Conf(M/L) | Notif | Action |\n`;
+    report += `|-----|-----|-------|------|-------|------|-----------|-------|--------|\n`;
     for (const l of logs) {
       const flag = l.refueled ? '⛽' : l.notifFired ? '🔔' : '';
-      report += `| ${l.day} | ${l.dow} | ${l.realKmDriven} | ${l.realTankPct} | ${l.estimatedPct} | ${l.driftPct > 0 ? '+' : ''}${l.driftPct} | ${l.zone} | ${l.daysUntilEmpty} | ${l.confidence} | ${l.notifFired ? l.notifReason : '—'} | ${flag} |\n`;
+      report += `| ${l.day} | ${l.dow} | ${l.realTankPct} | ${l.estimatedPct} | ${l.driftPct > 0 ? '+' : ''}${l.driftPct} | ${l.zone} | ${l.confidence} | ${l.notifFired ? l.notifReason : '—'} | ${flag} |\n`;
     }
     report += `\n`;
 

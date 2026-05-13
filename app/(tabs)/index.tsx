@@ -160,9 +160,10 @@ export default function HomeScreen() {
   // corridorStation no longer used in UI — corridor override handled in fuelStore (isCorridorPick)
   // i18n reactive dependency — re-renders this component when language changes
   const _lang = useUserStore(s => s.language); // eslint-disable-line @typescript-eslint/no-unused-vars
+  const isSmartTankenEnabled = useUserStore(s => s.isSmartTankenEnabled);
 
   // ─── Tank level ───────────────────────────────────────────────────────────
-  const isSmartActive = smartTank !== null;
+  const isSmartActive = isSmartTankenEnabled && smartTank !== null;
   const fuelPct = isSmartActive
     ? estimateLevelPercent(smartTank!)
     : getFuelLevelPercent(shadowTank);
@@ -270,7 +271,9 @@ export default function HomeScreen() {
     : null;
 
   const onRefresh = useCallback(async () => { await refresh(); }, [refresh]);
-  const showEstimateBanner = !pendingPattern
+  // Only show estimate/low-tank banners in Smart Tanken mode — Basic Mode has no tank tracking
+  const showEstimateBanner = isSmartActive
+    && !pendingPattern
     && (refuelBanner === 'timeout' || refuelBanner === 'low_alert')
     && mode === 'normal'
     && Date.now() > suppressBannerUntilRef.current;
@@ -381,7 +384,7 @@ export default function HomeScreen() {
             <Text style={styles.refuelBannerBtnText}>{t('systemSettings')}</Text>
           </TouchableOpacity>
         </View>
-      ) : commonAreas.length === 0 ? (
+      ) : isSmartTankenEnabled && commonAreas.length === 0 ? (
         <TouchableOpacity
           style={styles.setupBanner}
           onPress={() => router.push('/settings')}
@@ -408,42 +411,44 @@ export default function HomeScreen() {
       ) : null}
 
       {/* ── Tank area — always-interactive ─────────────────────────────── */}
-      <Animated.View style={[
-        styles.tankArea,
-        { backgroundColor: tankBgColor, borderColor: tankBorderColor, borderWidth: 1, borderRadius: 16, marginHorizontal: -12, paddingHorizontal: 12, paddingVertical: 8 }
-      ]}>
-        <InteractiveTankBar
-          value={sliderValue}
-          onValueChange={setSliderValue}
-          onSlidingComplete={handleSliderCommit}
-          totalRangeKm={totalRangeKm}
-          animatedPct={animatedPct}
-          isEstimated={isEstimated}
-          fuelTypeLabel={formatFuelType(fuelType)}
-        />
+      {isSmartTankenEnabled && (
+        <Animated.View style={[
+          styles.tankArea,
+          { backgroundColor: tankBgColor, borderColor: tankBorderColor, borderWidth: 1, borderRadius: 16, marginHorizontal: -12, paddingHorizontal: 12, paddingVertical: 8 }
+        ]}>
+          <InteractiveTankBar
+            value={sliderValue}
+            onValueChange={setSliderValue}
+            onSlidingComplete={handleSliderCommit}
+            totalRangeKm={totalRangeKm}
+            animatedPct={animatedPct}
+            isEstimated={isEstimated}
+            fuelTypeLabel={formatFuelType(fuelType)}
+          />
 
-        {/* Undo row — fixed height, spring in/out, no layout shift */}
-        <View style={styles.undoRow}>
-          <Animated.View
-            style={[
-              styles.undoFloating,
-              {
-                opacity: ruckAnim,
-                transform: [{ scale: ruckAnim.interpolate({ inputRange: [0, 1], outputRange: [0.75, 1] }) }],
-              },
-            ]}
-            pointerEvents={showUndo ? 'auto' : 'none'}
-          >
-            <Pressable
-              onPress={handleUndo}
-              style={({ pressed }) => pressed ? { opacity: 0.65 } : undefined}
-              accessibilityLabel={t('undoRefuelA11y')}
+          {/* Undo row — fixed height, spring in/out, no layout shift */}
+          <View style={styles.undoRow}>
+            <Animated.View
+              style={[
+                styles.undoFloating,
+                {
+                  opacity: ruckAnim,
+                  transform: [{ scale: ruckAnim.interpolate({ inputRange: [0, 1], outputRange: [0.75, 1] }) }],
+                },
+              ]}
+              pointerEvents={showUndo ? 'auto' : 'none'}
             >
-              <Text style={styles.undoFloatingText}>{t('undoLabel')}</Text>
-            </Pressable>
-          </Animated.View>
-        </View>
-      </Animated.View>
+              <Pressable
+                onPress={handleUndo}
+                style={({ pressed }) => pressed ? { opacity: 0.65 } : undefined}
+                accessibilityLabel={t('undoRefuelA11y')}
+              >
+                <Text style={styles.undoFloatingText}>{t('undoLabel')}</Text>
+              </Pressable>
+            </Animated.View>
+          </View>
+        </Animated.View>
+      )}
 
 
       {/* ── Traffic Light ── */}
@@ -509,41 +514,45 @@ export default function HomeScreen() {
 
       {/* Corridor banner removed — corridor station now shown via isCorridorPick in StationCard */}
 
+      {/* Corridor banner removed — corridor station now shown via isCorridorPick in StationCard */}
+
       {/* ── Bottom Actions ── */}
-      <View style={styles.actions}>
-        <View style={styles.getanktRow}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.refuelBtn, 
-              (fuelPct >= 100 || mode !== 'normal') && styles.refuelBtnDisabled,
-              pressed && mode === 'normal' && fuelPct < 100 && { opacity: 0.7 }
-            ]}
-            onPress={handleGetankt}
-            disabled={fuelPct >= 100 || mode !== 'normal'}
-            accessibilityLabel={t('markRefueledA11y')}
-          >
-            <Text style={[
-              styles.refuelBtnText, 
-              (fuelPct >= 100 || mode !== 'normal') && styles.refuelBtnTextDisabled
-            ]}>
-              {t('iRefueled')}
-            </Text>
-          </Pressable>
-          {mode === 'normal' && (
-            <TextInput
-              style={styles.litresInput}
-              value={euroInput}
-              onChangeText={(v: string) => setEuroInput(v.replace(/[^0-9.]/g, ''))}
-              placeholder="€"
-              placeholderTextColor="#4B5563"
-              keyboardType="decimal-pad"
-              maxLength={6}
-              returnKeyType="done"
-              accessibilityLabel="Euros spent on refuel"
-            />
-          )}
+      {isSmartTankenEnabled && (
+        <View style={styles.actions}>
+          <View style={styles.getanktRow}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.refuelBtn, 
+                (fuelPct >= 100 || mode !== 'normal') && styles.refuelBtnDisabled,
+                pressed && mode === 'normal' && fuelPct < 100 && { opacity: 0.7 }
+              ]}
+              onPress={handleGetankt}
+              disabled={fuelPct >= 100 || mode !== 'normal'}
+              accessibilityLabel={t('markRefueledA11y')}
+            >
+              <Text style={[
+                styles.refuelBtnText, 
+                (fuelPct >= 100 || mode !== 'normal') && styles.refuelBtnTextDisabled
+              ]}>
+                {t('iRefueled')}
+              </Text>
+            </Pressable>
+            {mode === 'normal' && (
+              <TextInput
+                style={styles.litresInput}
+                value={euroInput}
+                onChangeText={(v: string) => setEuroInput(v.replace(/[^0-9.]/g, ''))}
+                placeholder="€"
+                placeholderTextColor="#4B5563"
+                keyboardType="decimal-pad"
+                maxLength={6}
+                returnKeyType="done"
+                accessibilityLabel="Euros spent on refuel"
+              />
+            )}
+          </View>
         </View>
-      </View>
+      )}
     </ScrollView>
     </View>
   );

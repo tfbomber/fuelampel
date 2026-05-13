@@ -46,6 +46,11 @@ interface UserState {
   // Language preference
   language: Language;
 
+  // Modes & Config
+  isSmartTankenEnabled: boolean;
+  alertThresholdPct: number;
+  commuteDaysInput: number;
+
   // Onboarding gate
   hasCompletedOnboarding: boolean;
   /** True when user explicitly tapped "Überspringen" on step 1/2 — prevents
@@ -106,6 +111,9 @@ interface UserState {
   setCommonAreas: (areas: CommonArea[]) => void;
   setRefuelingStyle: (style: RefuelingStyle | null) => void;
   setCarType: (type: CarType | null) => void;
+  setIsSmartTankenEnabled: (enabled: boolean) => void;
+  setAlertThresholdPct: (pct: number) => void;
+  setCommuteDaysInput: (days: number) => void;
 
 
   // Legacy location setters
@@ -160,6 +168,9 @@ export const useUserStore = create<UserState>()(
     (set, get) => ({
       // --- Default values ---
       language: 'de' as Language,
+      isSmartTankenEnabled: false,
+      alertThresholdPct: 30,
+      commuteDaysInput: 5,
       hasCompletedOnboarding: false,
       hasSkippedSmartTankSetup: false,
 
@@ -238,6 +249,33 @@ export const useUserStore = create<UserState>()(
         console.log(`[UserStore] Language → ${lang}`);
         setAppLanguage(lang);
         set({ language: lang });
+      },
+
+      setIsSmartTankenEnabled: (enabled) => {
+        console.log(`[UserStore] SmartTankenEnabled → ${enabled}`);
+        set({ isSmartTankenEnabled: enabled });
+      },
+
+      setAlertThresholdPct: (pct) => {
+        console.log(`[UserStore] AlertThresholdPct → ${pct}`);
+        set({ alertThresholdPct: pct });
+      },
+
+      setCommuteDaysInput: (days) => {
+        const d = Math.max(1, Math.min(7, Math.round(days)));
+        console.log(`[UserStore] CommuteDaysInput → ${d}`);
+        set({ commuteDaysInput: d });
+        
+        // Update SmartTank EMA if it hasn't gathered real data yet
+        const state = get();
+        if (state.smartTank && state.smartTank.refuelIntervalEMA === null) {
+          set({
+            smartTank: {
+              ...state.smartTank,
+              commuteDaysPerWeekEMA: d,
+            }
+          });
+        }
       },
 
       // --- Individual setters ---
@@ -404,6 +442,15 @@ export const useUserStore = create<UserState>()(
       recordSmartRefuel: (litresAdded, confirmedBy) => {
         const { smartTank } = get();
         if (!smartTank) return;
+
+        // GUARD: Prevent double-tap / accidental duplicate refuel within 60 seconds
+        const now = Date.now();
+        const lastRefuelMs = smartTank.refuelHistory.at(-1)?.timestampMs ?? 0;
+        if (now - lastRefuelMs < 60_000) {
+          console.warn('[UserStore] recordSmartRefuel skipped — duplicate within 60s');
+          return;
+        }
+
         const updated = smartRecordRefuel(smartTank, litresAdded, confirmedBy);
         set({ smartTank: updated });
       },
@@ -479,7 +526,7 @@ export const useUserStore = create<UserState>()(
           smartTank: {
             ...state,
             lastConfirmedMs: Date.now(),
-            confidence: 1.0,
+            levelConfidence: 1.0, // user explicitly confirmed level — maximum trust
             lastConfirmedBy: 'manual',
           }
         });
@@ -629,6 +676,9 @@ export const useUserStore = create<UserState>()(
       fullReset: () => {
         console.log('[UserStore] FULL RESET: All data cleared');
         set({
+          isSmartTankenEnabled: false,
+          alertThresholdPct: 30,
+          commuteDaysInput: 5,
           hasCompletedOnboarding: false,
           hasSkippedSmartTankSetup: false,
           fuelType: 'e5',
@@ -684,6 +734,28 @@ export const useUserStore = create<UserState>()(
             (state as any).intradaySnapshots = [];
             console.log('[UserStore] Migration v5: intradaySnapshots initialized to []');
           }
+          // Migration: Phase 1 Data Layer Extension
+          if ((state as any).isSmartTankenEnabled === undefined) {
+            if (state.smartTank !== null) {
+              (state as any).isSmartTankenEnabled = true;
+              (state as any).alertThresholdPct = 30;
+              (state as any).commuteDaysInput = Math.round(state.smartTank.commuteDaysPerWeekEMA || 5);
+              
+              // Migrate confidence
+              if ((state.smartTank as any).levelConfidence === undefined) {
+                (state.smartTank as any).levelConfidence = (state.smartTank as any).confidence ?? 0.5;
+                (state.smartTank as any).modelConfidence = state.smartTank.refuelIntervalEMA !== null ? 0.5 : 0.3;
+                (state.smartTank as any).calibrationHistory = [];
+              }
+              console.log('[UserStore] Migration v6: SmartTanken enabled for existing user, dual-confidence initialized');
+            } else {
+              (state as any).isSmartTankenEnabled = false;
+              (state as any).alertThresholdPct = 30;
+              (state as any).commuteDaysInput = 5;
+              console.log('[UserStore] Migration v6: Basic Mode set for new/skipped user');
+            }
+          }
+
           // Sync i18n module with persisted language on boot
           setAppLanguage((state as any).language ?? 'de');
         }

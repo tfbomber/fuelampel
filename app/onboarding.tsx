@@ -1,10 +1,12 @@
 // ====================================================
 // FuelAmpel — Onboarding Screen
 //
-// Step 0 (Must):  Fuel Type
-// Step 1 (Must):  Home & Work area — live address autocomplete (auto-search as you type)
-// Step 2 (Must):  Refueling Style
-// Step 3 (Optional, skippable): Car Type + Last Refuel Amount
+// Step 0 (Must):    Fuel Type
+// Step 1 (Must):    Home & Work area — live address autocomplete
+// Step 2 (Fork):    Smart Tanken opt-in decision screen
+// Step 3 (Smart):   Commute Days + Refueling Style
+// Step 4 (Smart):   Car Type + Optional Range
+// Step 5 (Smart):   Initial Tank Level
 // ====================================================
 
 import React, { useState } from 'react';
@@ -221,63 +223,66 @@ export default function OnboardingScreen() {
   const [fuelType,  setFuelType]  = useState<FuelType>('e5');
   const [homeArea,  setHomeArea]  = useState<CommonArea | null>(null);
   const [workArea,  setWorkArea]  = useState<CommonArea | null>(null);
+  
+  // Smart Tanken explicit fields
+  const [commuteDays, setCommuteDays] = useState('5');
   const [refStyle,  setRefStyle]  = useState<RefuelingStyle | null>(null);
   const [carType,   setCarType]   = useState<CarType | null>(null);
-
   const [tankPct,   setTankPct]   = useState(50);
-  const [totalRangeKm, setTotalRangeKm] = useState<string>(''); // optional km/full tank
+  const [totalRangeKm, setTotalRangeKm] = useState<string>('');
 
   const canProceed =
     step === 0 ? true :
     step === 1 ? homeArea !== null :
-    step === 2 ? refStyle !== null :
-    true; // step 3 and 4 are always skippable
+    step === 2 ? true : // Opt-in fork
+    step === 3 ? refStyle !== null && parseInt(commuteDays, 10) >= 1 && parseInt(commuteDays, 10) <= 7 :
+    true; // 4 and 5 are skippable or always have defaults
 
   function next() {
-    if (step < 4) { setStep(s => s + 1); return; }
-    commit();
+    if (step < 5) { setStep(s => s + 1); return; }
+    commitSmartTanken();
   }
 
-  /**
-   * Skip the entire setup — commit whatever data is available and mark
-   * SmartTank setup as skipped so OnboardingGate won't block on next launch.
-   * The HomeScreen will show a soft setup banner instead.
-   */
-  async function handleSkipAll() {
+  async function handleBasicModeOnly() {
     const areas: CommonArea[] = [];
     if (homeArea) areas.push(homeArea);
     if (workArea) areas.push(workArea);
+    
+    useUserStore.getState().setIsSmartTankenEnabled(false);
+    useUserStore.getState().skipSmartTankSetup();
+    
     completeOnboarding({
       fuelType, commonAreas: areas,
-      refuelingStyle: refStyle, carType,
-      initialPct: tankPct,
+      refuelingStyle: null, carType: null,
+      initialPct: 50,
     });
-    useUserStore.getState().skipSmartTankSetup();
-    // Sync decision engine immediately so Home tab shows correct state on arrival
+    
     useFuelStore.getState().recomputeDecision();
-    console.log('[Onboarding] User skipped SmartTank setup');
+    console.log('[Onboarding] User selected Basic Mode only');
     
     await ensureNotificationPermission();
     router.replace('/(tabs)');
   }
 
-  async function commit() {
+  async function commitSmartTanken() {
     const areas: CommonArea[] = [];
     if (homeArea) areas.push(homeArea);
     if (workArea) areas.push(workArea);
+    
+    useUserStore.getState().setIsSmartTankenEnabled(true);
+    useUserStore.getState().setCommuteDaysInput(parseInt(commuteDays, 10) || 5);
+
     completeOnboarding({
       fuelType, commonAreas: areas,
       refuelingStyle: refStyle, carType,
       initialPct: tankPct,
     });
-    // Apply user-stated initial tank level (now handled in completeOnboarding)
-    // Apply optional total range
+    
     const rangeNum = parseFloat(totalRangeKm);
     if (!isNaN(rangeNum) && rangeNum >= 50) {
-      // setTotalRangeKm is called post-commit via store
       useUserStore.getState().setTotalRangeKm(rangeNum);
     }
-    // Sync decision engine so Home tab shows the correct recommendation immediately
+    
     useFuelStore.getState().recomputeDecision();
     
     await ensureNotificationPermission();
@@ -298,19 +303,15 @@ export default function OnboardingScreen() {
 
         {/* Top bar */}
         <View style={s.topBar}>
-          <ProgressDots step={step} />
-          {step > 0 && (
+          {step !== 2 && <ProgressDots step={step > 2 ? step - 1 : step} />}
+          {step > 0 && step !== 2 && (
+            // Step 3 → back to Step 2 (Fork screen), not Step 1
             <TouchableOpacity onPress={() => setStep(s => s - 1)} style={s.backBtn}>
               <Text style={s.backText}>{t('onboardingBack')}</Text>
             </TouchableOpacity>
           )}
-          {(step === 3) && (
-            <TouchableOpacity onPress={commit} style={s.skipBtn}>
-              <Text style={s.skipText}>{t('onboardingSkip')}</Text>
-            </TouchableOpacity>
-          )}
-          {(step === 1 || step === 2) && (
-            <TouchableOpacity onPress={handleSkipAll} style={s.skipBtn}>
+          {(step >= 3) && (
+            <TouchableOpacity onPress={handleBasicModeOnly} style={s.skipBtn}>
               <Text style={s.skipText}>{t('onboardingSkip')}</Text>
             </TouchableOpacity>
           )}
@@ -361,12 +362,49 @@ export default function OnboardingScreen() {
           </View>
         )}
 
-        {/* Step 2 — Refueling Style */}
+        {/* Step 2 — Smart Tanken Fork */}
         {step === 2 && (
+          <View style={[s.stepWrap, { marginTop: 40 }]}>
+            <Text style={s.emoji}>🧠</Text>
+            <Text style={s.title}>Smart Tanken aktivieren?</Text>
+            <Text style={s.subtitle}>
+              Lass FuelAmpel deinen Tankstand schätzen und berechnen, wann du wirklich tanken musst.
+            </Text>
+            
+            <View style={{ gap: 16, marginTop: 32 }}>
+              <TouchableOpacity style={s.nextBtn} onPress={next} activeOpacity={0.8}>
+                <Text style={s.nextBtnText}>Ja, Smart Tanken einrichten</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={pill.wrap} onPress={handleBasicModeOnly} activeOpacity={0.8}>
+                <Text style={[pill.label, { textAlign: 'center' }]}>Nein, nur Basis-Modus nutzen</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* Step 3 — Refueling Style & Commute Days */}
+        {step === 3 && (
           <View style={s.stepWrap}>
             <Text style={s.emoji}>🔁</Text>
             <Text style={s.title}>{t('onboardingHabitTitle')}</Text>
             <Text style={s.subtitle}>{t('onboardingHabitSubtitle')}</Text>
+
+            <Text style={[s.sectionLabel, { marginTop: 8 }]}>🛣️ Wie viele Tage fährst du pro Woche zur Arbeit?</Text>
+            <View style={rangeS.inputRow}>
+              <TextInput
+                style={rangeS.input}
+                value={commuteDays}
+                onChangeText={setCommuteDays}
+                placeholder="z.B. 5"
+                placeholderTextColor="#4B5563"
+                keyboardType="numeric"
+                returnKeyType="done"
+              />
+              <Text style={rangeS.unit}>Tage</Text>
+            </View>
+
+            <Text style={[s.sectionLabel, { marginTop: 16 }]}>💡 Tankgewohnheit</Text>
             <View style={s.options}>
               {refuelingStyles.map(r => (
                 <Pill key={r.value} selected={refStyle === r.value} label={r.label} desc={r.desc} onPress={() => setRefStyle(r.value)} />
@@ -375,8 +413,8 @@ export default function OnboardingScreen() {
           </View>
         )}
 
-        {/* Step 3 — Optional */}
-        {step === 3 && (
+        {/* Step 4 — Car Type & Optional Range */}
+        {step === 4 && (
           <View style={s.stepWrap}>
             <Text style={s.emoji}>✨</Text>
             <Text style={s.title}>{t('onboardingOptionalTitle')}</Text>
@@ -409,8 +447,8 @@ export default function OnboardingScreen() {
           </View>
         )}
 
-        {/* Step 4 — Current Tank Level (Q&A) */}
-        {step === 4 && (
+        {/* Step 5 — Current Tank Level (Q&A) */}
+        {step === 5 && (
           <View style={s.stepWrap}>
             <Text style={s.emoji}>🛢️</Text>
             <Text style={s.title}>{t('onboardingTankTitle')}</Text>
@@ -444,16 +482,18 @@ export default function OnboardingScreen() {
         )}
 
         {/* Continue / Done */}
-        <TouchableOpacity
-          style={[s.nextBtn, !canProceed && s.nextBtnDim]}
-          onPress={next}
-          disabled={!canProceed}
-          activeOpacity={0.8}
-        >
-          <Text style={s.nextBtnText}>
-            {step < 4 ? t('onboardingNext') : t('onboardingStart')}
-          </Text>
-        </TouchableOpacity>
+        {step !== 2 && (
+          <TouchableOpacity
+            style={[s.nextBtn, !canProceed && s.nextBtnDim, { marginTop: 24 }]}
+            onPress={next}
+            disabled={!canProceed}
+            activeOpacity={0.8}
+          >
+            <Text style={s.nextBtnText}>
+              {step < 5 ? t('onboardingNext') : t('onboardingStart')}
+            </Text>
+          </TouchableOpacity>
+        )}
 
         {step === 1 && !homeArea && (
           <Text style={s.hint}>{t('onboardingSearchHint')}</Text>

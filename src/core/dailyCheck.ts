@@ -142,11 +142,17 @@ interface ZoneGateResult {
  *   Users in Planning zone see in-app guidance when they open the app.
  */
 function shouldScheduleNotification(
-  projectedZone: 'Low' | 'Critical',
+  projectedPct: number,
+  alertThresholdPct: number,
   smartTank: SmartTankState,
   notifState: { lastNotifiedMs: number; weekCount: number; weekStartMs: number },
 ): ZoneGateResult {
-  const isCritical = projectedZone === 'Critical';
+  const isCritical = projectedPct <= 15;
+
+  // Gate 1: Needs to be below threshold
+  if (projectedPct > alertThresholdPct) {
+    return { allowed: false, reason: `projected_level_above_threshold (${projectedPct} > ${alertThresholdPct})` };
+  }
 
   // Gate 2: Trust — SmartTank confidence must be sufficient
   // Critical bypasses: we must warn even with uncertain estimates
@@ -198,6 +204,7 @@ function shouldScheduleNotification(
  */
 export async function scheduleDailyCheck(
   smartTank: SmartTankState | null,
+  alertThresholdPct: number,
   notifState?: { lastNotifiedMs: number; weekCount: number; weekStartMs: number },
   onNotificationSent?: (isCritical: boolean) => void,
 ): Promise<void> {
@@ -224,37 +231,22 @@ export async function scheduleDailyCheck(
     `projected level = ${pctStr}% → zone = ${zone}`
   );
 
-  // Step 3: Zone gate
-  // Safe → always silent
-  if (zone === 'Safe') {
-    console.log('[DailyCheck] Zone is Safe — silent, no notification scheduled');
-    return;
-  }
-  // Planning → silent (stale price data risk — BUG-01 prevention)
-  if (zone === 'Planning') {
-    console.log(
-      '[DailyCheck] Zone is Planning — notification suppressed. ' +
-      'Planning-zone advice depends on real-time price data which would be stale at delivery. ' +
-      'In-app guidance is shown when user opens the app.'
-    );
-    return;
-  }
-
-  // Step 4: notifState guard
+  // Step 3 & 4: notifState guard
   if (!notifState || !onNotificationSent) {
     console.log('[DailyCheck] Missing notifState/callback — skipping (no ungated fallback)');
     return;
   }
 
   // Step 5: Zone-based gate (confidence + cooldown + weekly cap)
-  const gate = shouldScheduleNotification(zone, smartTank, notifState);
+  const gate = shouldScheduleNotification(projectedLevel, alertThresholdPct, smartTank, notifState);
   if (!gate.allowed) {
     console.log(`[DailyCheck] Gate blocked: ${gate.reason} — no notification scheduled`);
     return;
   }
 
   // Step 6: Build content (zone + projected level ONLY — no prices, no stations, no resolveWhen)
-  const content = buildContent(zone, projectedLevel);
+  const isCritical = projectedLevel <= 15;
+  const content = buildContent(isCritical ? 'Critical' : 'Low', projectedLevel);
 
   // Step 7: Schedule
   try {

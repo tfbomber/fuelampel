@@ -103,6 +103,10 @@ export const SMART_TANK_PATTERN_KM_DIFF_PCT   = 0.30; // >30% diff from PLZ defa
 // EMA learning rate (α = 0.25 → ~8 events to fully converge)
 export const SMART_TANK_EMA_ALPHA             = 0.25;
 
+// BiasTracker calibration learning
+export const CALIBRATION_HISTORY_MAX          = 5;
+export const BIAS_SIGNIFICANT_PCT             = 5.0;
+
 // Rolling storage limits (< 25 KB total)
 export const SMART_TANK_SNAPSHOT_MAX          = 224;  // 8 weeks × 4/day
 export const SMART_TANK_REFUEL_HISTORY_MAX    = 10;
@@ -114,6 +118,7 @@ export const SMART_TANK_MAX_DECAY_DAYS        = 5.0;  // max days to decay level
 // Defaults for new users (before any refuel events or location data)
 export const SMART_TANK_DEFAULT_COMMUTE_DAYS  = 5.0;  // assume 5 days/week (most conservative)
 export const SMART_TANK_DEFAULT_LEVEL_PCT     = 50;   // default slider value in onboarding
+export const PERSONAL_BUFFER_KM_PER_WEEK      = 50;   // weekly buffer for non-commute driving
 
 // Refuel confirmation triggers
 export const REFUEL_CONFIRM_NAVIGATION_DELAY_MS = 20 * 60 * 1000; // 20 min after navigating
@@ -142,6 +147,13 @@ export const PLAN_BUFFER_DAYS  = 4;   // < 4d → some urgency, can still optimi
 // German fuel regulation 2026-04-01: 12:00 is the only allowed upward price window.
 // Stations MAY raise at 12:00, or keep prices unchanged. After 12:00, only downward.
 export const NOON_UPWARD_WINDOW_HOUR = 12;
+
+export const TIMING_WINDOWS = {
+  morningStart: 10.5,    // 10:30
+  morningEnd: 11.83,     // 11:50
+  afternoonStart: 16.5,  // 16:30
+  afternoonEnd: 19.0,    // 19:00
+};
 
 // =============================================================================
 // Price Trend Module — Intraday + Multi-Day

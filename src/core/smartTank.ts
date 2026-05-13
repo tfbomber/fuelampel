@@ -36,7 +36,11 @@ import {
   ZONE_CRITICAL_MAX_PCT,
   ZONE_LOW_MAX_PCT,
   ZONE_PLANNING_MAX_PCT,
+  CALIBRATION_HISTORY_MAX,
+  BIAS_SIGNIFICANT_PCT,
+  PERSONAL_BUFFER_KM_PER_WEEK,
 } from '../utils/constants';
+import { CalibrationRecord } from '../utils/types';
 
 // ─── Geometry helpers ─────────────────────────────────────────────────────────
 
@@ -79,29 +83,25 @@ import { DecisionZone } from '../utils/types';
  * Compute a fresh confidence score (0.0–1.0) from state.
  * Call this every time you need to read or store confidence.
  *
- * Formula:
- *   base       = confirmation source quality
- *   age_factor = linear decay over 7 days, floor 0.15
- *   bonus      = +0.15 if EMA calibrated; +0.05 if pattern confirmed
- *   final      = clamp(0, 1, base × age_factor + bonus)
+ * Formula (Phase 2 — Dual-Confidence):
+ *   levelConf  = levelConfidence × age_factor   (decays over 7 days, floor 0.15)
+ *   effective  = min(levelConf, modelConfidence) (bounded by structural model trust)
+ *   bonus      = +0.05 if any trip pattern user-confirmed
+ *   final      = clamp(0, 1, effective + bonus)
+ *
+ * Critical zone (≤15%) bypasses this gate in scheduleDailyCheck.
  */
 export function computeConfidence(state: SmartTankState): number {
-  const baseMap: Record<SmartTankState['lastConfirmedBy'], number> = {
-    refuel:              1.0,
-    manual:              0.8,
-    low_alert_confirm:   0.5,
-  };
-  const base = baseMap[state.lastConfirmedBy] ?? 0.5;
-
   const hoursElapsed = (Date.now() - state.lastConfirmedMs) / 3_600_000;
   const decayFraction = hoursElapsed / (7 * 24); // full decay over 7 days
   const ageFactor = Math.max(0.15, 1.0 - decayFraction);
 
-  let bonus = 0;
-  if (state.refuelIntervalEMA !== null) bonus += 0.15;
-  if (state.tripPatterns.some(p => p.status === 'CONFIRMED')) bonus += 0.05;
+  const currentLevelConf = state.levelConfidence * ageFactor;
+  let effective = Math.min(currentLevelConf, state.modelConfidence);
 
-  return Math.min(1.0, Math.max(0.0, base * ageFactor + bonus));
+  if (state.tripPatterns.some(p => p.status === 'CONFIRMED')) effective += 0.05;
+
+  return Math.min(1.0, Math.max(0.0, effective));
 }
 
 /**
@@ -151,7 +151,10 @@ export function createDefaultSmartTank(
     levelPercent: initialPct,
     lastConfirmedMs: Date.now(),
     lastConfirmedBy: 'manual',
-    confidence: 1.0, // user just confirmed in onboarding — full trust
+    // Dual-confidence model (Phase 1)
+    levelConfidence: 1.0,  // user just confirmed in onboarding — full trust
+    modelConfidence: 0.3,  // no history yet — low initial trust in consumption model
+    calibrationHistory: [],
 
     refuelHistory: [],
     refuelIntervalEMA: null,
@@ -192,7 +195,8 @@ export function setTotalRangeKm(
 interface DailyKmComponents {
   baseDailyKm: number;      // from refuelInterval EMA or PLZ
   patternKm: number;        // from COMMITTED/CONFIRMED tripPatterns (per day avg)
-  totalKmEstimate: number;  // = (base + pattern) × conservative factor
+  bufferKm: number;         // PERSONAL_BUFFER_KM_PER_WEEK / 7
+  totalKmEstimate: number;  // = (base + pattern + buffer) × conservative factor
 }
 
 /**
@@ -224,10 +228,12 @@ export function estimateDailyKm(state: SmartTankState): DailyKmComponents {
     .filter(p => p.status === 'COMMITTED' || p.status === 'CONFIRMED')
     .reduce((sum, p) => sum + p.approxRoundTripKm / 7, 0);
 
-  const totalKmEstimate =
-    (baseDailyKm + patternKm) * SMART_TANK_CONSERVATIVE_FACTOR;
+  const bufferKm = PERSONAL_BUFFER_KM_PER_WEEK / 7;
 
-  return { baseDailyKm, patternKm, totalKmEstimate };
+  const totalKmEstimate =
+    (baseDailyKm + patternKm + bufferKm) * SMART_TANK_CONSERVATIVE_FACTOR;
+
+  return { baseDailyKm, patternKm, bufferKm, totalKmEstimate };
 }
 
 // ─── B2. updateCommuteDistance ────────────────────────────────────────────────
@@ -349,7 +355,9 @@ export function recordRefuel(
     levelPercent: newLevelPct,
     lastConfirmedMs: now,
     lastConfirmedBy: 'refuel',
-    confidence: 1.0, // hard truth: refuel = maximum confidence
+    levelConfidence: 1.0, // hard truth: refuel = maximum confidence
+    // A real refuel event is also a model validation signal — nudge modelConfidence up.
+    modelConfidence: Math.min(1.0, state.modelConfidence + 0.1),
     refuelHistory: newHistory,
     refuelIntervalEMA: newIntervalEMA,
     dailyKmEMA: newDailyKmEMA,
@@ -545,12 +553,52 @@ export function applyManualLevelCorrection(
 ): SmartTankState {
   const clamped = Math.max(0, Math.min(100, Math.round(newPercent)));
   console.log(`[SmartTank] Manual correction: level set to ${clamped}%`);
+
+  const now = Date.now();
+  const estimatedLevel = estimateLevelPercent(state);
+  const errorPct = clamped - estimatedLevel;
+
+  const newRecord: CalibrationRecord = {
+    timestampMs: now,
+    predictedPct: estimatedLevel,
+    actualPct: clamped,
+    errorPct,
+  };
+
+  const newHistory = [...state.calibrationHistory, newRecord].slice(-CALIBRATION_HISTORY_MAX);
+
+  let newDailyKmEMA = state.dailyKmEMA;
+  let newModelConfidence = state.modelConfidence;
+
+  // BiasTracker: Check for 3 consecutive directional errors
+  if (newHistory.length >= 3) {
+    const last3 = newHistory.slice(-3);
+    const allNegative = last3.every(r => r.errorPct <= -BIAS_SIGNIFICANT_PCT); // Consuming faster than thought
+    const allPositive = last3.every(r => r.errorPct >= BIAS_SIGNIFICANT_PCT);  // Consuming slower than thought
+
+    if (allNegative || allPositive) {
+      // Apply structural adjustment
+      const adjustment = allNegative ? 1.10 : 0.90;
+      newDailyKmEMA = state.dailyKmEMA * adjustment;
+      newModelConfidence = Math.min(1.0, state.modelConfidence + 0.1);
+      console.log(`[BiasTracker] Structural drift detected. Adjusting dailyKmEMA by ${adjustment}x to ${newDailyKmEMA.toFixed(1)}`);
+      // Clear history after correction to avoid feedback loop (safe splice on non-const array)
+      newHistory.splice(0);
+    } else {
+      // Mixed errors → variance, drop confidence slightly
+      newModelConfidence = Math.max(0.1, state.modelConfidence - 0.05);
+    }
+  }
+
   return {
     ...state,
     levelPercent: clamped,
-    lastConfirmedMs: Date.now(),
+    lastConfirmedMs: now,
     lastConfirmedBy: 'manual',
-    confidence: 0.8, // manual = high trust, but not verified by a refuel
+    levelConfidence: 0.85, // manual = high trust, but not verified by a refuel
+    modelConfidence: newModelConfidence,
+    calibrationHistory: newHistory,
+    dailyKmEMA: newDailyKmEMA,
   };
 }
 
@@ -590,14 +638,16 @@ export function getDailyKmComponents(state: SmartTankState): {
   source: 'refuel_ema' | 'plz_estimate';
   baseDailyKm: number;
   patternKm: number;
+  bufferKm: number;
   totalWithConservative: number;
   refuelIntervalDays: number | null;
 } {
-  const { baseDailyKm, patternKm, totalKmEstimate } = estimateDailyKm(state);
+  const { baseDailyKm, patternKm, bufferKm, totalKmEstimate } = estimateDailyKm(state);
   return {
     source: state.refuelIntervalEMA !== null ? 'refuel_ema' : 'plz_estimate',
     baseDailyKm: Math.round(baseDailyKm * 10) / 10,
     patternKm: Math.round(patternKm * 10) / 10,
+    bufferKm: Math.round(bufferKm * 10) / 10,
     totalWithConservative: Math.round(totalKmEstimate * 10) / 10,
     refuelIntervalDays: state.refuelIntervalEMA
       ? Math.round(state.refuelIntervalEMA * 10) / 10

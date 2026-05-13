@@ -43,11 +43,11 @@ import {
   CHEAPEST_LEVEL_CEILING_PCT,
   PLAN_URGENT_DAYS,
   PLAN_BUFFER_DAYS,
-  NOON_UPWARD_WINDOW_HOUR,
   ZONE_PLANNING_MAX_PCT,
   STRONG_DEAL_PER_LITER,
   STRONG_DEAL_NET_EUR,
   PLANNING_MIN_STATIONS_FOR_GO,
+  TIMING_WINDOWS,
 } from '../utils/constants';
 import { computeRefuelUrgency, classifyZone } from './smartTank';
 import { computeNetVsNearest, findNearestOpen } from '../utils/ranking';
@@ -196,17 +196,19 @@ function resolveWhen(
 ): string {
   // ── Urgent: must refuel today regardless of price ──
   if (daysLeft < PLAN_URGENT_DAYS) {
-    if (hour < NOON_UPWARD_WINDOW_HOUR)
-      return 'Bald tanken. Vor dem 12-Uhr-Fenster oft günstiger.';
-    if (hour >= 12 && hour < 14)
-      return 'Bald tanken nötig. Preise könnten später noch etwas fallen.';
+    if (hour < TIMING_WINDOWS.morningStart)
+      return 'Bald tanken. Heute Vormittag oft günstiger.';
+    if (hour >= TIMING_WINDOWS.morningStart && hour <= TIMING_WINDOWS.morningEnd)
+      return 'Jetzt tanken (günstiges Vormittags-Fenster).';
+    if (hour >= TIMING_WINDOWS.afternoonStart && hour <= TIMING_WINDOWS.afternoonEnd)
+      return 'Jetzt tanken (günstiges Nachmittags-Fenster).';
     return 'Heute noch tanken.';
   }
 
   // ── Cheap day: seize the opportunity ──
   if (dayTrend.level === 'CHEAP_DAY' && dayTrend.confidence !== 'low') {
-    if (hour < 11)
-      return 'Heute günstiger als üblich. Am besten vor dem 12-Uhr-Fenster.';
+    if (hour < TIMING_WINDOWS.morningEnd)
+      return 'Heute günstiger als üblich. Am besten im Vormittags-Fenster.';
     if (intradayTrend.direction === 'falling' && intradayTrend.confidence !== 'low')
       return 'Heute günstiger als üblich. Preise fallen gerade.';
     return 'Heute günstiger als üblich — guter Tag zum Tanken.';
@@ -220,12 +222,12 @@ function resolveWhen(
   }
 
   // ── Normal day / low confidence ──
-  if (hour < 11)
-    return 'Später Vormittag vor 12 Uhr könnte günstig sein.';
+  if (hour < TIMING_WINDOWS.morningStart)
+    return 'Vormittags oft günstig — beobachte die Preise.';
   if (intradayTrend.direction === 'falling' && intradayTrend.confidence !== 'low')
     return 'Preise fallen gerade — könnte ein guter Zeitpunkt sein.';
-  if (hour > 19)
-    return 'Morgen gegen späten Vormittag erneut prüfen.';
+  if (hour > TIMING_WINDOWS.afternoonEnd)
+    return 'Morgen Vormittag erneut prüfen.';
   return 'Später heute oder morgen erneut prüfen.';
 }
 

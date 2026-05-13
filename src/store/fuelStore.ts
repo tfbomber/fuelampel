@@ -92,17 +92,26 @@ export const useFuelStore = create<FuelStoreState>()(
       }
 
       // ── Step 2: Upgrade to real road dist + estimated duration via OSRM ────
+      // OSRM Optimization: Rough filter Top 15 before expensive batch request
+      let stationsToRoute = stations;
+      if (stations.length > 15) {
+        // Pre-score by straight-line distance to pick Top 15
+        const sortedForOsrm = [...stations].sort((a, b) => a.dist - b.dist);
+        stationsToRoute = sortedForOsrm.slice(0, 15);
+      }
+
       let distanceSource: 'road' | 'estimated' = 'estimated';
       try {
-        const metrics = await fetchRoadMetrics(location, stations);
-        if (metrics && metrics.length === stations.length) {
-          stations.forEach((s, i) => {
+        const metrics = await fetchRoadMetrics(location, stationsToRoute);
+        if (metrics && metrics.length === stationsToRoute.length) {
+          stationsToRoute.forEach((s, i) => {
             if (metrics[i].distKm > 0) {
               s.dist = metrics[i].distKm;
+              s.durationMin = metrics[i].durationMin; // Save durationMin to Station
             }
           });
           distanceSource = 'road';
-          console.log('[FuelStore] station.dist updated via OSRM');
+          console.log(`[FuelStore] OSRM applied to ${stationsToRoute.length} stations`);
         } else {
           // Fallback: straight-line ×1.3, rounded to 1 decimal
           stations.forEach(s => { s.dist = parseFloat((s.dist * 1.3).toFixed(1)); });

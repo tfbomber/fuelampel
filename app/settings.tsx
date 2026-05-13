@@ -55,7 +55,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 // ── Option pill grid ──────────────────────────────────────────────────────────
 
-function OptionRow<T extends string>({
+function OptionRow<T extends string | number>({
   options, value, onSelect,
 }: { options: { value: T; label: string }[]; value: T | null; onSelect: (v: T) => void }) {
   return (
@@ -81,10 +81,10 @@ function OptionRow<T extends string>({
 export default function SettingsScreen() {
   const router = useRouter();
   const {
+    language, isSmartTankenEnabled, alertThresholdPct, commuteDaysInput,
     fuelType, commonAreas, refuelingStyle, carType, shadowTank, smartTank,
-    language,
     setFuelType, setCommonAreas, setRefuelingStyle, setCarType,
-    setLanguage,
+    setLanguage, setIsSmartTankenEnabled, setAlertThresholdPct, setCommuteDaysInput,
     setAvgConsumption, setTankCapacity, setTotalRangeKm,
     fullReset,
   } = useUserStore();
@@ -107,6 +107,17 @@ export default function SettingsScreen() {
   const [consumptionDirty, setConsumptionDirty] = useState(false);
   const [capacityDirty,    setCapacityDirty]    = useState(false);
   const [rangeDirty,       setRangeDirty]       = useState(false);
+  const [commuteDaysDirty, setCommuteDaysDirty] = useState(false);
+  
+  const [commuteDaysLocal, setCommuteDaysLocal] = useState(commuteDaysInput.toString());
+  
+  // Refresh local copy if store changes while screen was backgrounded
+  // (e.g. updated via onboarding re-run on another device session)
+  useFocusEffect(useCallback(() => {
+    setCommuteDaysLocal(commuteDaysInput.toString());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commuteDaysInput]));
+  
   // Global save button state — true whenever any numeric field is dirty
   const [globalDirty,      setGlobalDirty]      = useState(false);
   const [globalSaved,      setGlobalSaved]      = useState(false);
@@ -123,6 +134,12 @@ export default function SettingsScreen() {
     { value: 'regular' as CarType, label: t('carFamily') },
     { value: 'large'   as CarType, label: t('carLarge') },
     { value: 'unknown' as CarType, label: t('carUnknown') },
+  ];
+
+  const ALERT_THRESHOLD_OPTIONS = [
+    { value: 20, label: '20%' },
+    { value: 30, label: '30%' },
+    { value: 40, label: '40%' },
   ];
 
 
@@ -237,6 +254,12 @@ export default function SettingsScreen() {
         } else { setTotalRangeKm(val); setRangeDirty(false); }
       }
     }
+    if (commuteDaysDirty) {
+      const val = parseInt(commuteDaysLocal, 10);
+      if (isNaN(val) || val < 1 || val > 7) {
+        Alert.alert(t('alertInvalidValue'), 'Bitte 1 bis 7 Tage eingeben'); hasError = true;
+      } else { setCommuteDaysInput(val); setCommuteDaysDirty(false); }
+    }
 
     // ── 3. Commit + refresh Home decision engine ────────────────────────────
     if (!hasError) {
@@ -322,9 +345,20 @@ export default function SettingsScreen() {
           }
         }
       }
+      if (commuteDaysDirty) {
+        const val = parseInt(commuteDaysLocal, 10);
+        if (!isNaN(val) && val >= 1 && val <= 7) {
+          setCommuteDaysInput(val); setCommuteDaysDirty(false);
+          console.log('[Settings] Auto-saved commute days on blur:', val);
+        } else {
+          setCommuteDaysLocal(commuteDaysInput.toString());
+          setCommuteDaysDirty(false);
+          console.warn('[Settings] Invalid commute days on blur — rolled back to:', commuteDaysInput);
+        }
+      }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [areaDirty, homeArea, workArea, consumptionDirty, consumptionInput, capacityDirty, capacityInput, rangeDirty, rangeInput]));
+  }, [areaDirty, homeArea, workArea, consumptionDirty, consumptionInput, capacityDirty, capacityInput, rangeDirty, rangeInput, commuteDaysDirty, commuteDaysLocal]));
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
@@ -408,6 +442,55 @@ export default function SettingsScreen() {
       {/* Refueling Style */}
       <Section title={t('refuelingStyle')}>
         <OptionRow<RefuelingStyle> options={REFUELING_STYLE_OPTIONS} value={refuelingStyle} onSelect={handleRefuelingStyleChange} />
+      </Section>
+
+      {/* Smart Tanken Settings */}
+      <Section title="Smart Tanken">
+        <View style={styles.settingRow}>
+          <View style={styles.settingLabelRow}>
+            <Text style={styles.settingLabel}>Modus aktivieren</Text>
+            <TouchableOpacity onPress={() => setIsSmartTankenEnabled(!isSmartTankenEnabled)} style={styles.advancedToggle}>
+              <Text style={{ color: isSmartTankenEnabled ? '#4ADE80' : '#EF4444', fontWeight: '700' }}>
+                {isSmartTankenEnabled ? 'AN' : 'AUS'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={{ color: '#6B7280', fontSize: 11 }}>
+            FuelAmpel lernt dein Fahrverhalten und benachrichtigt dich, wenn der Tank niedrig wird.
+          </Text>
+        </View>
+
+        {isSmartTankenEnabled && (
+          <>
+            <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 8 }} />
+            
+            <View style={styles.settingRow}>
+              <Text style={styles.settingLabel}>Benachrichtigung ab Tankstand</Text>
+              <OptionRow<number> 
+                options={ALERT_THRESHOLD_OPTIONS} 
+                value={alertThresholdPct} 
+                onSelect={(val) => { setAlertThresholdPct(val); setGlobalDirty(true); }} 
+              />
+            </View>
+
+            <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 8 }} />
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingLabelRow}>
+                <Text style={styles.settingLabel}>Pendeltage pro Woche (1-7)</Text>
+              </View>
+              <TextInput
+                style={styles.input}
+                value={commuteDaysLocal}
+                onChangeText={(v) => { setCommuteDaysLocal(v); setCommuteDaysDirty(true); setGlobalDirty(true); }}
+                keyboardType="numeric"
+                returnKeyType="done"
+                placeholder="5"
+                placeholderTextColor="#4B5563"
+              />
+            </View>
+          </>
+        )}
       </Section>
 
       {/* Fahrzeug & Tank (merged Car Type + Shadow Tank) */}

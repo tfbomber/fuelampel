@@ -22,6 +22,7 @@ import { useEffect, useState } from 'react';
 import { useUserStore } from '../src/store/userStore';
 import { t } from '../src/utils/i18n';
 import { ensureNotificationPermission } from '../src/utils/notificationPermission';
+import { cancelDailyCheck } from '../src/core/dailyCheck';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -94,18 +95,38 @@ function OnboardingGate() {
   return null; // purely logic, no UI
 }
 
-export default function RootLayout() {
-  const _lang = useUserStore(s => s.language);
+function SmartTankenBackground() {
+  const isEnabled = useUserStore((s) => s.isSmartTankenEnabled);
+
+  useEffect(() => {
+    // If disabled, explicitly cancel any existing scheduled daily checks
+    if (!isEnabled) {
+      cancelDailyCheck();
+    }
+  }, [isEnabled]);
+
+  if (!isEnabled) return null;
+
+  return <SmartTankenBackgroundActive />;
+}
+
+function SmartTankenBackgroundActive() {
   // Silently takes location snapshots (foreground only, 3h gap-gated)
   useLocationSnapshot();
   // Pre-schedules 11:30 daily check notification whenever SmartTank changes
   useDailyCheckScheduler();
+  return null;
+}
+
+export default function RootLayout() {
+  const _lang = useUserStore(s => s.language);
 
   return (
     <View style={styles.root}>
       <StatusBar style="light" />
       {/* Onboarding gate runs silently alongside the Stack */}
       <OnboardingGate />
+      <SmartTankenBackground />
       <Stack
         screenOptions={{
           headerStyle: { backgroundColor: '#0D0F14' },

@@ -53,29 +53,30 @@ export function useRefuelConfirm(): { banner: RefuelBannerType } {
       return;
     }
 
-    const delay = Math.max(0, REFUEL_CONFIRM_NAVIGATION_DELAY_MS - elapsed);
+    const delaySec = Math.max(1, Math.round((REFUEL_CONFIRM_NAVIGATION_DELAY_MS - elapsed) / 1000));
 
     notifScheduled.current = true;
 
-    const timer = setTimeout(async () => {
-      try {
-        await Notifications.scheduleNotificationAsync({
-          content: {
-            title: '⛽ Aufgetankt?',
-            body: 'Du warst gerade an einer Tankstelle. Tank voll gemacht?',
-            data: { type: 'refuel_confirm' },
-          },
-          trigger: null, // immediate
-        });
-        console.log('[useRefuelConfirm] Post-navigation confirm notification sent');
-      } catch (err) {
-        console.warn('[useRefuelConfirm] Notification failed:', err);
-      }
-      // One-shot: clear the flag so it never fires again for this navigation
-      clearPending();
-    }, delay);
+    Notifications.scheduleNotificationAsync({
+      content: {
+        title: '⛽ Aufgetankt?',
+        body: 'Du warst gerade an einer Tankstelle. Tank voll gemacht?',
+        data: { type: 'refuel_confirm' },
+      },
+      trigger: { 
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: delaySec 
+      },
+    })
+      .then(() => {
+        console.log(`[useRefuelConfirm] Post-navigation confirm scheduled in ${delaySec}s`);
+      })
+      .catch((err) => {
+        console.warn('[useRefuelConfirm] Notification scheduling failed:', err);
+      });
 
-    return () => clearTimeout(timer);
+    // One-shot: clear the flag so it never schedules again for this navigation
+    clearPending();
   }, [pendingRefuelConfirm, lastNavigatedMs, clearPending]);
 
   // ── B & C. Inline banner selection (computed during render, no side effects) ─

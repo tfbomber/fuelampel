@@ -43,6 +43,7 @@ export interface Station {
   lat: number;
   lng: number;
   dist: number;          // km from user (road distance via OSRM)
+  durationMin?: number;  // estimated drive time in minutes (road time via OSRM)
   /** Active display price — re-picked from raw prices when fuel type changes. */
   price: number | null;
   /** Raw prices cached from single API fetch — never null after first load. */
@@ -164,6 +165,13 @@ export interface TripPattern {
   lastAskedMs: number | null;
 }
 
+export interface CalibrationRecord {
+  timestampMs: number;
+  predictedPct: number;
+  actualPct: number;
+  errorPct: number;
+}
+
 /** The single source of truth for the Smart Shadow Tank engine. */
 export interface SmartTankState {
   // ── Core truth ────────────────────────────────────────────────────────────
@@ -171,11 +179,16 @@ export interface SmartTankState {
   lastConfirmedMs: number;
   lastConfirmedBy: 'refuel' | 'manual' | 'low_alert_confirm';
   /**
-   * Confidence in levelPercent. 0.0 (blind guess) – 1.0 (just confirmed by refuel).
-   * Recomputed by computeConfidence() each time the value is consumed.
-   * Stored so it persists and degrades over time across restarts.
+   * @deprecated use levelConfidence and modelConfidence instead.
+   * Kept optional for backward compatibility during migration.
    */
-  confidence: number;
+  confidence?: number;
+  /** Confidence in the current tank level (0.0 to 1.0) */
+  levelConfidence: number;
+  /** Confidence in the daily consumption model (0.0 to 1.0) */
+  modelConfidence: number;
+  /** Rolling history of manual calibrations for BiasTracker */
+  calibrationHistory: CalibrationRecord[];
 
   // ── Refuel history (rolling last 10) ─────────────────────────────────────
   refuelHistory: RefuelEvent[];

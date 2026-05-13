@@ -26,6 +26,7 @@ export function useDailyCheckScheduler(): void {
   const notificationWeekCount = useUserStore((s) => s.notificationWeekCount);
   const notificationWeekStartMs = useUserStore((s) => s.notificationWeekStartMs);
   const recordNotificationSent  = useUserStore((s) => s.recordNotificationSent);
+  const alertThresholdPct     = useUserStore((s) => s.alertThresholdPct);
 
   useEffect(() => {
     const notifState = {
@@ -37,6 +38,7 @@ export function useDailyCheckScheduler(): void {
     // Fire async without blocking render
     scheduleDailyCheck(
       smartTank,
+      alertThresholdPct,
       notifState,
       recordNotificationSent,
     ).catch((err) => {

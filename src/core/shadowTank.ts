@@ -1,7 +1,7 @@
 // ====================================================
 // FuelAmpel — Shadow Tank
-// Estimates remaining fuel without GPS tracking.
-// Uses time-based estimation from last refuel event.
+// @deprecated Phase 3: Legacy system. Basic Mode relies on no tank.
+// Smart Tanken Mode relies on smartTank.ts (Smart Shadow Tank v2).
 // ====================================================
 
 import { ShadowTankState } from '../utils/types';
@@ -17,6 +17,7 @@ const ASSUMED_AVG_SPEED_KMH = 40; // Conservative urban/mixed average
 /**
  * Create a default shadow tank state.
  * Used on first app launch.
+ * @deprecated Use SmartTank instead
  */
 export function createDefaultShadowTank(): ShadowTankState {
   return {

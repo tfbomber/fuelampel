@@ -50,29 +50,34 @@ function isNewWeek(weekStartMs: number): boolean {
 /**
  * Decide whether to send a push notification now.
  *
- * Gate 1 — Need:    Zone must be Low/Critical OR mode must be plan_soon (with non-Skip rec).
- *                   Planning+normal and Safe are always silent (in-app only).
+ * Gate 1 — Need:    Tank must be below alertThresholdPct, OR mode must be plan_soon.
+ *                   Critical zone always bypasses this gate (emergency).
  * Gate 2 — Value:   Savings must exceed threshold. Exception: plan_soon with a 'when'
  *                   recommendation passes regardless (the timing advice is the value).
- * Gate 3 — Trust:   Confidence must be medium/high (Critical bypasses).
+ * Gate 3 — Trust:   Effective confidence (min of level+model) must be ≥0.40.
+ *                   Critical bypasses this gate.
  * Gate 4 — Budget:  Cooldown (4h always) + weekly cap (≤3, all zones).
  */
 export function shouldNotify(
   decision: DecisionResult,
   notifState: NotificationState,
+  alertThresholdPct: number = 30, // Default 30% for backward compatibility
+  smartTank?: SmartTankState | null,
 ): GateResult {
   const isCritical = decision.zone === 'Critical';
   const isPlanSoon  = decision.mode === 'plan_soon' && decision.recommendation !== 'Skip';
 
-  // ── Gate 1: Need ────────────────────────────────────────────────────────────
-  // Low/Critical: always actionable.
-  // Planning + plan_soon: timing recommendation is actionable.
-  // Planning + normal, Safe: in-app only — never push.
-  const isUrgent = decision.zone === 'Low' || decision.zone === 'Critical';
-  if (!isUrgent && !isPlanSoon) {
+  // ── Gate 1: Need (Phase 2 Single-Threshold) ─────────────────────────────────
+  // Critical zone always passes (emergency — never silenced by threshold).
+  // plan_soon bypasses (proactive planning notification).
+  // Otherwise: tank must be below user’s configured alertThresholdPct.
+  const estLevel = smartTank ? computeRefuelUrgency(smartTank).levelPercent : 50;
+  const isBelowThreshold = estLevel <= alertThresholdPct;
+
+  if (!isCritical && !isBelowThreshold && !isPlanSoon) {
     return { allowed: false, reason: 'need_not_met' };
   }
-  if (decision.recommendation === 'Skip' && !isPlanSoon) {
+  if (decision.recommendation === 'Skip' && !isPlanSoon && !isCritical) {
     return { allowed: false, reason: 'skip_recommendation' };
   }
 
@@ -85,7 +90,9 @@ export function shouldNotify(
   }
 
   // ── Gate 3: Trust (Critical bypasses) ──────────────────────────────────────
-  if (!isCritical && decision.confidenceLevel === 'low') {
+  // Use effective confidence from SmartTank or decision fallback
+  const effectiveConfidence = smartTank ? Math.min(smartTank.levelConfidence, smartTank.modelConfidence) : 0.5;
+  if (!isCritical && effectiveConfidence < 0.40) {
     return { allowed: false, reason: 'confidence_too_low' };
   }
 
