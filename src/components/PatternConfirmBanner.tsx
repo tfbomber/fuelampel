@@ -45,16 +45,18 @@ export function PatternConfirmBanner({
           <Text style={s.body}>{bodyText}</Text>
         </View>
       </View>
-      <View style={s.btnRow}>
+      <View style={s.btnColLayout}>
         <TouchableOpacity style={[s.btn, s.btnYes]} onPress={onConfirm} activeOpacity={0.8}>
           <Text style={s.btnYesText}>{t('patternBtnYes')}</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[s.btn, s.btnNo]} onPress={onReject} activeOpacity={0.8}>
-          <Text style={s.btnNoText}>{t('patternBtnNo')}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[s.btn, s.btnIgnore]} onPress={onDismiss} activeOpacity={0.8}>
-          <Text style={s.btnIgnoreText}>{t('patternBtnIgnore')}</Text>
-        </TouchableOpacity>
+        <View style={s.btnRow}>
+          <TouchableOpacity style={[s.btn, s.btnNo]} onPress={onReject} activeOpacity={0.8}>
+            <Text style={s.btnNoText}>{t('patternBtnNo')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[s.btn, s.btnIgnore]} onPress={onDismiss} activeOpacity={0.8}>
+            <Text style={s.btnIgnoreText}>{t('patternBtnIgnore')}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -76,6 +78,7 @@ const s = StyleSheet.create({
   title:  { color: '#E0E7FF', fontSize: 13, fontWeight: '700' },
   body:   { color: '#9CA3AF', fontSize: 13, lineHeight: 19 },
   highlight: { color: '#A5B4FC', fontWeight: '700' },
+  btnColLayout: { gap: 8 },
   btnRow: { flexDirection: 'row', gap: 8 },
   btn: {
     flex: 1,

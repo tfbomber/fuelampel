@@ -11,7 +11,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, RefreshControl, TouchableOpacity,
-  StyleSheet, Pressable, Animated, Linking, TextInput,
+  StyleSheet, Pressable, Animated, Linking, TextInput, KeyboardAvoidingView, Platform, useWindowDimensions,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -148,6 +148,9 @@ export default function HomeScreen() {
   const params = useLocalSearchParams();
   const { decision, isLoading, error, refresh, permissionDenied } = useDecision();
   const recomputeDecision = useFuelStore(s => s.recomputeDecision);
+  
+  const { width } = useWindowDimensions();
+  const trafficLightSize = Math.min(140, Math.round(width * 0.35));
 
   const fuelType           = useUserStore(s => s.fuelType);
   const shadowTank         = useUserStore(s => s.shadowTank);
@@ -348,7 +351,11 @@ export default function HomeScreen() {
   }
 
   return (
-    <View style={styles.screen}>
+    <KeyboardAvoidingView 
+      style={styles.screen}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 60}
+    >
 
       <ScrollView
         style={styles.scrollView}
@@ -461,11 +468,11 @@ export default function HomeScreen() {
                 activeOpacity={0.82}
                 accessibilityLabel={t('goStationsA11y')}
               >
-                <TrafficLight recommendation={decision.recommendation} size={140} />
+                <TrafficLight recommendation={decision.recommendation} size={trafficLightSize} />
                 <Text style={styles.goHint}>{t('viewStations')}</Text>
               </TouchableOpacity>
             ) : (
-              <TrafficLight recommendation={decision.recommendation} size={140} />
+              <TrafficLight recommendation={decision.recommendation} size={trafficLightSize} />
             )}
           </Animated.View>
         ) : error ? (
@@ -554,7 +561,7 @@ export default function HomeScreen() {
         </View>
       )}
     </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

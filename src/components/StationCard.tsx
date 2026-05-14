@@ -23,7 +23,9 @@ export function StationCard({ station, saving, isCorridorPick }: Props) {
           <Text style={styles.brandText} numberOfLines={1} ellipsizeMode="tail">{station.brand || 'Station'}</Text>
         </View>
         <View style={styles.priceBlock}>
-          <Text style={styles.price}>{formatPrice(station.price)}</Text>
+          <Text style={styles.price} allowFontScaling={false} numberOfLines={1} adjustsFontSizeToFit>
+            {formatPrice(station.price)}
+          </Text>
           {saving !== undefined && saving > 0 && (
             <Text style={styles.saving}>−{(saving * 100).toFixed(1)}¢/L</Text>
           )}

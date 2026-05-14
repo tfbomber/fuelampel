@@ -55,9 +55,11 @@ export function FuelSlider({
 
       onPanResponderGrant: (_, gestureState) => {
         isDraggingRef.current = true;
-        // Calculate initial position from touch
-        const touchX = gestureState.x0;
-        updateFromTouchX(touchX);
+        // Calculate initial position from touch, re-measuring to account for any scroll offsets
+        containerRef.current?.measureInWindow?.((x: number, y: number, w: number) => {
+          if (w > 0) containerLayoutRef.current = { x, y, width: w };
+          updateFromTouchX(gestureState.x0);
+        });
       },
 
       onPanResponderMove: (_, gestureState) => {

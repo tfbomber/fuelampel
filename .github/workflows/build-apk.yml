@@ -61,13 +61,15 @@ jobs:
           body: |
             ## ⛽ FuelAmpel v${{ steps.version.outputs.VERSION }}
 
-            ### 🆕 本次更新 (What's New)
-            - 📌 **Settings 固定右上角** — 设置齿轮按钮不再随页面滚动，始终固定在右上角
-            - 🌍 **德/英双语支持** — Settings 顶部新增语言切换（Deutsch 默认），所有 UI 文字即时切换
-            - ✨ **消除油量动画闪烁** — 加油后 ShadowTankBar↔TankGaugeSlider 过渡改为双层叠加淡入淡出，彻底告别闪烁感
-            - 📐 **消除 Undo 布局跳动** — Undo/Skip 等按钮不再因 Undo 行出现而位移
-            - 🗺️ **地图相机修复** — 点击加油站 Marker 后地图不再弹回用户位置
-            - 👆 **Marker 点击区域扩大** — 加油站 Marker 触控区域确保 ≥44×44pt（Android Material 标准）
+            ### 🆕 本次更新 — UI/UX 稳定性修复 (v2.8.1)
+            - ⌨️ **键盘遮挡修复** — 首页加油输入框 & 设置页高级输入框不再被弹出键盘遮住（`KeyboardAvoidingView`）
+            - 📍 **地址搜索结果可点击** — 修复了设置页 Home 地址搜索列表被 Work 输入框覆盖的 Z-Index Bug
+            - 🗺️ **加油站页搜索建议修复** — 搜索遮罩层不再拦截联想结果点击（`locBackdrop zIndex: -1`）
+            - 🎯 **地图切换按钮精准居中** — 修复 Android 上 FAB 按钮因百分比定位偏移的 Layout Bug
+            - 📱 **小屏设备适配** — 红绿灯图标响应式缩放，iPhone SE / 360dp 小屏"加油"按钮不再被挤出首屏
+            - 🚗 **油量滑块精准度提升** — 滚动页面后拖拽滑块不再有位置漂移（每次触摸前重测绝对坐标）
+            - 💬 **行程确认卡片优化** — 三按钮布局从横排改为 1+2 组合，防止德语长单词截断
+            - 💰 **价格显示防溢出** — 系统大字号下价格文字不再与品牌标签重叠
 
             ### 安装方法 (Installation)
             1. 下载附件中的 `app-release.apk`

@@ -10,7 +10,7 @@
 import React, { useState, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Alert,
+  TextInput, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Stack } from 'expo-router';
@@ -361,6 +361,10 @@ export default function SettingsScreen() {
   }, [areaDirty, homeArea, workArea, consumptionDirty, consumptionInput, capacityDirty, capacityInput, rangeDirty, rangeInput, commuteDaysDirty, commuteDaysLocal]));
 
   return (
+    <KeyboardAvoidingView 
+      style={{ flex: 1 }} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
 
       {/* Fixed header Save button — same level as 'Einstellungen' title, never scrolls away */}
@@ -419,24 +423,28 @@ export default function SettingsScreen() {
 
       {/* Common Area */}
       <Section title={t('areas')}>
-        <LiveAddressInput
-          label={t('homeArea')}
-          icon="🏠"
-          placeholder={t('addrPlaceholder')}
-          selectedArea={homeArea}
-          onSelect={updateHome}
-          onClear={clearHome}
-          otherArea={workArea}
-        />
-        <LiveAddressInput
-          label={t('workArea')}
-          icon="🏢"
-          placeholder={t('addrPlaceholder')}
-          selectedArea={workArea}
-          onSelect={updateWork}
-          onClear={clearWork}
-          otherArea={homeArea}
-        />
+        <View style={{ zIndex: 20 }}>
+          <LiveAddressInput
+            label={t('homeArea')}
+            icon="🏠"
+            placeholder={t('addrPlaceholder')}
+            selectedArea={homeArea}
+            onSelect={updateHome}
+            onClear={clearHome}
+            otherArea={workArea}
+          />
+        </View>
+        <View style={{ zIndex: 10 }}>
+          <LiveAddressInput
+            label={t('workArea')}
+            icon="🏢"
+            placeholder={t('addrPlaceholder')}
+            selectedArea={workArea}
+            onSelect={updateWork}
+            onClear={clearWork}
+            otherArea={homeArea}
+          />
+        </View>
       </Section>
 
       {/* Refueling Style */}
@@ -616,6 +624,7 @@ export default function SettingsScreen() {
       </Section>
 
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

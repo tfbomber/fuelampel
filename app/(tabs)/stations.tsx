@@ -8,7 +8,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   RefreshControl, ActivityIndicator, TextInput, Pressable,
-  Keyboard, Modal, Animated,
+  Keyboard, Modal, Animated, Dimensions,
 } from 'react-native';
 import * as Location from 'expo-location';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -773,12 +773,12 @@ const styles = StyleSheet.create({
   locSuggestionShort:  { color: '#F9FAFB', fontSize: 14, fontWeight: '700' },
   locSuggestionFull:   { color: '#6B7280', fontSize: 11 },
   // Backdrop: full-screen transparent tap target behind the suggestion dropdown.
-  // Placed first in the fragment so it renders under the dropdown (zIndex = 0).
+  // zIndex: -1 ensures it stays strictly beneath the dropdown in normal flow on both iOS and Android.
   // Tapping it dismisses keyboard + clears suggestions without blocking map or list interaction.
   locBackdrop: {
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
-    zIndex: 0,
+    zIndex: -1,
   },
 
   // Status banner (no-result / error)
@@ -853,8 +853,7 @@ const styles = StyleSheet.create({
   viewModeFABContainer: {
     position: 'absolute',
     bottom: 24,
-    left: '50%' as any,
-    marginLeft: -65,
+    left: Dimensions.get('window').width / 2 - 65,
     zIndex: 999,
     elevation: 12,
   },
