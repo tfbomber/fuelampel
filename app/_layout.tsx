@@ -23,6 +23,9 @@ import { useUserStore } from '../src/store/userStore';
 import { t } from '../src/utils/i18n';
 import { ensureNotificationPermission } from '../src/utils/notificationPermission';
 import { cancelDailyCheck } from '../src/core/dailyCheck';
+import * as SplashScreen from 'expo-splash-screen';
+
+SplashScreen.preventAutoHideAsync();
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -45,32 +48,13 @@ if (Platform.OS === 'android') {
 
 // ── Onboarding Gate ───────────────────────────────────────────────────────────
 // Runs inside the root layout on every render cycle.
-// Waits for Zustand to rehydrate from AsyncStorage, then navigates imperatively.
-// Lives in _layout.tsx (not index.tsx) because Expo Router restores the last
-// active route on re-launch, bypassing app/index.tsx for returning users.
+// By the time OnboardingGate mounts, RootLayout has already confirmed hydration
+// (it blocks rendering until hydrated=true). No subscription needed here.
 function OnboardingGate() {
   const router   = useRouter();
   const segments = useSegments();
 
-  // Track Zustand hydration state
-  const [hydrated, setHydrated] = useState(
-    () => useUserStore.persist.hasHydrated()
-  );
-
   useEffect(() => {
-    if (!hydrated) {
-      if (useUserStore.persist.hasHydrated()) {
-        setHydrated(true);
-        return;
-      }
-      const unsub = useUserStore.persist.onFinishHydration(() => setHydrated(true));
-      return () => unsub();
-    }
-  }, [hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-
     // Silent check/request for existing users who skip onboarding
     ensureNotificationPermission().catch((err) => console.warn(err));
 
@@ -78,22 +62,21 @@ function OnboardingGate() {
     const inOnboarding = segments[0] === 'onboarding';
     if (inOnboarding) return;
 
-    const { hasCompletedOnboarding, smartTank, hasSkippedSmartTankSetup } = useUserStore.getState();
+    const { hasCompletedOnboarding } = useUserStore.getState();
 
-    // setTimeout(fn, 0) defers one JS tick.
-    // By the time useEffect fires in _layout.tsx, the Stack has already
-    // committed its navigation state synchronously during render, so
-    // router.replace() is safe to call here.
+    // setTimeout(fn, 0) defers one JS tick so Stack navigation state is committed.
     setTimeout(() => {
-      if (!hasCompletedOnboarding) {
+      if (!hasCompletedOnboarding && !inOnboarding) {
         console.log('[OnboardingGate] → /onboarding (new / reset user)');
         router.replace('/onboarding');
       }
+      SplashScreen.hideAsync();
     }, 0);
-  }, [hydrated, segments]);
+  }, [segments]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return null; // purely logic, no UI
 }
+
 
 function SmartTankenBackground() {
   const isEnabled = useUserStore((s) => s.isSmartTankenEnabled);
@@ -120,6 +103,22 @@ function SmartTankenBackgroundActive() {
 
 export default function RootLayout() {
   const _lang = useUserStore(s => s.language);
+  
+  const [hydrated, setHydrated] = useState(() => useUserStore.persist.hasHydrated());
+  useEffect(() => {
+    if (!hydrated) {
+      if (useUserStore.persist.hasHydrated()) {
+        setHydrated(true);
+        return;
+      }
+      const unsub = useUserStore.persist.onFinishHydration(() => setHydrated(true));
+      return () => unsub();
+    }
+  }, [hydrated]);
+
+  if (!hydrated) {
+    return <View style={styles.root} />;
+  }
 
   return (
     <View style={styles.root}>

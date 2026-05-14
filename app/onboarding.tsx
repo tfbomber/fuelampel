@@ -1,12 +1,17 @@
 // ====================================================
-// FuelAmpel — Onboarding Screen
+// FuelAmpel — Onboarding Screen (Phase 3 dual-mode)
 //
-// Step 0 (Must):    Fuel Type
-// Step 1 (Must):    Home & Work area — live address autocomplete
-// Step 2 (Fork):    Smart Tanken opt-in decision screen
-// Step 3 (Smart):   Commute Days + Refueling Style
-// Step 4 (Smart):   Car Type + Optional Range
-// Step 5 (Smart):   Initial Tank Level
+// Step 0 (Both):    Mode Selection (Basis / Smart Tank)
+// Step 1 (Both):    Fuel Type
+//
+// Basis path:
+//   Step 1 → request GPS. If granted → auto-complete.
+//             If denied  → Step 2 (PLZ input) → complete.
+//
+// Smart Tank path:
+//   Step 2: Home & Work address (LiveAddressInput)
+//   Step 3: Commute Days
+//   Step 4: Initial Tank Level
 // ====================================================
 
 import React, { useState } from 'react';
@@ -15,6 +20,7 @@ import {
   ScrollView, KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import * as Location from 'expo-location';
 import { ensureNotificationPermission } from '../src/utils/notificationPermission';
 import { useUserStore } from '../src/store/userStore';
 import { useFuelStore } from '../src/store/fuelStore';
@@ -24,6 +30,7 @@ import {
 import { t } from '../src/utils/i18n';
 import { LiveAddressInput } from '../src/components/LiveAddressInput';
 import { FuelSlider } from '../src/components/FuelSlider';
+import { geocodePLZ } from '../src/utils/geocoding';
 
 // ── Option metadata ───────────────────────────────────────────────────────────
 
@@ -32,14 +39,6 @@ const FUEL_TYPES: { value: FuelType; label: string }[] = [
   { value: 'e10',    label: 'Super E10' },
   { value: 'diesel', label: 'Diesel' },
 ];
-
-function getRefuelingStyles(): { value: RefuelingStyle; label: string; desc: string }[] {
-  return [
-    { value: 'nearEmpty',  label: t('whenNearlyEmpty'),        desc: t('refuelStyleNearEmptyDesc') },
-    { value: 'convenient', label: t('onRouteConvenient'),       desc: t('refuelStyleConvenientDesc') },
-    { value: 'cheapest',   label: t('refuelStyleCheapestLabel'), desc: t('refuelStyleCheapestDesc') },
-  ];
-}
 
 function getCarTypes(): { value: CarType; label: string }[] {
   return [
@@ -58,25 +57,6 @@ function getTankLevelLabel(pct: number): string {
   if (pct >= 15) return t('tankLevelLow');
   return t('tankLevelNearlyEmpty');
 }
-
-// ── Progress dots ─────────────────────────────────────────────────────────────
-
-function ProgressDots({ step }: { step: number }) {
-  const TOTAL = 5; // 0-4
-  return (
-    <View style={dotStyles.row}>
-      {Array.from({ length: TOTAL }).map((_, i) => (
-        <View key={i} style={[dotStyles.dot, i === step && dotStyles.active, i < step && dotStyles.done]} />
-      ))}
-    </View>
-  );
-}
-const dotStyles = StyleSheet.create({
-  row:    { flexDirection: 'row', gap: 6, justifyContent: 'center' },
-  dot:    { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.15)' },
-  active: { backgroundColor: '#6366F1', width: 18 },
-  done:   { backgroundColor: 'rgba(99,102,241,0.4)' },
-});
 
 // ── Option Pill ───────────────────────────────────────────────────────────────
 
@@ -185,10 +165,7 @@ export default function OnboardingScreen() {
   const router = useRouter();
   const { mode } = useLocalSearchParams<{ mode?: string }>();
   const _lang = useUserStore(s => s.language);
-  const { completeOnboarding, commonAreas } = useUserStore();
-  const refuelingStyles = getRefuelingStyles();
-  const carTypes = getCarTypes();
-
+  const { completeOnboarding } = useUserStore();
 
   // ── SmartTank-only init mode (existing users after update) ────────────
   if (mode === 'smartTankInit') {
@@ -207,9 +184,7 @@ export default function OnboardingScreen() {
           const home = store.commonAreas[0] || { plz: '00000', displayName: 'GPS Default' };
           const work = store.commonAreas[1];
           store.initSmartTank(home, work, pct);
-          // Sync decision engine so Home tab shows the correct recommendation immediately
           useFuelStore.getState().recomputeDecision();
-          
           await ensureNotificationPermission();
           router.replace('/(tabs)');
         }}
@@ -219,47 +194,108 @@ export default function OnboardingScreen() {
 
   // ── Full onboarding flow (new users) ───────────────────────────────────
 
-  const [step,      setStep]      = useState(0);
-  const [fuelType,  setFuelType]  = useState<FuelType>('e5');
-  const [homeArea,  setHomeArea]  = useState<CommonArea | null>(null);
-  const [workArea,  setWorkArea]  = useState<CommonArea | null>(null);
+  const [step, setStep] = useState(0);
+  const [modeSelection, setModeSelection] = useState<'basis'|'smart'|null>(null);
+  const [fuelType, setFuelType] = useState<FuelType>('e5');
+  const [plzFallback, setPlzFallback] = useState('');
+  const [gpsDenied, setGpsDenied] = useState(false);
   
-  // Smart Tanken explicit fields
+  // Smart Tank fields
+  const [homeArea, setHomeArea] = useState<CommonArea | null>(null);
+  const [workArea, setWorkArea] = useState<CommonArea | null>(null);
   const [commuteDays, setCommuteDays] = useState('5');
-  const [refStyle,  setRefStyle]  = useState<RefuelingStyle | null>(null);
-  const [carType,   setCarType]   = useState<CarType | null>(null);
-  const [tankPct,   setTankPct]   = useState(50);
-  const [totalRangeKm, setTotalRangeKm] = useState<string>('');
+  const [tankPct, setTankPct] = useState(50);
 
   const canProceed =
-    step === 0 ? true :
-    step === 1 ? homeArea !== null :
-    step === 2 ? true : // Opt-in fork
-    step === 3 ? refStyle !== null && parseInt(commuteDays, 10) >= 1 && parseInt(commuteDays, 10) <= 7 :
-    true; // 4 and 5 are skippable or always have defaults
+    step === 0 ? modeSelection !== null :
+    step === 1 ? true : // fuelType always has default
+    step === 2 && modeSelection === 'basis' ? plzFallback.length >= 5 :
+    step === 2 && modeSelection === 'smart' ? homeArea !== null :
+    step === 3 && modeSelection === 'smart' ? parseInt(commuteDays, 10) >= 1 && parseInt(commuteDays, 10) <= 7 :
+    true;
 
-  function next() {
-    if (step < 5) { setStep(s => s + 1); return; }
-    commitSmartTanken();
+  async function next() {
+    if (step === 0) {
+      setStep(1);
+      return;
+    }
+    
+    if (modeSelection === 'basis') {
+      if (step === 1) {
+        // BUG-4 FIX: Only request GPS once. If already denied (gpsDenied flag),
+        // go straight to PLZ step instead of re-triggering the permission dialog.
+        if (gpsDenied) {
+          setStep(2);
+          return;
+        }
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          // BUG-4 FIX: Actually get the GPS coordinates and store as homeArea
+          try {
+            const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+            const { reverseGeocode } = await import('../src/utils/geocoding');
+            const suggestion = await reverseGeocode(pos.coords.latitude, pos.coords.longitude);
+            await handleBasicModeOnly(undefined, suggestion);
+          } catch {
+            // GPS obtained permission but failed to get position — proceed without coords
+            await handleBasicModeOnly();
+          }
+        } else {
+          setGpsDenied(true);
+          setStep(2); // fallback to PLZ
+        }
+        return;
+      }
+      if (step === 2) {
+        await handleBasicModeOnly(plzFallback);
+        return;
+      }
+    } else {
+      if (step < 4) {
+        setStep(s => s + 1);
+        return;
+      }
+      await commitSmartTanken();
+    }
   }
 
-  async function handleBasicModeOnly() {
+  // BUG-2+BUG-4 FIX: gpsArea is an AddressSuggestion from reverseGeocode (GPS granted path)
+  async function handleBasicModeOnly(fallbackPlz?: string, gpsArea?: { displayName: string; plz?: string; loc: { lat: number; lng: number } }) {
     const areas: CommonArea[] = [];
-    if (homeArea) areas.push(homeArea);
-    if (workArea) areas.push(workArea);
-    
-    useUserStore.getState().setIsSmartTankenEnabled(false);
-    useUserStore.getState().skipSmartTankSetup();
-    
-    completeOnboarding({
-      fuelType, commonAreas: areas,
-      refuelingStyle: null, carType: null,
-      initialPct: 50,
-    });
-    
+
+    if (gpsArea) {
+      // GPS path: use resolved coordinates directly
+      areas.push({
+        plz: gpsArea.plz ?? '',
+        displayName: gpsArea.displayName,
+        loc: gpsArea.loc,
+      });
+    } else if (fallbackPlz) {
+      // PLZ fallback path: geocode the entered PLZ
+      const loc = await geocodePLZ(fallbackPlz);
+      if (!loc) {
+        Alert.alert(t('errorTitle'), t('plzNotFound'));
+        return;
+      }
+      areas.push({
+        plz: fallbackPlz,
+        displayName: fallbackPlz,
+        loc,
+      });
+    }
+    // If neither, commonAreas stays empty; useDecision will use GPS directly on the home tab
+
+    // UX-2 FIX: skipSmartTankSetup() sets both hasCompletedOnboarding=true
+    // AND hasSkippedSmartTankSetup=true in one atomic call. completeOnboarding()
+    // is NOT called here to avoid the semantic conflict (both set hasCompletedOnboarding).
+    // We set fuelType and commonAreas separately via their own store actions.
+    const store = useUserStore.getState();
+    store.setIsSmartTankenEnabled(false);
+    store.setFuelType(fuelType);
+    if (areas.length > 0) store.setCommonAreas(areas);
+    store.skipSmartTankSetup(); // sets hasCompletedOnboarding + hasSkippedSmartTankSetup
+
     useFuelStore.getState().recomputeDecision();
-    console.log('[Onboarding] User selected Basic Mode only');
-    
     await ensureNotificationPermission();
     router.replace('/(tabs)');
   }
@@ -274,17 +310,11 @@ export default function OnboardingScreen() {
 
     completeOnboarding({
       fuelType, commonAreas: areas,
-      refuelingStyle: refStyle, carType,
+      refuelingStyle: null, carType: null, // Removed from UI, rely on defaults & BiasTracker
       initialPct: tankPct,
     });
     
-    const rangeNum = parseFloat(totalRangeKm);
-    if (!isNaN(rangeNum) && rangeNum >= 50) {
-      useUserStore.getState().setTotalRangeKm(rangeNum);
-    }
-    
     useFuelStore.getState().recomputeDecision();
-    
     await ensureNotificationPermission();
     router.replace('/(tabs)');
   }
@@ -300,39 +330,73 @@ export default function OnboardingScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-
-        {/* Top bar */}
         <View style={s.topBar}>
-          {step !== 2 && <ProgressDots step={step > 2 ? step - 1 : step} />}
-          {step > 0 && step !== 2 && (
-            // Step 3 → back to Step 2 (Fork screen), not Step 1
+          {step > 0 && (
             <TouchableOpacity onPress={() => setStep(s => s - 1)} style={s.backBtn}>
               <Text style={s.backText}>{t('onboardingBack')}</Text>
             </TouchableOpacity>
           )}
-          {(step >= 3) && (
-            <TouchableOpacity onPress={handleBasicModeOnly} style={s.skipBtn}>
-              <Text style={s.skipText}>{t('onboardingSkip')}</Text>
-            </TouchableOpacity>
-          )}
         </View>
 
-        {/* Step 0 — Fuel Type */}
+        {/* Step 0 — Mode Selection */}
         {step === 0 && (
+          <View style={s.stepWrap}>
+            <Text style={s.emoji}>👋</Text>
+            <Text style={s.title}>{t('onboardingModeTitle')}</Text>
+            
+            <View style={{ gap: 16, marginTop: 24 }}>
+              <Pill 
+                selected={modeSelection === 'basis'} 
+                label={t('onboardingModeBasisTitle')} 
+                desc={t('onboardingModeBasisDesc')} 
+                onPress={() => setModeSelection('basis')} 
+              />
+              <Pill 
+                selected={modeSelection === 'smart'} 
+                label={t('onboardingModeSmartTitle')} 
+                desc={t('onboardingModeSmartDesc')} 
+                onPress={() => setModeSelection('smart')} 
+              />
+            </View>
+          </View>
+        )}
+
+        {/* Step 1 — Fuel Type */}
+        {step === 1 && (
           <View style={s.stepWrap}>
             <Text style={s.emoji}>⛽</Text>
             <Text style={s.title}>{t('onboardingFuelTitle')}</Text>
             <Text style={s.subtitle}>{t('onboardingFuelSubtitle')}</Text>
             <View style={s.options}>
-              {FUEL_TYPES.map(t => (
-                <Pill key={t.value} selected={fuelType === t.value} label={t.label} onPress={() => setFuelType(t.value)} />
+              {FUEL_TYPES.map(f => (
+                <Pill key={f.value} selected={fuelType === f.value} label={f.label} onPress={() => setFuelType(f.value)} />
               ))}
             </View>
           </View>
         )}
 
-        {/* Step 1 — Home & Work Area */}
-        {step === 1 && (
+        {/* Step 2 (Basis) — GPS Denied Fallback */}
+        {step === 2 && modeSelection === 'basis' && (
+          <View style={s.stepWrap}>
+            <Text style={s.emoji}>📍</Text>
+            <Text style={s.title}>{t('onboardingBasisGpsDenied')}</Text>
+            <View style={rangeS.inputRow}>
+              <TextInput
+                style={rangeS.input}
+                value={plzFallback}
+                onChangeText={setPlzFallback}
+                placeholder={t('plzPlaceholder')}
+                placeholderTextColor="#4B5563"
+                keyboardType="numeric"
+                maxLength={5}
+                returnKeyType="done"
+              />
+            </View>
+          </View>
+        )}
+
+        {/* Step 2 (Smart) — Home & Work Area */}
+        {step === 2 && modeSelection === 'smart' && (
           <View style={s.stepWrap}>
             <Text style={s.emoji}>📍</Text>
             <Text style={s.title}>{t('onboardingAreaTitle')}</Text>
@@ -362,29 +426,8 @@ export default function OnboardingScreen() {
           </View>
         )}
 
-        {/* Step 2 — Smart Tanken Fork */}
-        {step === 2 && (
-          <View style={[s.stepWrap, { marginTop: 40 }]}>
-            <Text style={s.emoji}>🧠</Text>
-            <Text style={s.title}>Smart Tanken aktivieren?</Text>
-            <Text style={s.subtitle}>
-              Lass FuelAmpel deinen Tankstand schätzen und berechnen, wann du wirklich tanken musst.
-            </Text>
-            
-            <View style={{ gap: 16, marginTop: 32 }}>
-              <TouchableOpacity style={s.nextBtn} onPress={next} activeOpacity={0.8}>
-                <Text style={s.nextBtnText}>Ja, Smart Tanken einrichten</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity style={pill.wrap} onPress={handleBasicModeOnly} activeOpacity={0.8}>
-                <Text style={[pill.label, { textAlign: 'center' }]}>Nein, nur Basis-Modus nutzen</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {/* Step 3 — Refueling Style & Commute Days */}
-        {step === 3 && (
+        {/* Step 3 (Smart) — Commute Days */}
+        {step === 3 && modeSelection === 'smart' && (
           <View style={s.stepWrap}>
             <Text style={s.emoji}>🔁</Text>
             <Text style={s.title}>{t('onboardingHabitTitle')}</Text>
@@ -403,70 +446,21 @@ export default function OnboardingScreen() {
               />
               <Text style={rangeS.unit}>Tage</Text>
             </View>
-
-            <Text style={[s.sectionLabel, { marginTop: 16 }]}>💡 Tankgewohnheit</Text>
-            <View style={s.options}>
-              {refuelingStyles.map(r => (
-                <Pill key={r.value} selected={refStyle === r.value} label={r.label} desc={r.desc} onPress={() => setRefStyle(r.value)} />
-              ))}
-            </View>
           </View>
         )}
 
-        {/* Step 4 — Car Type & Optional Range */}
-        {step === 4 && (
-          <View style={s.stepWrap}>
-            <Text style={s.emoji}>✨</Text>
-            <Text style={s.title}>{t('onboardingOptionalTitle')}</Text>
-            <Text style={s.subtitle}>{t('onboardingOptionalSubtitle')}</Text>
-
-            <Text style={s.sectionLabel}>🚗 {t('vehicleType')}</Text>
-            <View style={s.options}>
-              {carTypes.map(c => (
-                <Pill key={c.value} selected={carType === c.value} label={c.label} onPress={() => setCarType(c.value === carType ? null : c.value)} />
-              ))}
-            </View>
-
-
-            {/* Optional: full-tank range */}
-            <Text style={[s.sectionLabel, { marginTop: 8 }]}>🛣️ {t('fullTankRange')} {t('optionalLabel')}</Text>
-            <Text style={s.hint}>{t('onboardingRangeHint')}</Text>
-            <View style={rangeS.inputRow}>
-              <TextInput
-                style={rangeS.input}
-                value={totalRangeKm}
-                onChangeText={setTotalRangeKm}
-                placeholder={t('rangePlaceholder')}
-                placeholderTextColor="#4B5563"
-                keyboardType="numeric"
-                returnKeyType="done"
-                accessibilityLabel={t('fullTankRange')}
-              />
-              <Text style={rangeS.unit}>km</Text>
-            </View>
-          </View>
-        )}
-
-        {/* Step 5 — Current Tank Level (Q&A) */}
-        {step === 5 && (
+        {/* Step 4 (Smart) — Current Tank Level */}
+        {step === 4 && modeSelection === 'smart' && (
           <View style={s.stepWrap}>
             <Text style={s.emoji}>🛢️</Text>
             <Text style={s.title}>{t('onboardingTankTitle')}</Text>
             <Text style={s.subtitle}>{t('onboardingTankSubtitle')}</Text>
 
-            {/* Big % label */}
             <View style={levelS.box}>
               <Text style={levelS.pct}>{tankPct}%</Text>
               <Text style={levelS.label}>{getTankLevelLabel(tankPct)}</Text>
-              {(() => {
-                const rkm = parseFloat(totalRangeKm);
-                return !isNaN(rkm) && rkm >= 50 ? (
-                  <Text style={levelS.kmHint}>≈ {Math.round((tankPct / 100) * rkm)} km</Text>
-                ) : null;
-              })()}
             </View>
 
-            {/* Combined visual bar + slider — one element via FuelSlider */}
             <FuelSlider
               value={tankPct}
               fillColor={
@@ -482,22 +476,17 @@ export default function OnboardingScreen() {
         )}
 
         {/* Continue / Done */}
-        {step !== 2 && (
-          <TouchableOpacity
-            style={[s.nextBtn, !canProceed && s.nextBtnDim, { marginTop: 24 }]}
-            onPress={next}
-            disabled={!canProceed}
-            activeOpacity={0.8}
-          >
-            <Text style={s.nextBtnText}>
-              {step < 5 ? t('onboardingNext') : t('onboardingStart')}
-            </Text>
-          </TouchableOpacity>
-        )}
-
-        {step === 1 && !homeArea && (
-          <Text style={s.hint}>{t('onboardingSearchHint')}</Text>
-        )}
+        <TouchableOpacity
+          style={[s.nextBtn, !canProceed && s.nextBtnDim, { marginTop: 24 }]}
+          onPress={next}
+          disabled={!canProceed}
+          activeOpacity={0.8}
+        >
+          <Text style={s.nextBtnText}>
+            {(modeSelection === 'basis' && step === 1) || (modeSelection === 'smart' && step === 4) || (modeSelection === 'basis' && step === 2)
+              ? t('onboardingStart') : t('onboardingNext')}
+          </Text>
+        </TouchableOpacity>
 
       </ScrollView>
     </KeyboardAvoidingView>

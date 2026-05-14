@@ -170,7 +170,7 @@ const translations = {
     langDe:            'Deutsch',
     langEn:            'English',
     // Tab navigation
-    tabDecide:         'Entscheiden',
+    tabDecide:         'Ampel',
     tabStations:       'Tankstellen',
     // Map interaction
     navigate:          'Navigation starten',
@@ -190,6 +190,22 @@ const translations = {
     rangePlaceholder:  'z.B. 600',
     optionalLabel:     '(optional)',
     applyBtn:          '✓',
+    // Phase 3 UX Refactor
+    setupSmartTankUpsell: '🔒 Smart Tanken: Möchtest du, dass wir deinen Tank im Blick behalten? Jetzt freischalten.',
+    setupSmartTankUpsellCta: 'Jetzt einrichten →',
+    loadingLocating:      '📍 Standort wird gesucht...',
+    loadingFetching:      '📡 Live-Preise werden analysiert...',
+    loadingCalculating:   '🧠 Empfehlung wird berechnet...',
+    onboardingBasisGpsDenied: 'Standortzugriff verweigert. Bitte gib deine Postleitzahl ein, damit wir Preise in deiner Nähe finden können.',
+    onboardingModeTitle:  'Wie möchtest du FuelAmpel nutzen?',
+    onboardingModeBasisTitle: '🚦 Preistrend & Ampel',
+    onboardingModeBasisDesc: 'Zeigt dir, wann der beste Zeitpunkt zum Tanken ist.',
+    onboardingModeSmartTitle: '🧠 KI-Tankassistent',
+    onboardingModeSmartDesc: 'Schätzt deinen Tankstand und warnt dich rechtzeitig.',
+    // PLZ fallback
+    plzPlaceholder:       'z.B. 40210',
+    plzNotFound:          'Die eingegebene Postleitzahl wurde nicht gefunden. Bitte überprüfe deine Eingabe.',
+    errorTitle:           'Fehler',
   },
   en: {
     settingsTitle:     'Settings',
@@ -350,7 +366,7 @@ const translations = {
     langDe:            'Deutsch',
     langEn:            'English',
     // Tab navigation
-    tabDecide:         'Decide',
+    tabDecide:         'Traffic Light',
     tabStations:       'Stations',
     // Alert dialogs (Settings)
     alertInvalidValue:    'Invalid value',
@@ -370,6 +386,22 @@ const translations = {
     rangePlaceholder:  'e.g. 600',
     optionalLabel:     '(optional)',
     applyBtn:          '✓',
+    // Phase 3 UX Refactor
+    setupSmartTankUpsell: '🔒 Smart Tanken: Want us to keep an eye on your tank? Unlock now.',
+    setupSmartTankUpsellCta: 'Set up now →',
+    loadingLocating:      '📍 Locating...',
+    loadingFetching:      '📡 Analyzing live prices...',
+    loadingCalculating:   '🧠 Calculating recommendation...',
+    onboardingBasisGpsDenied: 'Location access denied. Please enter your postal code so we can find prices near you.',
+    onboardingModeTitle:  'How do you want to use FuelAmpel?',
+    onboardingModeBasisTitle: '🚦 Price Trend & Ampel',
+    onboardingModeBasisDesc: 'Shows you when is the best time to refuel.',
+    onboardingModeSmartTitle: '🧠 AI Tank Assistant',
+    onboardingModeSmartDesc: 'Estimates your tank level and alerts you in time.',
+    // PLZ fallback
+    plzPlaceholder:       'e.g. 40210',
+    plzNotFound:          'Postal code not found. Please check your input.',
+    errorTitle:           'Error',
   },
 } as const;
 

@@ -87,6 +87,17 @@ function SkeletonCircle({ size = 140 }: { size?: number }) {
   );
 }
 
+function LoadingStatusText() {
+  const [phase, setPhase] = useState(0);
+  useEffect(() => {
+    const timer1 = setTimeout(() => setPhase(1), 1500);
+    const timer2 = setTimeout(() => setPhase(2), 3500);
+    return () => { clearTimeout(timer1); clearTimeout(timer2); };
+  }, []);
+  const text = phase === 0 ? t('loadingLocating') : phase === 1 ? t('loadingFetching') : t('loadingCalculating');
+  return <Text style={skel.statusText}>{text}</Text>;
+}
+
 function SkeletonCard() {
   return (
     <View style={skel.card}>
@@ -122,6 +133,7 @@ const skel = StyleSheet.create({
   reason:     { marginHorizontal: 16, backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 14, padding: 14, gap: 8 },
   reasonLine1:{ width: '85%', height: 14, borderRadius: 6 },
   reasonLine2:{ width: '55%', height: 14, borderRadius: 6 },
+  statusText: { color: '#9CA3AF', fontSize: 13, marginTop: 12, textAlign: 'center', fontWeight: '500' },
 });
 // ────────────────────────────────────────────────────────────────────────────────
 import { useDecision } from '../../src/hooks/useDecision';
@@ -417,8 +429,8 @@ export default function HomeScreen() {
         </View>
       ) : null}
 
-      {/* ── Tank area — always-interactive ─────────────────────────────── */}
-      {isSmartTankenEnabled && (
+      {/* ── Tank area — Smart mode only ─────────────────────────────── */}
+      {isSmartTankenEnabled ? (
         <Animated.View style={[
           styles.tankArea,
           { backgroundColor: tankBgColor, borderColor: tankBorderColor, borderWidth: 1, borderRadius: 16, marginHorizontal: -12, paddingHorizontal: 12, paddingVertical: 8 }
@@ -455,6 +467,17 @@ export default function HomeScreen() {
             </Animated.View>
           </View>
         </Animated.View>
+      ) : (
+        // Basis Mode: Upsell card to unlock Smart Tanken
+        <TouchableOpacity
+          style={styles.upsellCard}
+          onPress={() => router.push({ pathname: '/onboarding', params: { mode: 'smartTankInit' } })}
+          activeOpacity={0.8}
+          accessibilityLabel={t('setupSmartTankUpsell')}
+        >
+          <Text style={styles.upsellText}>{t('setupSmartTankUpsell')}</Text>
+          <Text style={styles.upsellCta}>{t('setupSmartTankUpsellCta')}</Text>
+        </TouchableOpacity>
       )}
 
 
@@ -482,7 +505,10 @@ export default function HomeScreen() {
             <Text style={styles.errorDetail}>{error}</Text>
           </View>
         ) : (
-          <SkeletonCircle size={140} />
+          <View style={{ alignItems: 'center' }}>
+            <SkeletonCircle size={140} />
+            <LoadingStatusText />
+          </View>
         )}
       </View>
 
@@ -689,6 +715,19 @@ const styles = StyleSheet.create({
   },
   setupBannerText: { color: '#A5B4FC', fontSize: 13, flex: 1, lineHeight: 18 },
   setupBannerCta:  { color: '#6366F1', fontSize: 14, fontWeight: '700' },
+
+  // Basis Mode: Upsell card (replaces InteractiveTankBar for Basic users)
+  upsellCard: {
+    marginHorizontal: 16,
+    backgroundColor: 'rgba(99,102,241,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(99,102,241,0.22)',
+    borderRadius: 16,
+    padding: 16,
+    gap: 10,
+  },
+  upsellText: { color: '#A5B4FC', fontSize: 13, lineHeight: 20 },
+  upsellCta:  { color: '#6366F1', fontSize: 14, fontWeight: '700' },
 
 
 
