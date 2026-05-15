@@ -255,6 +255,12 @@ export default function StationsScreen() {
     }
   }
 
+  const handleSearchArea = useCallback((center: GeoLocation) => {
+    currentLocation.current = center;
+    setLocationLabel('Karte');
+    refresh(center, true, localFuelType);
+  }, [refresh, localFuelType]);
+
   function pickLocResult(s: AddressSuggestion) {
     if (!s.loc) return;
     cancelLocPending();
@@ -570,6 +576,7 @@ export default function StationsScreen() {
             corridorStation={corridorStation}
             locationLabel={locationLabel}
             onSelectionChange={setIsMapCardOpen}
+            onSearchArea={handleSearchArea}
           />
         </View>
       )}
@@ -755,7 +762,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 4,
   },
-  locClearBtnText: { color: '#4B5563', fontSize: 13, fontWeight: '700' },
+  locClearBtnText: { color: '#6B7280', fontSize: 13, fontWeight: '700' },
 
   // Address suggestion dropdown
   locDropdown: {
@@ -918,7 +925,7 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(255,255,255,0.05)',
   },
   summaryText: {
-    color: '#6B7280',
+    color: '#9CA3AF',
     fontSize: 12,
     fontWeight: '500',
     flex: 1,
@@ -928,7 +935,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   summaryInfoIcon: {
-    color: '#4B5563',
+    color: '#6B7280',
     fontSize: 14,
     paddingLeft: 8,
   },
@@ -959,7 +966,7 @@ const styles = StyleSheet.create({
     borderTopColor: 'rgba(255,255,255,0.05)',
     backgroundColor: '#0D0F14',
   },
-  disclaimerText: { color: '#374151', fontSize: 10, textAlign: 'center' },
+  disclaimerText: { color: '#4B5563', fontSize: 10, textAlign: 'center' },
 
   // (colValueHead and infoIcon removed — ⓘ is now in summaryBar)
 

@@ -447,12 +447,7 @@ export default function SettingsScreen() {
         </View>
       </Section>
 
-      {/* Refueling Style */}
-      <Section title={t('refuelingStyle')}>
-        <OptionRow<RefuelingStyle> options={REFUELING_STYLE_OPTIONS} value={refuelingStyle} onSelect={handleRefuelingStyleChange} />
-      </Section>
-
-      {/* Smart Tanken Settings */}
+      {/* Smart Tanken Settings (Merged with Refueling Style & Advanced) */}
       <Section title="Smart Tanken">
         <View style={styles.settingRow}>
           <View style={styles.settingLabelRow}>
@@ -473,141 +468,154 @@ export default function SettingsScreen() {
             <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 8 }} />
             
             <View style={styles.settingRow}>
-              <Text style={styles.settingLabel}>Benachrichtigung ab Tankstand</Text>
-              <OptionRow<number> 
-                options={ALERT_THRESHOLD_OPTIONS} 
-                value={alertThresholdPct} 
-                onSelect={(val) => { setAlertThresholdPct(val); setGlobalDirty(true); }} 
-              />
+              <Text style={styles.settingLabel}>{t('refuelingStyle')}</Text>
+              <OptionRow<RefuelingStyle> options={REFUELING_STYLE_OPTIONS} value={refuelingStyle} onSelect={handleRefuelingStyleChange} />
             </View>
 
             <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 8 }} />
 
+            {/* Range on full tank — promoted to main level (km display calibration) */}
             <View style={styles.settingRow}>
               <View style={styles.settingLabelRow}>
-                <Text style={styles.settingLabel}>Pendeltage pro Woche (1-7)</Text>
+                <Text style={styles.settingLabel}>
+                  {t('fullTankRange')}{'  '}<Text style={{ color: '#6B7280' }}>{t('optionalLabel')}</Text>
+                </Text>
+                {savedField === 'range' && <Text style={styles.savedHint}>{t('saved')}</Text>}
               </View>
+              <Text style={{ color: '#9CA3AF', fontSize: 11, marginBottom: 4 }}>
+                {t('fullTankRangeHint')}
+              </Text>
               <TextInput
                 style={styles.input}
-                value={commuteDaysLocal}
-                onChangeText={(v) => { setCommuteDaysLocal(v); setCommuteDaysDirty(true); setGlobalDirty(true); }}
+                value={rangeInput}
+                onChangeText={(v) => { setRangeInput(v); setRangeDirty(true); setGlobalDirty(true); }}
                 keyboardType="numeric"
-                returnKeyType="done"
-                placeholder="5"
+                placeholder={t('rangePlaceholder')}
                 placeholderTextColor="#4B5563"
+                returnKeyType="done"
+                onEndEditing={saveRange}
+                onSubmitEditing={saveRange}
+                accessibilityLabel={t('fullTankRange')}
               />
+              {rangeDirty && (
+                <TouchableOpacity
+                  style={styles.applyBtn}
+                  onPress={saveRange}
+                  accessibilityLabel={t('saveRangeA11y')}
+                >
+                  <Text style={styles.applyBtnText}>{t('applyBtn')}</Text>
+                </TouchableOpacity>
+              )}
             </View>
-          </>
-        )}
-      </Section>
 
-      {/* Fahrzeug & Tank (merged Car Type + Shadow Tank) */}
-      <Section title={t('vehicleAndTank')}>
-        <OptionRow<CarType> options={CAR_TYPE_OPTIONS} value={carType} onSelect={handleCarTypeChange} />
+            <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 8 }} />
 
-        {/* Range on full tank — promoted, always visible */}
-        <View style={styles.settingRow}>
-          <View style={styles.settingLabelRow}>
-            <Text style={styles.settingLabel}>
-            {t('fullTankRange')}{'  '}<Text style={{ color: '#4B5563' }}>{t('optionalLabel')}</Text>
-          </Text>
-            {savedField === 'range' && <Text style={styles.savedHint}>{t('saved')}</Text>}
-          </View>
-          <Text style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>
-            {t('fullTankRangeHint')}
-          </Text>
-          <TextInput
-            style={styles.input}
-            value={rangeInput}
-            onChangeText={(v) => { setRangeInput(v); setRangeDirty(true); setGlobalDirty(true); }}
-            keyboardType="numeric"
-            placeholder={t('rangePlaceholder')}
-            placeholderTextColor="#4B5563"
-            returnKeyType="done"
-            onEndEditing={saveRange}
-            onSubmitEditing={saveRange}
-            accessibilityLabel={t('fullTankRange')}
-          />
-          {rangeDirty && (
+            {/* ── Advanced toggle ── */}
             <TouchableOpacity
-              style={styles.applyBtn}
-              onPress={saveRange}
-              accessibilityLabel={t('saveRangeA11y')}
+              style={styles.advancedToggle}
+              onPress={() => setShowAdvanced(!showAdvanced)}
+              accessibilityLabel={t('advancedSettings')}
             >
-              <Text style={styles.applyBtnText}>{t('applyBtn')}</Text>
+              <Text style={styles.advancedToggleText}>
+                {showAdvanced ? '\u25be' : '\u25b8'}{'  '}{t('advancedSettings')}
+              </Text>
+              <Text style={styles.advancedToggleHint}>{t('advancedSettingsHint')}</Text>
             </TouchableOpacity>
-          )}
-        </View>
 
-        {/* ── Advanced toggle ── */}
-        <TouchableOpacity
-          style={styles.advancedToggle}
-          onPress={() => setShowAdvanced(!showAdvanced)}
-          accessibilityLabel={t('advancedSettings')}
-        >
-          <Text style={styles.advancedToggleText}>
-            {showAdvanced ? '\u25be' : '\u25b8'}{'  '}{t('advancedSettings')}
-          </Text>
-          <Text style={styles.advancedToggleHint}>{t('advancedSettingsHint')}</Text>
-        </TouchableOpacity>
+            {showAdvanced && (
+              <>
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>Benachrichtigung ab Tankstand</Text>
+                  <OptionRow<number> 
+                    options={ALERT_THRESHOLD_OPTIONS} 
+                    value={alertThresholdPct} 
+                    onSelect={(val) => { setAlertThresholdPct(val); setGlobalDirty(true); }} 
+                  />
+                </View>
 
-        {showAdvanced && (
-          <>
-            {/* Avg Consumption */}
-            <View style={styles.settingRow}>
-              <View style={styles.settingLabelRow}>
-                <Text style={styles.settingLabel}>{t('avgConsumption')}</Text>
-                {savedField === 'consumption' && <Text style={styles.savedHint}>{t('saved')}</Text>}
-              </View>
-              <TextInput
-                style={styles.input}
-                value={consumptionInput}
-                onChangeText={(v) => { setConsumptionInput(v); setConsumptionDirty(true); setGlobalDirty(true); }}
-                keyboardType="decimal-pad"
-                returnKeyType="done"
-                onEndEditing={saveConsumption}
-                onSubmitEditing={saveConsumption}
-                placeholderTextColor="#4B5563"
-                accessibilityLabel={t('avgConsumption')}
-              />
-              {consumptionDirty && (
-                <TouchableOpacity
-                  style={styles.applyBtn}
-                  onPress={saveConsumption}
-                  accessibilityLabel={t('saveConsumptionA11y')}
-                >
-                  <Text style={styles.applyBtnText}>{t('applyBtn')}</Text>
-                </TouchableOpacity>
-              )}
-            </View>
+                <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 8 }} />
 
-            {/* Tank Capacity */}
-            <View style={styles.settingRow}>
-              <View style={styles.settingLabelRow}>
-                <Text style={styles.settingLabel}>{t('tankCapacity')}</Text>
-                {savedField === 'capacity' && <Text style={styles.savedHint}>{t('saved')}</Text>}
-              </View>
-              <TextInput
-                style={styles.input}
-                value={capacityInput}
-                onChangeText={(v) => { setCapacityInput(v); setCapacityDirty(true); setGlobalDirty(true); }}
-                keyboardType="decimal-pad"
-                returnKeyType="done"
-                onEndEditing={saveCapacity}
-                onSubmitEditing={saveCapacity}
-                placeholderTextColor="#4B5563"
-                accessibilityLabel={t('tankCapacity')}
-              />
-              {capacityDirty && (
-                <TouchableOpacity
-                  style={styles.applyBtn}
-                  onPress={saveCapacity}
-                  accessibilityLabel={t('saveTankCapacityA11y')}
-                >
-                  <Text style={styles.applyBtnText}>{t('applyBtn')}</Text>
-                </TouchableOpacity>
-              )}
-            </View>
+                <View style={styles.settingRow}>
+                  <View style={styles.settingLabelRow}>
+                    <Text style={styles.settingLabel}>Pendeltage pro Woche (1-7)</Text>
+                  </View>
+                  <TextInput
+                    style={styles.input}
+                    value={commuteDaysLocal}
+                    onChangeText={(v) => { setCommuteDaysLocal(v); setCommuteDaysDirty(true); setGlobalDirty(true); }}
+                    keyboardType="numeric"
+                    returnKeyType="done"
+                    placeholder="5"
+                    placeholderTextColor="#4B5563"
+                  />
+                </View>
+                
+                <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 8 }} />
+                
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>{t('vehicleType')}</Text>
+                  <OptionRow<CarType> options={CAR_TYPE_OPTIONS} value={carType} onSelect={handleCarTypeChange} />
+                </View>
+
+                <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 8 }} />
+
+                {/* Avg Consumption */}
+                <View style={styles.settingRow}>
+                  <View style={styles.settingLabelRow}>
+                    <Text style={styles.settingLabel}>{t('avgConsumption')}</Text>
+                    {savedField === 'consumption' && <Text style={styles.savedHint}>{t('saved')}</Text>}
+                  </View>
+                  <TextInput
+                    style={styles.input}
+                    value={consumptionInput}
+                    onChangeText={(v) => { setConsumptionInput(v); setConsumptionDirty(true); setGlobalDirty(true); }}
+                    keyboardType="decimal-pad"
+                    returnKeyType="done"
+                    onEndEditing={saveConsumption}
+                    onSubmitEditing={saveConsumption}
+                    placeholderTextColor="#4B5563"
+                    accessibilityLabel={t('avgConsumption')}
+                  />
+                  {consumptionDirty && (
+                    <TouchableOpacity
+                      style={styles.applyBtn}
+                      onPress={saveConsumption}
+                      accessibilityLabel={t('saveConsumptionA11y')}
+                    >
+                      <Text style={styles.applyBtnText}>{t('applyBtn')}</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {/* Tank Capacity */}
+                <View style={styles.settingRow}>
+                  <View style={styles.settingLabelRow}>
+                    <Text style={styles.settingLabel}>{t('tankCapacity')}</Text>
+                    {savedField === 'capacity' && <Text style={styles.savedHint}>{t('saved')}</Text>}
+                  </View>
+                  <TextInput
+                    style={styles.input}
+                    value={capacityInput}
+                    onChangeText={(v) => { setCapacityInput(v); setCapacityDirty(true); setGlobalDirty(true); }}
+                    keyboardType="decimal-pad"
+                    returnKeyType="done"
+                    onEndEditing={saveCapacity}
+                    onSubmitEditing={saveCapacity}
+                    placeholderTextColor="#4B5563"
+                    accessibilityLabel={t('tankCapacity')}
+                  />
+                  {capacityDirty && (
+                    <TouchableOpacity
+                      style={styles.applyBtn}
+                      onPress={saveCapacity}
+                      accessibilityLabel={t('saveTankCapacityA11y')}
+                    >
+                      <Text style={styles.applyBtnText}>{t('applyBtn')}</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </>
+            )}
           </>
         )}
       </Section>
@@ -641,19 +649,19 @@ const styles = StyleSheet.create({
   pageNoteText: { color: '#A5B4FC', fontSize: 12, lineHeight: 18 },
 
   section:      { gap: 10 },
-  sectionTitle: { color: '#6B7280', fontSize: 11, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase' },
+  sectionTitle: { color: '#9CA3AF', fontSize: 11, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase' },
   sectionBody:  { backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', padding: 16, gap: 14 },
 
   tabRow:      { flexDirection: 'row', gap: 8 },
   tab:         { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
   tabActive:   { backgroundColor: 'rgba(99,102,241,0.2)', borderColor: '#6366F1' },
-  tabText:     { color: '#6B7280', fontSize: 13, fontWeight: '600' },
+  tabText:     { color: '#9CA3AF', fontSize: 13, fontWeight: '600' },
   tabTextA:    { color: '#A5B4FC' },
 
   optionGrid:        { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   optPill:           { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.09)', backgroundColor: 'rgba(255,255,255,0.04)' },
   optPillActive:     { backgroundColor: 'rgba(99,102,241,0.18)', borderColor: '#6366F1' },
-  optPillText:       { color: '#6B7280', fontSize: 12, fontWeight: '600' },
+  optPillText:       { color: '#9CA3AF', fontSize: 12, fontWeight: '600' },
   optPillTextActive: { color: '#A5B4FC' },
 
   settingRow:      { gap: 6 },
@@ -675,12 +683,12 @@ const styles = StyleSheet.create({
   resetBtnTextDanger: { color: '#FCA5A5' },
   resetBtnDesc:       { color: '#6B7280', fontSize: 12 },
 
-  aboutText:  { color: '#6B7280', fontSize: 13, lineHeight: 20 },
-  creditText: { color: '#4B5563', fontSize: 12, marginTop: 4 },
+  aboutText:  { color: '#9CA3AF', fontSize: 13, lineHeight: 20 },
+  creditText: { color: '#6B7280', fontSize: 12, marginTop: 4 },
 
   advancedToggle:     { paddingVertical: 8, paddingHorizontal: 4, gap: 4 },
-  advancedToggleText: { color: '#6B7280', fontSize: 13, fontWeight: '600' },
-  advancedToggleHint: { color: '#4B5563', fontSize: 11 },
+  advancedToggleText: { color: '#9CA3AF', fontSize: 13, fontWeight: '600' },
+  advancedToggleHint: { color: '#6B7280', fontSize: 11 },
 
   resetDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 6 },
 });

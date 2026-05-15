@@ -176,6 +176,7 @@ const translations = {
     tabStations:       'Tankstellen',
     // Map interaction
     navigate:          'Navigation starten',
+    searchThisArea:    'Hier suchen',
     // Alert dialogs (Settings)
     alertInvalidValue:    'Ungültiger Wert',
     alertConsumptionRange:'3–25 L/100km',
@@ -205,7 +206,7 @@ const translations = {
     onboardingModeSmartTitle: '🧠 KI-Tankassistent',
     onboardingModeSmartDesc: 'Schätzt deinen Tankstand und warnt dich rechtzeitig.',
     // PLZ fallback
-    plzPlaceholder:       'z.B. 40210',
+    plzFallbackPlaceholder: 'z.B. 40210',
     plzNotFound:          'Die eingegebene Postleitzahl wurde nicht gefunden. Bitte überprüfe deine Eingabe.',
     errorTitle:           'Fehler',
   },
@@ -386,6 +387,7 @@ const translations = {
     alertResetEverything: 'Reset everything',
     // Map interaction
     navigate:          'Navigate',
+    searchThisArea:    'Search this area',
     // Settings inputs
     rangePlaceholder:  'e.g. 600',
     optionalLabel:     '(optional)',
@@ -403,7 +405,7 @@ const translations = {
     onboardingModeSmartTitle: '🧠 AI Tank Assistant',
     onboardingModeSmartDesc: 'Estimates your tank level and alerts you in time.',
     // PLZ fallback
-    plzPlaceholder:       'e.g. 40210',
+    plzFallbackPlaceholder: 'e.g. 40210',
     plzNotFound:          'Postal code not found. Please check your input.',
     errorTitle:           'Error',
   },

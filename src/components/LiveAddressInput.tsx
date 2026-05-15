@@ -394,7 +394,7 @@ export const livStyles = StyleSheet.create({
   input:       { flex: 1, color: '#F9FAFB', fontSize: 14, paddingVertical: 10 },
   adornment:   { flexDirection: 'row', alignItems: 'center', gap: 8 },
   check:       { color: '#22C55E', fontSize: 16, fontWeight: '700' },
-  clear:       { color: '#4B5563', fontSize: 13, fontWeight: '700' },
+  clear:       { color: '#6B7280', fontSize: 13, fontWeight: '700' },
   gpsIcon:     { fontSize: 16, opacity: 0.7 },
   dropdown:    {
     marginTop: 4,

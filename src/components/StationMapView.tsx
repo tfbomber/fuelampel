@@ -317,11 +317,11 @@ const cardStyles = StyleSheet.create({
   name:         { color: '#F9FAFB', fontSize: 14, fontWeight: '800' },
   address:      { color: '#6B7280', fontSize: 11, marginTop: 1 },
   closeBtn:     { padding: 4 },
-  closeBtnText: { color: '#4B5563', fontSize: 15, fontWeight: '700' },
+  closeBtnText: { color: '#6B7280', fontSize: 15, fontWeight: '700' },
   row:    { flexDirection: 'row', alignItems: 'center' },
   stat:   { flex: 1, alignItems: 'center', gap: 2 },
   statVal:{ color: '#F9FAFB', fontSize: 13, fontWeight: '800' },
-  statLbl:{ color: '#4B5563', fontSize: 10 },
+  statLbl:{ color: '#6B7280', fontSize: 10 },
   navBtn: {
     marginTop: 12,
     backgroundColor: 'rgba(99,102,241,0.12)',
@@ -351,13 +351,16 @@ interface StationMapViewProps {
   locationLabel?: string;
   /** Callback fired when a station card is opened or closed */
   onSelectionChange?: (hasSelection: boolean) => void;
+  /** Callback fired when user taps "search this area" — receives map center coordinates */
+  onSearchArea?: (center: GeoLocation) => void;
 }
 
 export function StationMapView({
-  stations, currentLocation, fuelType, nearestStation, cheapestStation, corridorStation, locationLabel, onSelectionChange,
+  stations, currentLocation, fuelType, nearestStation, cheapestStation, corridorStation, locationLabel, onSelectionChange, onSearchArea,
 }: StationMapViewProps) {
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const [showLocateFAB, setShowLocateFAB] = useState(false);
+  const [showSearchArea, setShowSearchArea] = useState(false);
   // Map loading overlay: shown until tiles finish loading (covers the blank grey flash)
   const [mapReady, setMapReady] = useState(false);
   const mapOverlayOpacity = useRef(new Animated.Value(1)).current;
@@ -454,6 +457,7 @@ export function StationMapView({
     prevLocationRef.current = currentLocation;
     isProgrammaticMoveRef.current = true;
     setShowLocateFAB(false);
+    setShowSearchArea(false);
     cameraRef.current?.setCamera({
       centerCoordinate: [currentLocation.lng, currentLocation.lat],
       zoomLevel: 12,
@@ -510,6 +514,7 @@ export function StationMapView({
     const isGesture = feature?.properties?.isUserInteraction === true;
     if (isGesture && !isProgrammaticMoveRef.current) {
       setShowLocateFAB(true);
+      setShowSearchArea(true);
     }
     // Track current geographic center so dismissCard can lock it when resetting padding
     const coords = feature?.geometry?.coordinates;
@@ -522,6 +527,7 @@ export function StationMapView({
     if (!cameraRef.current) return;
     isProgrammaticMoveRef.current = true;
     setShowLocateFAB(false);
+    setShowSearchArea(false);
     // fitBounds: re-frame all loaded stations (same as initial view)
     if (stations.length > 0) {
       const lats = stations.map(s => s.lat);
@@ -542,6 +548,13 @@ export function StationMapView({
     }
     setTimeout(() => { isProgrammaticMoveRef.current = false; }, 700);
   }, [stations, currentLocation]);
+
+  const handleSearchArea = useCallback(() => {
+    const [lng, lat] = cameraCenterRef.current;
+    setShowSearchArea(false);
+    setShowLocateFAB(false);
+    onSearchArea?.({ lat, lng });
+  }, [onSearchArea]);
 
   // onDidFinishLoadingMap: fires ONCE when the map style + camera are fully initialised.
   // At this point cameraRef is guaranteed bound — safe to call setCamera / fitBounds.
@@ -591,6 +604,7 @@ export function StationMapView({
     if (currentLocation) { lats.push(currentLocation.lat); lngs.push(currentLocation.lng); }
     isProgrammaticMoveRef.current = true;
     setShowLocateFAB(false);
+    setShowSearchArea(false);
     cameraRef.current.fitBounds(
       [Math.min(...lngs) - 0.008, Math.min(...lats) - 0.008],
       [Math.max(...lngs) + 0.008, Math.max(...lats) + 0.008],
@@ -788,6 +802,19 @@ export function StationMapView({
         )}
       </View>
 
+      {/* ── Search Area Button ─────────────────────────────────────────────── */}
+      {showSearchArea && (
+        <TouchableOpacity
+          style={mapStyles.searchAreaBtn}
+          onPress={handleSearchArea}
+          activeOpacity={0.85}
+        >
+          <Text style={mapStyles.searchAreaBtnText}>
+            🔍  {t('searchThisArea')}
+          </Text>
+        </TouchableOpacity>
+      )}
+
       {/* ── Locate Me FAB — appears after user pans ────────────────────────── */}
       {showLocateFAB && (
         <TouchableOpacity
@@ -890,5 +917,27 @@ const mapStyles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '300',
     lineHeight: 26,
+  },
+  
+  // Search Area Button
+  searchAreaBtn: {
+    position: 'absolute',
+    top: 14,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(13,15,20,0.92)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(99,102,241,0.45)',
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    elevation: 8,
+    shadowColor: '#6366F1',
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+  },
+  searchAreaBtnText: {
+    color: '#A5B4FC',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

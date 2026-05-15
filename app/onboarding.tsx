@@ -235,7 +235,7 @@ export default function OnboardingScreen() {
             const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
             const { reverseGeocode } = await import('../src/utils/geocoding');
             const suggestion = await reverseGeocode(pos.coords.latitude, pos.coords.longitude);
-            await handleBasicModeOnly(undefined, suggestion);
+            await handleBasicModeOnly(undefined, suggestion ?? undefined);
           } catch {
             // GPS obtained permission but failed to get position — proceed without coords
             await handleBasicModeOnly();

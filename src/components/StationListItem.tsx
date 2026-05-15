@@ -202,7 +202,7 @@ const styles = StyleSheet.create({
     color: '#6B7280',
   },
   subLine: {
-    color: '#6B7280',
+    color: '#9CA3AF',
     fontSize: 12,
     fontWeight: '500',
   },
@@ -226,7 +226,7 @@ const styles = StyleSheet.create({
     textDecorationLine: 'line-through',
   },
   priceNA: {
-    color: '#4B5563',
+    color: '#6B7280',
     fontSize: 14,
     fontWeight: '600',
   },
@@ -251,7 +251,7 @@ const styles = StyleSheet.create({
     fontSize: 17,
   },
   mapIconClosed: {
-    color: '#374151',
+    color: '#4B5563',
     fontSize: 14,
     fontWeight: '700',
   },

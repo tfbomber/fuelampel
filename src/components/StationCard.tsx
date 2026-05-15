@@ -108,11 +108,11 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   metaItem: {
-    color: '#6B7280',
+    color: '#9CA3AF',
     fontSize: 12,
   },
   metaDot: {
-    color: '#374151',
+    color: '#4B5563',
     fontSize: 12,
   },
   corridorBadge: {

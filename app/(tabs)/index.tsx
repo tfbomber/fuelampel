@@ -182,7 +182,14 @@ export default function HomeScreen() {
   const fuelPct = isSmartActive
     ? estimateLevelPercent(smartTank!)
     : getFuelLevelPercent(shadowTank);
-  const totalRangeKm = smartTank?.totalRangeKm ?? null;
+  const totalRangeKm = (() => {
+    if (!smartTank) return null;
+    if (smartTank.totalRangeKm) return smartTank.totalRangeKm;
+    if (smartTank.modelConfidence >= 0.5) {
+      return Math.round((smartTank.tankCapacityL / smartTank.consumptionPer100km) * 100);
+    }
+    return null;
+  })();
   // ~ prefix shown whenever confidence is below HIGH threshold (time-decayed)
   const confidence   = isSmartActive ? computeConfidence(smartTank!) : 0;
   const isEstimated  = isSmartActive && confidence < CONFIDENCE_HIGH;
@@ -196,6 +203,7 @@ export default function HomeScreen() {
   // Post-refuel Mode state
   type AppMode = 'normal' | 'animating';
   const [mode, setMode] = useState<AppMode>('normal');
+  const [showUndoBtn, setShowUndoBtn] = useState(false);
   const [sliderValue, setSliderValue]   = useState(Math.round(fuelPct));
   const [euroInput, setEuroInput]       = useState('');
 
@@ -222,7 +230,7 @@ export default function HomeScreen() {
 
   // ── Rück button: spring in/out ────────────────────────────────────────────
   const ruckAnim = useRef(new Animated.Value(0)).current;
-  const showUndo = mode === 'animating';
+  const showUndo = showUndoBtn;
   useEffect(() => {
     Animated.spring(ruckAnim, {
       toValue: showUndo ? 1 : 0,
@@ -247,6 +255,7 @@ export default function HomeScreen() {
         // On blur: hide undo row and revert to normal immediately
         if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
         setMode('normal');
+        setShowUndoBtn(false);
       };
     }, [])
   );
@@ -319,12 +328,16 @@ export default function HomeScreen() {
     setEuroInput('');
     suppressBannerUntilRef.current = Date.now() + 10_000;
     setMode('animating');
+    setShowUndoBtn(true);
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
     Animated.timing(animatedPct, {
       toValue: 100, duration: 500, useNativeDriver: false,
     }).start(() => {
       setSliderValue(100);
       // Return to normal after fill animation; slider stays at 100%
       setMode('normal');
+      // 6-second undo window — independent of animation
+      undoTimerRef.current = setTimeout(() => setShowUndoBtn(false), 6000);
       setTimeout(() => recomputeDecision(), 50);
     });
     console.log(`[HomeScreen] Refuel tapped — prev level=${prevFuelPctRef.current}%`);
@@ -332,6 +345,7 @@ export default function HomeScreen() {
 
   function handleUndo() {
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    setShowUndoBtn(false);
     const prev = prevFuelPctRef.current;
 
     if (smartTankSnapshotRef.current) {
@@ -560,7 +574,7 @@ export default function HomeScreen() {
                 pressed && mode === 'normal' && fuelPct < 100 && { opacity: 0.7 }
               ]}
               onPress={handleGetankt}
-              disabled={fuelPct >= 100 || mode !== 'normal'}
+              disabled={fuelPct >= 100 || mode !== 'normal' || showUndoBtn}
               accessibilityLabel={t('markRefueledA11y')}
             >
               <Text style={[
@@ -600,7 +614,7 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 4,
   },
-  subtitle:    { fontSize: 13, color: '#6B7280' },
+  subtitle:    { fontSize: 13, color: '#9CA3AF' },
   // (settingsBtnFixed removed — settings now in tab header right)
 
   lightContainer: {
@@ -630,7 +644,7 @@ const styles = StyleSheet.create({
   // (tankHint removed — slider is always interactive, tip no longer needed)
   stationSection: { gap: 8 },
   sectionLabel: {
-    color: '#6B7280',
+    color: '#9CA3AF',
     fontSize: 11,
     fontWeight: '600',
     letterSpacing: 1.2,
@@ -656,7 +670,7 @@ const styles = StyleSheet.create({
   sliderCaption: { color: '#9CA3AF', fontSize: 12 },
   sliderValue:   { color: '#A5B4FC', fontSize: 14, fontWeight: '700' },
   slider:        { width: '100%', height: 36 },
-  sliderHint:    { color: '#4B5563', fontSize: 11, textAlign: 'center' },
+  sliderHint:    { color: '#6B7280', fontSize: 11, textAlign: 'center' },
 
   // Bottom action row
   actions:    { alignItems: 'center', gap: 12, paddingTop: 8 },
@@ -674,7 +688,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(99,102,241,0.1)',
     backgroundColor: 'rgba(99,102,241,0.05)',
   },
-  refuelBtnTextDisabled: { color: '#4B5563' },
+  refuelBtnTextDisabled: { color: '#6B7280' },
   // (undoInlineBtn removed — no longer used)
   // (pullHint removed — pull-to-refresh text removed)
 
