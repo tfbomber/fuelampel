@@ -15,6 +15,7 @@ import {
   REFUEL_LOW_ALERT_THRESHOLD_PCT,
   REFUEL_TIMEOUT_PAST_ZERO_MS,
 } from '../utils/constants';
+import { t } from '../utils/i18n';
 
 /** Banner type shown inline in the Home tab (null = no banner). */
 export type RefuelBannerType = 'low_alert' | 'timeout' | null;
@@ -28,6 +29,7 @@ export function useRefuelConfirm(): { banner: RefuelBannerType } {
   const smartTank               = useUserStore(s => s.smartTank);
   const pendingRefuelConfirm    = useUserStore(s => s.smartTank?.pendingRefuelConfirm ?? false);
   const lastNavigatedMs         = useUserStore(s => s.smartTank?.lastNavigatedToStationMs ?? null);
+  const isSmartTankenEnabled    = useUserStore(s => s.isSmartTankenEnabled);
 
   // ── A. Post-navigation push notification (20 min after Go to station) ──────
   // One-shot: fires once after navigating to a station, then clears the flag.
@@ -35,6 +37,10 @@ export function useRefuelConfirm(): { banner: RefuelBannerType } {
   const clearPending = useUserStore(s => s.clearPendingRefuelConfirm);
 
   useEffect(() => {
+    if (!isSmartTankenEnabled) {
+      notifScheduled.current = false;
+      return;
+    }
     if (!pendingRefuelConfirm) {
       notifScheduled.current = false;
       return;
@@ -59,8 +65,8 @@ export function useRefuelConfirm(): { banner: RefuelBannerType } {
 
     Notifications.scheduleNotificationAsync({
       content: {
-        title: '⛽ Aufgetankt?',
-        body: 'Du warst gerade an einer Tankstelle. Tank voll gemacht?',
+        title: t('notifRefuelConfirmTitle'),
+        body: t('notifRefuelConfirmBody'),
         data: { type: 'refuel_confirm' },
       },
       trigger: { 
@@ -70,14 +76,16 @@ export function useRefuelConfirm(): { banner: RefuelBannerType } {
     })
       .then(() => {
         console.log(`[useRefuelConfirm] Post-navigation confirm scheduled in ${delaySec}s`);
+        clearPending();
       })
       .catch((err) => {
         console.warn('[useRefuelConfirm] Notification scheduling failed:', err);
+        notifScheduled.current = false;
+        // TC-C2 fix: also clear pending on failure to prevent infinite retry loop
+        // when notification permission is denied or OS scheduling is unavailable.
+        clearPending();
       });
-
-    // One-shot: clear the flag so it never schedules again for this navigation
-    clearPending();
-  }, [pendingRefuelConfirm, lastNavigatedMs, clearPending]);
+  }, [pendingRefuelConfirm, lastNavigatedMs, clearPending, isSmartTankenEnabled]);
 
   // ── B & C. Inline banner selection (computed during render, no side effects) ─
 

@@ -127,6 +127,8 @@ const translations = {
     notifCriticalBody:  'Dein Tank wird auf ~{pct}% geschätzt. Bitte rechtzeitig tanken.',
     notifLowTitle:      '🟡 Jetzt tanken?',
     notifLowBody:       'Tank bei ~{pct}% — App öffnen für die besten Preise in der Nähe.',
+    notifRefuelConfirmTitle: '⛽ Aufgetankt?',
+    notifRefuelConfirmBody:  'Du warst gerade an einer Tankstelle. Tank voll gemacht?',
     // Map
     cheapest:          'Günstigster',
     nearest:           'Nächster',
@@ -323,6 +325,8 @@ const translations = {
     notifCriticalBody:  'Your tank is estimated at ~{pct}%. Please refuel before it runs out.',
     notifLowTitle:      '🟡 Good time to refuel?',
     notifLowBody:       'Tank at ~{pct}% — open the app to see the best prices nearby.',
+    notifRefuelConfirmTitle: '⛽ Refueled?',
+    notifRefuelConfirmBody:  'You were just at a station. Did you fill up?',
     // Map
     cheapest:          'Cheapest',
     nearest:           'Nearest',

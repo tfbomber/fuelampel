@@ -7,7 +7,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { TripPattern } from '../utils/types';
-import { t } from '../utils/i18n';
+import { t, getAppLanguage } from '../utils/i18n';
 
 const DOW_LABELS_DE = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 const DOW_LABELS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -27,8 +27,7 @@ export function PatternConfirmBanner({
 }: PatternConfirmBannerProps) {
   // Determine language to pick day label
   const bodyTemplate = t('patternDetectedBody');
-  const isDE = bodyTemplate.startsWith('Jeden');
-  const DOW_LABELS = isDE ? DOW_LABELS_DE : DOW_LABELS_EN;
+  const DOW_LABELS = getAppLanguage() === 'de' ? DOW_LABELS_DE : DOW_LABELS_EN;
   const day = DOW_LABELS[pattern.dayOfWeek] ?? '—';
   const km  = Math.round(pattern.approxRoundTripKm);
 
@@ -77,7 +76,6 @@ const s = StyleSheet.create({
   textCol: { flex: 1, gap: 4 },
   title:  { color: '#E0E7FF', fontSize: 13, fontWeight: '700' },
   body:   { color: '#9CA3AF', fontSize: 13, lineHeight: 19 },
-  highlight: { color: '#A5B4FC', fontWeight: '700' },
   btnColLayout: { gap: 8 },
   btnRow: { flexDirection: 'row', gap: 8 },
   btn: {

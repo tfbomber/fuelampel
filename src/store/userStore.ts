@@ -296,8 +296,10 @@ export const useUserStore = create<UserState>()(
         if (smartTank) {
           // SmartTank already exists — update commute distance
           if (home?.loc && work?.loc) {
+            const requestedHomeId = home.displayName;
             const dummyStation = { lat: work.loc.lat, lng: work.loc.lng } as any;
             fetchRoadMetrics(home.loc, [dummyStation]).then((metrics) => {
+              if (get().commonAreas[0]?.displayName !== requestedHomeId) return;
               if (metrics && metrics[0]) {
                 const currentSmartTank = get().smartTank;
                 if (currentSmartTank) {
@@ -325,8 +327,10 @@ export const useUserStore = create<UserState>()(
 
           // Async OSRM refinement for the freshly bootstrapped tank
           if (home.loc && work?.loc) {
+            const requestedHomeId = home.displayName;
             const dummyStation = { lat: work.loc.lat, lng: work.loc.lng } as any;
             fetchRoadMetrics(home.loc, [dummyStation]).then((metrics) => {
+              if (get().commonAreas[0]?.displayName !== requestedHomeId) return;
               if (metrics && metrics[0]) {
                 const currentSmartTank = get().smartTank;
                 if (currentSmartTank) {
@@ -528,9 +532,9 @@ export const useUserStore = create<UserState>()(
             lastConfirmedMs: Date.now(),
             levelConfidence: 1.0, // user explicitly confirmed level — maximum trust
             lastConfirmedBy: 'manual',
-          }
+          },
+          lastPromptedMs: Date.now(),
         });
-        set({ lastPromptedMs: Date.now() });
       },
 
       recordNavigatedToStation: () => {
