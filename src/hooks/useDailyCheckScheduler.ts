@@ -44,7 +44,7 @@ export function useDailyCheckScheduler(): void {
     ).catch((err) => {
       console.warn('[useDailyCheckScheduler] Unexpected error:', err);
     });
-  }, [smartTank]); // NOTE: deliberately omit notifState to avoid reschedule-on-record cycle
+  }, [smartTank, alertThresholdPct]); // NOTE: deliberately omit notifState to avoid reschedule-on-record cycle
   // SmartTank is the only meaningful trigger: level/consumption changes
   // are what determine whether a notification should fire.
 }

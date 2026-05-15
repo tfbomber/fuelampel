@@ -358,7 +358,12 @@ function simulatePersona(p: Persona, simDays: number): DayLog[] {
                  zone === 'Planning' ? 'plan_soon' : 'refuel_soon';
     const notifCheck = shouldNotify(zone, confidence, 0.03, mode, notifState, nowMs);
     if (notifCheck.allowed) {
-      notifState = { ...notifState, lastNotifiedMs: nowMs, weekCount: notifState.weekCount + 1 };
+      const weekReset = nowMs - notifState.weekStartMs >= 7 * 86_400_000;
+      notifState = {
+        lastNotifiedMs: nowMs,
+        weekCount: weekReset ? 1 : notifState.weekCount + 1,
+        weekStartMs: weekReset ? nowMs : notifState.weekStartMs,
+      };
     }
 
     // ── Refuel decision (based on REAL level, like a real user would) ──

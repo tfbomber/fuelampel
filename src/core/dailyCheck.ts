@@ -43,6 +43,7 @@ import {
   NOTIFICATION_COOLDOWN_MS,
   NOTIFICATION_WEEKLY_CAP,
   CONFIDENCE_MED,
+  ZONE_CRITICAL_MAX_PCT,
 } from '../utils/constants';
 
 const DAILY_NOTIF_ID = 'fuelampel-daily-11h30';
@@ -147,7 +148,7 @@ function shouldScheduleNotification(
   smartTank: SmartTankState,
   notifState: { lastNotifiedMs: number; weekCount: number; weekStartMs: number },
 ): ZoneGateResult {
-  const isCritical = projectedPct <= 15;
+  const isCritical = projectedPct <= ZONE_CRITICAL_MAX_PCT;
 
   // Gate 1: Needs to be below threshold
   if (projectedPct > alertThresholdPct) {
@@ -245,7 +246,7 @@ export async function scheduleDailyCheck(
   }
 
   // Step 6: Build content (zone + projected level ONLY — no prices, no stations, no resolveWhen)
-  const isCritical = projectedLevel <= 15;
+  const isCritical = projectedLevel <= ZONE_CRITICAL_MAX_PCT;
   const content = buildContent(isCritical ? 'Critical' : 'Low', projectedLevel);
 
   // Step 7: Schedule

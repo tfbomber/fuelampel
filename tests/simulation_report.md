@@ -1,5 +1,5 @@
 # FuelAmpel — User Behavior Simulation Report
-Generated: 2026-05-13T19:49:52.876Z
+Generated: 2026-05-15T13:46:35.974Z
 Simulation Period: 30 days per persona
 
 ---
@@ -323,7 +323,7 @@ Simulation Period: 30 days per persona
 | Metric | Value |
 |---|---|
 | Refuels | 1× (days: 27) |
-| Notifications | 16× |
+| Notifications | 9× |
 | Avg Drift | -14.6% (est vs real) |
 | Max Drift | ±27% |
 | Zone Distribution | Planning:9d · Low:6d · Critical:13d · Safe:2d |
@@ -351,22 +351,22 @@ Simulation Period: 30 days per persona
 | 15 | Tue | 32.9 | 12.9 | -20 | Critical | 0.15 | all_gates_passed | 🔔 |
 | 16 | Wed | 31.8 | 10.4 | -21.4 | Critical | 0.15 | all_gates_passed | 🔔 |
 | 17 | Thu | 30.7 | 7.9 | -22.8 | Critical | 0.15 | all_gates_passed | 🔔 |
-| 18 | Fri | 29.6 | 5.4 | -24.2 | Critical | 0.15 | all_gates_passed | 🔔 |
-| 19 | Sat | 28.6 | 3 | -25.6 | Critical | 0.15 | all_gates_passed | 🔔 |
-| 20 | Sun | 27.5 | 0.5 | -27 | Critical | 0.15 | all_gates_passed | 🔔 |
-| 21 | Mon | 26.4 | 0 | -26.4 | Critical | 0.15 | all_gates_passed | 🔔 |
+| 18 | Fri | 29.6 | 5.4 | -24.2 | Critical | 0.15 | — |  |
+| 19 | Sat | 28.6 | 3 | -25.6 | Critical | 0.15 | — |  |
+| 20 | Sun | 27.5 | 0.5 | -27 | Critical | 0.15 | — |  |
+| 21 | Mon | 26.4 | 0 | -26.4 | Critical | 0.15 | — |  |
 | 22 | Tue | 25.4 | 0 | -25.4 | Critical | 0.15 | all_gates_passed | 🔔 |
 | 23 | Wed | 24.3 | 0 | -24.3 | Critical | 0.15 | all_gates_passed | 🔔 |
 | 24 | Thu | 23.2 | 0 | -23.2 | Critical | 0.15 | all_gates_passed | 🔔 |
-| 25 | Fri | 22.1 | 0 | -22.1 | Critical | 0.15 | all_gates_passed | 🔔 |
-| 26 | Sat | 21.1 | 0 | -21.1 | Critical | 0.15 | all_gates_passed | 🔔 |
-| 27 | Sun | 20 | 0 | -20 | Critical | 0.15 | all_gates_passed | ⛽ |
+| 25 | Fri | 22.1 | 0 | -22.1 | Critical | 0.15 | — |  |
+| 26 | Sat | 21.1 | 0 | -21.1 | Critical | 0.15 | — |  |
+| 27 | Sun | 20 | 0 | -20 | Critical | 0.15 | — | ⛽ |
 | 28 | Mon | 98.9 | 97.5 | -1.4 | Safe | 0.5 | — |  |
 | 29 | Tue | 97.9 | 95.1 | -2.8 | Safe | 0.5 | — |  |
 
 ### ⚠️ Issues Detected
 - ⚠️ HIGH DRIFT: Max 27% divergence between estimate and reality
-- ⚠️ SPAM: 16 notifications in 30 days (>8)
+- ⚠️ SPAM: 9 notifications in 30 days (>8)
 - ⚠️ FALSE ALARM: 12 days classified Critical but real tank >20%
 
 ---
@@ -385,7 +385,7 @@ Simulation Period: 30 days per persona
 | Metric | Value |
 |---|---|
 | Refuels | 1× (days: 15) |
-| Notifications | 11× |
+| Notifications | 8× |
 | Avg Drift | +0.5% (est vs real) |
 | Max Drift | ±15.2% |
 | Zone Distribution | Safe:15d · Planning:5d · Low:5d · Critical:5d |
@@ -407,8 +407,8 @@ Simulation Period: 30 days per persona
 | 9 | Wed | 34.5 | 33.4 | -1.1 | Planning | 0.36 | — |  |
 | 10 | Thu | 26.4 | 27 | +0.6 | Low | 0.24 | — |  |
 | 11 | Fri | 18.2 | 20 | +1.8 | Low | 0.5 | all_gates_passed | 🔔 |
-| 12 | Sat | 18.2 | 13.5 | -4.7 | Critical | 0.5 | all_gates_passed | 🔔 |
-| 13 | Sun | 18.2 | 7.1 | -11.1 | Critical | 0.49 | all_gates_passed | 🔔 |
+| 12 | Sat | 18.2 | 13.5 | -4.7 | Critical | 0.5 | — |  |
+| 13 | Sun | 18.2 | 7.1 | -11.1 | Critical | 0.49 | — |  |
 | 14 | Mon | 10 | 0.7 | -9.3 | Critical | 0.36 | all_gates_passed | 🔔 |
 | 15 | Tue | 1.8 | 0 | -1.8 | Critical | 0.24 | all_gates_passed | ⛽ |
 | 16 | Wed | 91.8 | 93.6 | +1.8 | Safe | 0.5 | — |  |
@@ -424,10 +424,9 @@ Simulation Period: 30 days per persona
 | 26 | Sat | 34.5 | 28.1 | -6.4 | Low | 0.4 | all_gates_passed | 🔔 |
 | 27 | Sun | 34.5 | 21.6 | -12.9 | Low | 0.4 | all_gates_passed | 🔔 |
 | 28 | Mon | 26.4 | 15.2 | -11.2 | Low | 0.4 | all_gates_passed | 🔔 |
-| 29 | Tue | 18.2 | 8.8 | -9.4 | Critical | 0.36 | all_gates_passed | 🔔 |
+| 29 | Tue | 18.2 | 8.8 | -9.4 | Critical | 0.36 | — |  |
 
-### ⚠️ Issues Detected
-- ⚠️ SPAM: 11 notifications in 30 days (>8)
+### ✅ No Issues Detected
 
 ---
 
