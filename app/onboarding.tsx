@@ -414,7 +414,7 @@ export default function OnboardingScreen() {
             <Text style={s.subtitle}>{t('onboardingAreaSubtitle')}</Text>
             <View style={[s.options, { zIndex: 20 }]}>
               <LiveAddressInput
-                label={t('homeArea')}
+                label={t('homeShort')}
                 icon="🏠"
                 placeholder={t('addrPlaceholder')}
                 selectedArea={homeArea}
@@ -425,7 +425,7 @@ export default function OnboardingScreen() {
             </View>
             <View style={s.options}>
               <LiveAddressInput
-                label={t('workArea')}
+                label={t('workShort')}
                 icon="🏢"
                 placeholder={t('addrPlaceholder')}
                 selectedArea={workArea}
@@ -453,34 +453,17 @@ export default function OnboardingScreen() {
           </View>
         )}
 
-        {/* Step 3 (Smart) — Current Tank Level + optional Odometer */}
+        {/* Step 3 (Smart) — Tachostand first, then tank level with live km display */}
         {step === 3 && modeSelection === 'smart' && (
           <View style={s.stepWrap}>
-            <Text style={s.emoji}>🛢️</Text>
+            <Text style={s.emoji}>🗣️</Text>
             <Text style={s.title}>{t('onboardingTankTitle')}</Text>
             <Text style={s.subtitle}>{t('onboardingTankSubtitle')}</Text>
 
-            <View style={levelS.box}>
-              <Text style={levelS.pct}>{tankPct}%</Text>
-              <Text style={levelS.label}>{getTankLevelLabel(tankPct)}</Text>
-            </View>
-
-            <FuelSlider
-              value={tankPct}
-              fillColor={
-                tankPct >= 50 ? '#22C55E' : tankPct >= 25 ? '#F59E0B' : '#EF4444'
-              }
-              step={5}
-              onValueChange={setTankPct}
-              onSlidingComplete={setTankPct}
-            />
-
-            <Text style={levelS.hint}>{t('tankLevelScaleHint')}</Text>
-
-            {/* Optional odometer */}
-            <View style={{ marginTop: 16, gap: 6 }}>
+            {/* 1️⃣ Tachostand — prominent at top */}
+            <View style={odoS.block}>
               <Text style={s.sectionLabel}>🛣️ {t('onboardingOdometerTitle')}</Text>
-              <Text style={[s.hint, { textAlign: 'left' }]}>{t('onboardingOdometerHint')}</Text>
+              <Text style={odoS.hint}>{t('onboardingOdometerHint')}</Text>
               <View style={rangeS.inputRow}>
                 <TextInput
                   style={rangeS.input}
@@ -494,19 +477,24 @@ export default function OnboardingScreen() {
                 <Text style={rangeS.unit}>km</Text>
               </View>
             </View>
-          </View>
-        )}
 
-        {/* Step 4 (Smart) — Current Tank Level */}
-        {step === 4 && modeSelection === 'smart' && (
-          <View style={s.stepWrap}>
-            <Text style={s.emoji}>🛢️</Text>
-            <Text style={s.title}>{t('onboardingTankTitle')}</Text>
-            <Text style={s.subtitle}>{t('onboardingTankSubtitle')}</Text>
+            {/* Divider */}
+            <View style={odoS.divider} />
 
+            {/* 2️⃣ Tank percentage + live km display */}
+            <Text style={[s.sectionLabel, { marginBottom: 4 }]}>⛽️ {t('onboardingTankTitle')}</Text>
             <View style={levelS.box}>
               <Text style={levelS.pct}>{tankPct}%</Text>
               <Text style={levelS.label}>{getTankLevelLabel(tankPct)}</Text>
+              {/* Live remaining km: either from user odometer entry or default 667km */}
+              <Text style={levelS.kmHint}>
+                {(() => {
+                  // Try user-provided odometer path first (needs totalRangeKm, not available yet)
+                  // Fallback: default 50L tank / 7.5L per 100km = 666.7km full range
+                  const fullRange = 667;
+                  return `≈ ${Math.round((tankPct / 100) * fullRange)} km`;
+                })()}
+              </Text>
             </View>
 
             <FuelSlider
@@ -518,7 +506,6 @@ export default function OnboardingScreen() {
               onValueChange={setTankPct}
               onSlidingComplete={setTankPct}
             />
-
             <Text style={levelS.hint}>{t('tankLevelScaleHint')}</Text>
           </View>
         )}
@@ -585,7 +572,7 @@ const levelS = StyleSheet.create({
   trackWrap: { position: 'relative', height: 40, justifyContent: 'center' },
   overlay:   { position: 'absolute', left: -8, right: -8, height: 40 },
   hint:      { color: '#4B5563', fontSize: 11, textAlign: 'center' },
-  kmHint:    { color: '#6366F1', fontSize: 14, fontWeight: '600', marginTop: 2 },
+  kmHint:    { color: '#6366F1', fontSize: 15, fontWeight: '700', marginTop: 2 },
 });
 // ── Step 3: Range Input Styles ────────────────────────────────────────────────
 const rangeS = StyleSheet.create({
@@ -603,4 +590,10 @@ const rangeS = StyleSheet.create({
     paddingVertical: 12,
   },
   unit: { color: '#6B7280', fontSize: 14, fontWeight: '600' },
+});
+// ── Odometer block styles ─────────────────────────────────────────────────────
+const odoS = StyleSheet.create({
+  block:   { gap: 8, paddingVertical: 4 },
+  hint:    { color: '#6B7280', fontSize: 12, lineHeight: 18 },
+  divider: { height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginVertical: 8 },
 });
