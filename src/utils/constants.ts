@@ -59,6 +59,10 @@ export const DEFAULT_AVG_CONSUMPTION = 7.5;  // L/100km
 export const DEFAULT_TANK_CAPACITY = 50;     // Litres
 export const DEFAULT_REMAINING_KM = 300;     // Initial assumption if user hasn't set
 
+// --- Odometer Validation ---
+export const ODOMETER_MIN_KM = 0;
+export const ODOMETER_MAX_KM = 999999;
+
 // --- Car-Type → Tank Capacity Mapping ---
 // Used by onboarding and Settings to seed smarter defaults.
 export const CAR_TYPE_TANK_CAPACITY: Record<string, number> = {

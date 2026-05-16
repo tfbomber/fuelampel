@@ -35,6 +35,7 @@ import {
   applyManualLevelCorrection,
   migrateFromShadowTank,
   setTotalRangeKm as smartSetTotalRangeKm,
+  setOdometer as smartSetOdometer,
   updateCommuteDistance,
   estimateLevelPercent,
 } from '../core/smartTank';
@@ -127,7 +128,7 @@ interface UserState {
 
   // Smart Tank v2 actions
   initSmartTank: (home?: CommonArea, work?: CommonArea, initialPct?: number) => void;
-  recordSmartRefuel: (litresAdded: number, confirmedBy: RefuelEvent['confirmedBy']) => void;
+  recordSmartRefuel: (litresAdded: number, confirmedBy: RefuelEvent['confirmedBy'], odometerKm?: number) => void;
   applyLocationSnapshot: (distFromHomeKm: number, distFromWorkKm: number | null) => void;
   confirmTripPattern: (dayOfWeek: number, confirmed: boolean) => void;
   adjustLevelManually: (newPercent: number) => void;
@@ -139,6 +140,9 @@ interface UserState {
 
   // Tank range (optional — unlocks km display on TankBar)
   setTotalRangeKm: (rangeKm: number | null) => void;
+
+  // Odometer (optional — enables precise oil consumption calibration)
+  setOdometerKm: (km: number) => void;
 
   // Notification tracking
   recordNotificationSent: (isCritical?: boolean) => void;
@@ -443,7 +447,7 @@ export const useUserStore = create<UserState>()(
         }
       },
 
-      recordSmartRefuel: (litresAdded, confirmedBy) => {
+      recordSmartRefuel: (litresAdded, confirmedBy, odometerKm?) => {
         const { smartTank } = get();
         if (!smartTank) return;
 
@@ -455,7 +459,7 @@ export const useUserStore = create<UserState>()(
           return;
         }
 
-        const updated = smartRecordRefuel(smartTank, litresAdded, confirmedBy);
+        const updated = smartRecordRefuel(smartTank, litresAdded, confirmedBy, odometerKm);
         set({ smartTank: updated });
       },
 
@@ -594,6 +598,17 @@ export const useUserStore = create<UserState>()(
           return;
         }
         set({ smartTank: smartSetTotalRangeKm(existing, rangeKm) });
+      },
+
+      setOdometerKm: (km) => {
+        const { smartTank } = get();
+        if (!smartTank) {
+          console.warn('[UserStore] setOdometerKm called with null SmartTank — skipping');
+          return;
+        }
+        const clamped = Math.max(0, Math.min(999999, Math.round(km)));
+        set({ smartTank: smartSetOdometer(smartTank, clamped) });
+        console.log(`[UserStore] Odometer → ${clamped} km`);
       },
 
 
@@ -758,6 +773,12 @@ export const useUserStore = create<UserState>()(
               (state as any).commuteDaysInput = 5;
               console.log('[UserStore] Migration v6: Basic Mode set for new/skipped user');
             }
+          }
+          // Migration v7: add odometer fields to SmartTankState
+          if (state.smartTank && (state.smartTank as any).odometerKm === undefined) {
+            (state.smartTank as any).odometerKm = null;
+            (state.smartTank as any).odometerAtLastRefuelKm = null;
+            console.log('[UserStore] Migration v7: odometer fields initialized to null');
           }
 
           // Sync i18n module with persisted language on boot

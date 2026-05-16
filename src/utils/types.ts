@@ -176,6 +176,10 @@ export interface CalibrationRecord {
 export interface SmartTankState {
   // ── Core truth ────────────────────────────────────────────────────────────
   levelPercent: number;              // 0–100
+  /** Current odometer reading in km. null until user provides first value. */
+  odometerKm: number | null;
+  /** Odometer at the time of the last confirmed refuel. Used to compute actual km driven. */
+  odometerAtLastRefuelKm: number | null;
   lastConfirmedMs: number;
   lastConfirmedBy: 'refuel' | 'manual' | 'low_alert_confirm';
   /**

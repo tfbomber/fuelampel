@@ -1,16 +1,14 @@
 // ====================================================
-// FuelAmpel — Settings Screen (v3)
+// FuelAmpel — Settings Screen (v4 Minimalist)
 //
-// UX improvements:
-//  - Auto-save inputs on blur / submit (no Save button)
-//  - Inline "✓ Saved" feedback — no Alert pop-ups for saves
-//  - Full Reset moved to bottom "Danger Zone" section
+// Design: Icon + keyword List Row. Pure dark card. No save buttons.
+// All changes save instantly on change/blur.
 // ====================================================
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Alert, KeyboardAvoidingView, Platform,
+  TextInput, Alert, Switch, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Stack } from 'expo-router';
@@ -18,280 +16,205 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useUserStore } from '../src/store/userStore';
 import { useFuelStore } from '../src/store/fuelStore';
 import { formatFuelType } from '../src/utils/formatters';
-import {
-  FuelType, RefuelingStyle, CarType, CommonArea,
-} from '../src/utils/types';
-import { Language } from '../src/utils/i18n';
+import { FuelType, RefuelingStyle, CommonArea } from '../src/utils/types';
 import { t } from '../src/utils/i18n';
 import { LiveAddressInput } from '../src/components/LiveAddressInput';
-import {
-  CAR_TYPE_TANK_CAPACITY,
-  CAR_TYPE_AVG_CONSUMPTION,
-} from '../src/utils/constants';
+import Constants from 'expo-constants';
 
-
-// ── Constants ─────────────────────────────────────────────────────────────────
+// ── Constants ──────────────────────────────────────────────────────────────────
 
 const FUEL_TYPES: FuelType[] = ['e5', 'e10', 'diesel'];
 
-const LANGUAGE_OPTIONS: { value: Language; label: string; sublabel: string }[] = [
-  { value: 'de', label: 'Deutsch', sublabel: 'Standard' },
-  { value: 'en', label: 'English', sublabel: 'English' },
+const REFUEL_STYLES: { value: RefuelingStyle; icon: string; labelKey: 'refuelStyleConvenient' | 'refuelStyleNearEmpty2' | 'refuelStyleCheapest2' }[] = [
+  { value: 'convenient', icon: '🔔', labelKey: 'refuelStyleConvenient' },
+  { value: 'nearEmpty',  icon: '🔇', labelKey: 'refuelStyleNearEmpty2' },
+  { value: 'cheapest',   icon: '🏷️', labelKey: 'refuelStyleCheapest2' },
 ];
 
-const REFUELING_STYLE_VALUES: RefuelingStyle[] = ['nearEmpty', 'convenient'];
-const CAR_TYPE_VALUES: CarType[] = ['small', 'regular', 'large', 'unknown'];
+// ── Color tokens ───────────────────────────────────────────────────────────────
 
-// ── Section wrapper ───────────────────────────────────────────────────────────
+const C = {
+  bg:        '#09090B',
+  card:      '#18181B',
+  card2:     '#1C1C1F',
+  text:      '#F4F4F5',
+  muted:     '#71717A',
+  accent:    '#6366F1',
+  accentFg:  '#A5B4FC',
+  green:     '#22C55E',
+  red:       '#EF4444',
+  redFg:     '#FCA5A5',
+  divider:   'rgba(255,255,255,0.06)',
+};
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+// ── Section header ─────────────────────────────────────────────────────────────
+
+function SectionHeader({ label }: { label: string }) {
+  return <Text style={sh.label}>{label}</Text>;
+}
+const sh = StyleSheet.create({
+  label: { color: C.muted, fontSize: 11, fontWeight: '700', letterSpacing: 1.4,
+           textTransform: 'uppercase', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 6 },
+});
+
+// ── Row item ───────────────────────────────────────────────────────────────────
+
+function Row({
+  icon, label, right, onPress, danger, noDivider,
+}: {
+  icon: string; label: string; right?: React.ReactNode;
+  onPress?: () => void; danger?: boolean; noDivider?: boolean;
+}) {
+  const Inner = (
+    <View style={[row.wrap, !noDivider && row.divider]}>
+      <Text style={row.icon}>{icon}</Text>
+      <Text style={[row.label, danger && { color: C.redFg }]}>{label}</Text>
+      <View style={row.right}>{right ?? null}</View>
+    </View>
+  );
+  if (onPress) {
+    return <TouchableOpacity onPress={onPress} activeOpacity={0.65}>{Inner}</TouchableOpacity>;
+  }
+  return Inner;
+}
+const row = StyleSheet.create({
+  wrap:    { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 13, gap: 12 },
+  divider: { borderBottomWidth: 1, borderBottomColor: C.divider },
+  icon:    { fontSize: 17, width: 26, textAlign: 'center' },
+  label:   { flex: 1, color: C.text, fontSize: 15 },
+  right:   { alignItems: 'flex-end' },
+});
+
+// ── Value chip (right side of row) ────────────────────────────────────────────
+
+function Chip({ label, color }: { label: string; color?: string }) {
+  return <Text style={[chip.text, color ? { color } : {}]}>{label}</Text>;
+}
+const chip = StyleSheet.create({
+  text: { color: C.muted, fontSize: 14, fontWeight: '500' },
+});
+
+// ── Inline number editor ───────────────────────────────────────────────────────
+
+function InlineEditor({
+  value, unit, onSave, onCancel, validate, placeholder,
+}: {
+  value: string; unit?: string; onSave: (val: string) => void;
+  onCancel: () => void; validate?: (v: string) => boolean; placeholder?: string;
+}) {
+  const [local, setLocal] = useState(value);
+  function commit() {
+    if (validate && !validate(local)) { Alert.alert(t('alertInvalidValue'), ''); return; }
+    onSave(local);
+  }
   return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      <View style={styles.sectionBody}>{children}</View>
+    <View style={ed.wrap}>
+      <TextInput
+        style={ed.input}
+        value={local}
+        onChangeText={setLocal}
+        keyboardType="decimal-pad"
+        autoFocus
+        placeholder={placeholder}
+        placeholderTextColor={C.muted}
+        returnKeyType="done"
+        onSubmitEditing={commit}
+      />
+      {unit ? <Text style={ed.unit}>{unit}</Text> : null}
+      <TouchableOpacity onPress={commit} style={ed.btn}>
+        <Text style={ed.btnText}>✓</Text>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={onCancel} style={ed.cancelBtn}>
+        <Text style={ed.cancelText}>✕</Text>
+      </TouchableOpacity>
     </View>
   );
 }
+const ed = StyleSheet.create({
+  wrap:       { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, gap: 8, backgroundColor: C.card2 },
+  input:      { flex: 1, color: C.text, fontSize: 16, fontWeight: '600', backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  unit:       { color: C.muted, fontSize: 13 },
+  btn:        { backgroundColor: C.accent, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 },
+  btnText:    { color: '#fff', fontWeight: '700', fontSize: 14 },
+  cancelBtn:  { paddingHorizontal: 8, paddingVertical: 8 },
+  cancelText: { color: C.muted, fontSize: 16 },
+});
 
-// ── Option pill grid ──────────────────────────────────────────────────────────
+// ── Card wrapper ───────────────────────────────────────────────────────────────
 
-function OptionRow<T extends string | number>({
-  options, value, onSelect,
-}: { options: { value: T; label: string }[]; value: T | null; onSelect: (v: T) => void }) {
-  return (
-    <View style={styles.optionGrid}>
-      {options.map(o => (
-        <TouchableOpacity
-          key={o.value}
-          style={[styles.optPill, value === o.value && styles.optPillActive]}
-          onPress={() => onSelect(o.value)}
-        >
-          <Text style={[styles.optPillText, value === o.value && styles.optPillTextActive]}>
-            {o.label}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
+function Card({ children }: { children: React.ReactNode }) {
+  return <View style={cd.card}>{children}</View>;
 }
+const cd = StyleSheet.create({
+  card: { backgroundColor: C.card, marginHorizontal: 16, borderRadius: 16, overflow: 'hidden' },
+});
 
+// ── Main ───────────────────────────────────────────────────────────────────────
 
-// ── Main ─────────────────────────────────────────────────────────────────────
+type EditingField = 'capacity' | 'consumption' | 'odometer' | 'range' | 'threshold' | 'commuteDays' | null;
 
 export default function SettingsScreen() {
   const router = useRouter();
   const {
     language, isSmartTankenEnabled, alertThresholdPct, commuteDaysInput,
-    fuelType, commonAreas, refuelingStyle, carType, shadowTank, smartTank,
-    setFuelType, setCommonAreas, setRefuelingStyle, setCarType,
+    fuelType, commonAreas, refuelingStyle,
+    setFuelType, setCommonAreas, setRefuelingStyle,
     setLanguage, setIsSmartTankenEnabled, setAlertThresholdPct, setCommuteDaysInput,
-    setAvgConsumption, setTankCapacity, setTotalRangeKm,
+    setAvgConsumption, setTankCapacity, setTotalRangeKm, setOdometerKm,
+    shadowTank, smartTank,
     fullReset,
   } = useUserStore();
 
   const recomputeDecision = useFuelStore(s => s.recomputeDecision);
   const switchFuelType    = useFuelStore(s => s.switchFuelType);
 
-  const [consumptionInput, setConsumptionInput] = useState(
-    (smartTank?.consumptionPer100km ?? shadowTank.avgConsumptionPer100km).toString()
-  );
-  const [capacityInput,    setCapacityInput]    = useState(
-    (smartTank?.tankCapacityL ?? shadowTank.tankCapacityL).toString()
-  );
-  const [rangeInput,       setRangeInput]       = useState(
-    smartTank?.totalRangeKm != null ? smartTank.totalRangeKm.toString() : ''
-  );
+  const [editing, setEditing] = useState<EditingField>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
-  // Dirty state: true when user has typed a new value that hasn't been saved yet.
-  // Drives the inline '✓' confirm button highlight.
-  const [consumptionDirty, setConsumptionDirty] = useState(false);
-  const [capacityDirty,    setCapacityDirty]    = useState(false);
-  const [rangeDirty,       setRangeDirty]       = useState(false);
-  const [commuteDaysDirty, setCommuteDaysDirty] = useState(false);
-  
-  const [commuteDaysLocal, setCommuteDaysLocal] = useState(commuteDaysInput.toString());
-  
-  // Refresh local copy if store changes while screen was backgrounded
-  // (e.g. updated via onboarding re-run on another device session)
-  useFocusEffect(useCallback(() => {
-    setCommuteDaysLocal(commuteDaysInput.toString());
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commuteDaysInput]));
-  
-  // Global save button state — true whenever any numeric field is dirty
-  const [globalDirty,      setGlobalDirty]      = useState(false);
-  const [globalSaved,      setGlobalSaved]      = useState(false);
-  const [showAdvanced,     setShowAdvanced]     = useState(false);
-  const globalSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Translated options — re-computed on each render (language reactive via store subscription)
-  const REFUELING_STYLE_OPTIONS = [
-    { value: 'nearEmpty'  as RefuelingStyle, label: t('whenNearlyEmpty') },
-    { value: 'convenient' as RefuelingStyle, label: t('onRouteConvenient') },
-  ];
-  const CAR_TYPE_OPTIONS = [
-    { value: 'small'   as CarType, label: t('carSmall') },
-    { value: 'regular' as CarType, label: t('carFamily') },
-    { value: 'large'   as CarType, label: t('carLarge') },
-    { value: 'unknown' as CarType, label: t('carUnknown') },
-  ];
-
-  const ALERT_THRESHOLD_OPTIONS = [
-    { value: 20, label: '20%' },
-    { value: 30, label: '30%' },
-    { value: 40, label: '40%' },
-  ];
-
-
-  // ── Inline "✓ Saved" feedback — no disruptive Alert pop-ups ──────────────
-  const [savedField, setSavedField] = useState<string | null>(null);
-  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  function showSaved(field: string) {
-    if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
-    setSavedField(field);
-    savedTimerRef.current = setTimeout(() => setSavedField(null), 2000);
-  }
-
-  // Local resolved areas (mirrors store, updated on pick)
+  // Local area state
   const [homeArea, setHomeArea] = useState<CommonArea | null>(commonAreas[0] ?? null);
   const [workArea, setWorkArea] = useState<CommonArea | null>(commonAreas[1] ?? null);
   const [areaDirty, setAreaDirty] = useState(false);
 
-  function updateHome(area: CommonArea) {
-    setHomeArea(area);
-    setAreaDirty(true);
-    setGlobalDirty(true);
-  }
-  function clearHome() {
-    setHomeArea(null);
-    setAreaDirty(true);
-    setGlobalDirty(true);
-  }
-  function updateWork(area: CommonArea) {
-    setWorkArea(area);
-    setAreaDirty(true);
-    setGlobalDirty(true);
-  }
-  function clearWork() {
-    setWorkArea(null);
-    setAreaDirty(true);
-    setGlobalDirty(true);
+  // Refresh local area copy on focus
+  useFocusEffect(useCallback(() => {
+    setHomeArea(commonAreas[0] ?? null);
+    setWorkArea(commonAreas[1] ?? null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commonAreas[0]?.plz, commonAreas[1]?.plz]));
+
+  function saveAreas(h: CommonArea | null, w: CommonArea | null) {
+    const areas: CommonArea[] = [];
+    if (h) areas.push(h);
+    if (w) areas.push(w);
+    setCommonAreas(areas);
+    setAreaDirty(false);
+    recomputeDecision();
+    console.log('[Settings] Areas saved:', areas.map(a => a.displayName).join(', '));
   }
 
-  // ── Auto-save helpers: validate → save silently → show inline ✓ ──────────
-
-  function saveConsumption() {
-    const val = parseFloat(consumptionInput);
-    if (isNaN(val) || val < 3 || val > 25) { Alert.alert(t('alertInvalidValue'), t('alertConsumptionRange')); return; }
-    setAvgConsumption(val);
-    setConsumptionDirty(false);
-    showSaved('consumption');
-  }
-
-  function saveCapacity() {
-    const val = parseFloat(capacityInput);
-    if (isNaN(val) || val < 20 || val > 120) { Alert.alert(t('alertInvalidValue'), t('alertCapacityRange')); return; }
-    setTankCapacity(val);
-    setCapacityDirty(false);
-    showSaved('capacity');
-  }
-
-  function saveRange() {
-    if (rangeInput.trim() === '' || rangeInput.trim() === '0') {
-      setTotalRangeKm(null);
-      setRangeDirty(false);
-      showSaved('range');
-      return;
-    }
-    const val = parseFloat(rangeInput);
-    if (isNaN(val) || val < 50 || val > 2000) { Alert.alert(t('alertInvalidValue'), t('alertRangeInputRange')); return; }
-
-    // Bootstrap SmartTank if needed before committing range (now auto-handled by setTotalRangeKm)
-
-    setTotalRangeKm(val);
-    setRangeDirty(false);
-    showSaved('range');
-  }
-
-  // Global save: commits all outstanding dirty fields in one gesture.
-  // Called by the fixed header button. Always visible, never scrolls away.
-  function handleGlobalSave() {
-    let hasError = false;
-
-    // ── 1. Save Gebiete first (must run before Reichweite so SmartTank exists) ──
-    if (areaDirty) {
-      const areas: CommonArea[] = [];
-      if (homeArea) areas.push(homeArea);
-      if (workArea) areas.push(workArea);
-      setCommonAreas(areas);
-      setAreaDirty(false);
-      console.log('[Settings] Gebiete saved:', areas.map(a => a.displayName).join(', '));
-      // Bootstrap SmartTank for skip-onboarding users (now handled automatically if needed)
-    }
-
-    // ── 2. Save numeric fields ──────────────────────────────────────────────
-    if (consumptionDirty) {
-      const val = parseFloat(consumptionInput);
-      if (isNaN(val) || val < 3 || val > 25) {
-        Alert.alert(t('alertInvalidValue'), t('alertConsumptionRange')); hasError = true;
-      } else { setAvgConsumption(val); setConsumptionDirty(false); }
-    }
-    if (capacityDirty) {
-      const val = parseFloat(capacityInput);
-      if (isNaN(val) || val < 20 || val > 120) {
-        Alert.alert(t('alertInvalidValue'), t('alertCapacityRange')); hasError = true;
-      } else { setTankCapacity(val); setCapacityDirty(false); }
-    }
-    if (rangeDirty) {
-      const trimmed = rangeInput.trim();
-      if (trimmed === '' || trimmed === '0') {
-        setTotalRangeKm(null); setRangeDirty(false);
-      } else {
-        const val = parseFloat(trimmed);
-        if (isNaN(val) || val < 50 || val > 2000) {
-          Alert.alert(t('alertInvalidValue'), t('alertRangeInputRange')); hasError = true;
-        } else { setTotalRangeKm(val); setRangeDirty(false); }
+  // Auto-save areas on blur
+  useFocusEffect(useCallback(() => {
+    return () => {
+      if (areaDirty) {
+        const areas: CommonArea[] = [];
+        if (homeArea) areas.push(homeArea);
+        if (workArea) areas.push(workArea);
+        setCommonAreas(areas);
+        setAreaDirty(false);
+        console.log('[Settings] Auto-saved areas on blur');
       }
-    }
-    if (commuteDaysDirty) {
-      const val = parseInt(commuteDaysLocal, 10);
-      if (isNaN(val) || val < 1 || val > 7) {
-        Alert.alert(t('alertInvalidValue'), 'Bitte 1 bis 7 Tage eingeben'); hasError = true;
-      } else { setCommuteDaysInput(val); setCommuteDaysDirty(false); }
-    }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [areaDirty, homeArea, workArea]));
 
-    // ── 3. Commit + refresh Home decision engine ────────────────────────────
-    if (!hasError) {
-      setGlobalDirty(false);
-      if (globalSavedTimerRef.current) clearTimeout(globalSavedTimerRef.current);
-      setGlobalSaved(true);
-      globalSavedTimerRef.current = setTimeout(() => setGlobalSaved(false), 2000);
-      recomputeDecision();
-      console.log('[Settings] Global save committed. Decision recomputed.');
-    }
-  }
+  // Current values
+  const capacity    = (smartTank?.tankCapacityL ?? shadowTank.tankCapacityL).toString();
+  const consumption = (smartTank?.consumptionPer100km ?? shadowTank.avgConsumptionPer100km).toString();
+  const odometer    = smartTank?.odometerKm != null ? smartTank.odometerKm.toString() : '';
+  const range       = smartTank?.totalRangeKm != null ? smartTank.totalRangeKm.toString() : '';
 
-  function handleCarTypeChange(type: CarType) {
-    setCarType(type);
-    // Sync local input fields to match the new car-type defaults
-    // so the user sees the updated values immediately.
-    const newCapacity    = CAR_TYPE_TANK_CAPACITY[type]   ?? 50;
-    const newConsumption = CAR_TYPE_AVG_CONSUMPTION[type]  ?? 7.5;
-    setCapacityInput(newCapacity.toString());
-    setConsumptionInput(newConsumption.toString());
-    setConsumptionDirty(false);
-    setCapacityDirty(false);
-    recomputeDecision();
-    console.log('[Settings] CarType changed →', type, '— input fields synced.');
-  }
-
-  function handleRefuelingStyleChange(style: RefuelingStyle) {
-    setRefuelingStyle(style);
-    recomputeDecision();
-    console.log('[Settings] RefuelingStyle changed →', style, '— decision recomputed.');
-  }
-
+  const appVersion = (Constants.expoConfig?.version) ?? '—';
 
   function confirmFullReset() {
     Alert.alert(t('alertFullResetTitle'), t('alertFullResetBody'), [
@@ -302,393 +225,268 @@ export default function SettingsScreen() {
     ]);
   }
 
-  // Auto-save dirty inputs on page blur (e.g. user types value then switches Tab).
-  // Prevents silent data loss — same validation logic as the manual ✓ button.
-  useFocusEffect(useCallback(() => {
-    return () => {
-      // 1. Auto-save areas
-      if (areaDirty) {
-        const areas: CommonArea[] = [];
-        if (homeArea) areas.push(homeArea);
-        if (workArea) areas.push(workArea);
-        setCommonAreas(areas);
-        setAreaDirty(false);
-        console.log('[Settings] Auto-saved Gebiete on blur');
-        // SmartTank bootstrap on blur now handled automatically if needed
-      }
-
-      // 2. Auto-save numeric fields
-      if (consumptionDirty) {
-        const val = parseFloat(consumptionInput);
-        if (!isNaN(val) && val >= 3 && val <= 25) {
-          setAvgConsumption(val); setConsumptionDirty(false);
-          console.log('[Settings] Auto-saved consumption on blur:', val);
-        }
-      }
-      if (capacityDirty) {
-        const val = parseFloat(capacityInput);
-        if (!isNaN(val) && val >= 20 && val <= 120) {
-          setTankCapacity(val); setCapacityDirty(false);
-          console.log('[Settings] Auto-saved capacity on blur:', val);
-        }
-      }
-      if (rangeDirty) {
-        const trimmed = rangeInput.trim();
-        if (trimmed === '' || trimmed === '0') {
-          setTotalRangeKm(null); setRangeDirty(false);
-        } else {
-          const val = parseFloat(trimmed);
-          if (!isNaN(val) && val >= 50 && val <= 2000) {
-            // Bootstrap here as well just in case they only touched range (now auto-handled)
-            setTotalRangeKm(val); setRangeDirty(false);
-            console.log('[Settings] Auto-saved range on blur:', val);
-          }
-        }
-      }
-      if (commuteDaysDirty) {
-        const val = parseInt(commuteDaysLocal, 10);
-        if (!isNaN(val) && val >= 1 && val <= 7) {
-          setCommuteDaysInput(val); setCommuteDaysDirty(false);
-          console.log('[Settings] Auto-saved commute days on blur:', val);
-        } else {
-          setCommuteDaysLocal(commuteDaysInput.toString());
-          setCommuteDaysDirty(false);
-          console.warn('[Settings] Invalid commute days on blur — rolled back to:', commuteDaysInput);
-        }
-      }
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [areaDirty, homeArea, workArea, consumptionDirty, consumptionInput, capacityDirty, capacityInput, rangeDirty, rangeInput, commuteDaysDirty, commuteDaysLocal]));
-
   return (
-    <KeyboardAvoidingView 
-      style={{ flex: 1 }} 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <Stack.Screen options={{ title: t('settingsTitle'), headerStyle: { backgroundColor: C.bg }, headerTintColor: C.text }} />
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={ss.content} keyboardShouldPersistTaps="handled">
 
-      {/* Fixed header Save button — same level as 'Einstellungen' title, never scrolls away */}
-      <Stack.Screen
-        options={{
-          headerRight: () => (
-            <TouchableOpacity
-              onPress={handleGlobalSave}
-              disabled={!globalDirty}
-              style={{ paddingHorizontal: 4, paddingVertical: 4 }}
-              accessibilityLabel="Alle Änderungen speichern"
-            >
-              <Text style={[styles.headerSaveBtn, !globalDirty && styles.headerSaveBtnDisabled]}>
-                {globalSaved ? '✓' : 'Speichern'}
-              </Text>
-            </TouchableOpacity>
-          ),
-        }}
-      />
-
-      <View style={styles.pageNote}>
-        <Text style={styles.pageNoteText}>{t('settingsAutosaveHint')}</Text>
-      </View>
-
-      {/* Language / Sprache */}
-      <Section title={t('language')}>
-        <View style={styles.tabRow}>
-          {LANGUAGE_OPTIONS.map(o => (
-            <TouchableOpacity
-              key={o.value}
-              style={[styles.tab, language === o.value && styles.tabActive]}
-              onPress={() => setLanguage(o.value)}
-              accessibilityLabel={`${t('language')}: ${o.label}`}
-            >
-              <Text style={[styles.tabText, language === o.value && styles.tabTextA]}>
-                {o.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </Section>
-
-      {/* Fuel Type */}
-      <Section title={t('fuelType')}>
-        <View style={styles.tabRow}>
-          {FUEL_TYPES.map(ft => (
-            <TouchableOpacity key={ft} style={[styles.tab, fuelType === ft && styles.tabActive]} onPress={() => {
-              setFuelType(ft);
-              switchFuelType(ft); // switchFuelType already calls recomputeDecision() internally
-            }}>
-              <Text style={[styles.tabText, fuelType === ft && styles.tabTextA]}>{formatFuelType(ft)}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </Section>
-
-      {/* Common Area */}
-      <Section title={t('areas')}>
-        <View style={{ zIndex: 20 }}>
-          <LiveAddressInput
-            label={t('homeArea')}
-            icon="🏠"
-            placeholder={t('addrPlaceholder')}
-            selectedArea={homeArea}
-            onSelect={updateHome}
-            onClear={clearHome}
-            otherArea={workArea}
-          />
-        </View>
-        <View style={{ zIndex: 10 }}>
-          <LiveAddressInput
-            label={t('workArea')}
-            icon="🏢"
-            placeholder={t('addrPlaceholder')}
-            selectedArea={workArea}
-            onSelect={updateWork}
-            onClear={clearWork}
-            otherArea={homeArea}
-          />
-        </View>
-      </Section>
-
-      {/* Smart Tanken Settings (Merged with Refueling Style & Advanced) */}
-      <Section title="Smart Tanken">
-        <View style={styles.settingRow}>
-          <View style={styles.settingLabelRow}>
-            <Text style={styles.settingLabel}>Modus aktivieren</Text>
-            <TouchableOpacity onPress={() => setIsSmartTankenEnabled(!isSmartTankenEnabled)} style={styles.advancedToggle}>
-              <Text style={{ color: isSmartTankenEnabled ? '#4ADE80' : '#EF4444', fontWeight: '700' }}>
-                {isSmartTankenEnabled ? 'AN' : 'AUS'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-          <Text style={{ color: '#6B7280', fontSize: 11 }}>
-            FuelAmpel lernt dein Fahrverhalten und benachrichtigt dich, wenn der Tank niedrig wird.
-          </Text>
-        </View>
-
-        {isSmartTankenEnabled && (
-          <>
-            <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 8 }} />
-            
-            <View style={styles.settingRow}>
-              <Text style={styles.settingLabel}>{t('refuelingStyle')}</Text>
-              <OptionRow<RefuelingStyle> options={REFUELING_STYLE_OPTIONS} value={refuelingStyle} onSelect={handleRefuelingStyleChange} />
-            </View>
-
-            <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 8 }} />
-
-            {/* Range on full tank — promoted to main level (km display calibration) */}
-            <View style={styles.settingRow}>
-              <View style={styles.settingLabelRow}>
-                <Text style={styles.settingLabel}>
-                  {t('fullTankRange')}{'  '}<Text style={{ color: '#6B7280' }}>{t('optionalLabel')}</Text>
-                </Text>
-                {savedField === 'range' && <Text style={styles.savedHint}>{t('saved')}</Text>}
-              </View>
-              <Text style={{ color: '#9CA3AF', fontSize: 11, marginBottom: 4 }}>
-                {t('fullTankRangeHint')}
-              </Text>
-              <TextInput
-                style={styles.input}
-                value={rangeInput}
-                onChangeText={(v) => { setRangeInput(v); setRangeDirty(true); setGlobalDirty(true); }}
-                keyboardType="numeric"
-                placeholder={t('rangePlaceholder')}
-                placeholderTextColor="#4B5563"
-                returnKeyType="done"
-                onEndEditing={saveRange}
-                onSubmitEditing={saveRange}
-                accessibilityLabel={t('fullTankRange')}
-              />
-              {rangeDirty && (
+        {/* ── BASICS ─────────────────────────────────────────────────── */}
+        <SectionHeader label={t('settingsBasics')} />
+        <Card>
+          {/* Fuel Type */}
+          <View style={[row.wrap, row.divider]}>
+            <Text style={row.icon}>⛽</Text>
+            <Text style={row.label}>{t('fuelTypeShort')}</Text>
+            <View style={ss.tabRow}>
+              {FUEL_TYPES.map(ft => (
                 <TouchableOpacity
-                  style={styles.applyBtn}
-                  onPress={saveRange}
-                  accessibilityLabel={t('saveRangeA11y')}
-                >
-                  <Text style={styles.applyBtnText}>{t('applyBtn')}</Text>
+                  key={ft}
+                  style={[ss.tab, fuelType === ft && ss.tabActive]}
+                  onPress={() => { setFuelType(ft); switchFuelType(ft); }}>
+                  <Text style={[ss.tabText, fuelType === ft && ss.tabTextA]}>
+                    {formatFuelType(ft)}
+                  </Text>
                 </TouchableOpacity>
-              )}
+              ))}
+            </View>
+          </View>
+
+          {/* Language */}
+          <View style={[row.wrap, row.divider]}>
+            <Text style={row.icon}>🌐</Text>
+            <Text style={row.label}>{t('language')}</Text>
+            <View style={ss.tabRow}>
+              {(['de', 'en'] as const).map(lang => (
+                <TouchableOpacity key={lang} style={[ss.tab, language === lang && ss.tabActive]}
+                  onPress={() => setLanguage(lang)}>
+                  <Text style={[ss.tabText, language === lang && ss.tabTextA]}>
+                    {lang === 'de' ? 'DE 🇩🇪' : 'EN 🇬🇧'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* Home area */}
+          <View style={{ zIndex: 20 }}>
+            <View style={[row.wrap, row.divider]}>
+              <Text style={row.icon}>🏠</Text>
+              <View style={{ flex: 1 }}>
+                <LiveAddressInput
+                  label={t('homeShort')}
+                  icon=""
+                  placeholder={t('addrPlaceholder')}
+                  selectedArea={homeArea}
+                  onSelect={a => { setHomeArea(a); setAreaDirty(true); saveAreas(a, workArea); }}
+                  onClear={() => { setHomeArea(null); setAreaDirty(true); saveAreas(null, workArea); }}
+                  otherArea={workArea}
+                />
+              </View>
+            </View>
+          </View>
+
+          {/* Work area */}
+          <View style={{ zIndex: 10 }}>
+            <View style={row.wrap}>
+              <Text style={row.icon}>🏢</Text>
+              <View style={{ flex: 1 }}>
+                <LiveAddressInput
+                  label={t('workShort')}
+                  icon=""
+                  placeholder={t('addrPlaceholder')}
+                  selectedArea={workArea}
+                  onSelect={a => { setWorkArea(a); setAreaDirty(true); saveAreas(homeArea, a); }}
+                  onClear={() => { setWorkArea(null); setAreaDirty(true); saveAreas(homeArea, null); }}
+                  otherArea={homeArea}
+                />
+              </View>
+            </View>
+          </View>
+        </Card>
+
+        {/* ── SMART TANKEN ───────────────────────────────────────────── */}
+        <SectionHeader label={t('settingsSmartTanken')} />
+        <Card>
+          {/* Master toggle */}
+          <Row icon="🧠" label={t('smartActive')} noDivider={!isSmartTankenEnabled}
+            right={
+              <Switch
+                value={isSmartTankenEnabled}
+                onValueChange={v => { setIsSmartTankenEnabled(v); recomputeDecision(); }}
+                trackColor={{ false: '#3F3F46', true: C.accent }}
+                thumbColor={isSmartTankenEnabled ? '#E0E7FF' : '#71717A'}
+              />
+            }
+          />
+
+          {isSmartTankenEnabled && (<>
+            {/* Tank capacity */}
+            {editing === 'capacity' ? (
+              <InlineEditor
+                value={capacity} unit="L"
+                validate={v => { const n = parseFloat(v); return !isNaN(n) && n >= 20 && n <= 120; }}
+                onSave={v => { setTankCapacity(parseFloat(v)); setEditing(null); recomputeDecision(); }}
+                onCancel={() => setEditing(null)}
+              />
+            ) : (
+              <Row icon="🛢️" label={t('tankSizeShort')}
+                right={<Chip label={`${capacity} L`} color={C.accentFg} />}
+                onPress={() => setEditing('capacity')} />
+            )}
+
+            {/* Consumption */}
+            {editing === 'consumption' ? (
+              <InlineEditor
+                value={consumption} unit="L/100"
+                validate={v => { const n = parseFloat(v); return !isNaN(n) && n >= 3 && n <= 25; }}
+                onSave={v => { setAvgConsumption(parseFloat(v)); setEditing(null); recomputeDecision(); }}
+                onCancel={() => setEditing(null)}
+              />
+            ) : (
+              <Row icon="📊" label={t('consumptionShort')}
+                right={<Chip label={`${consumption} L`} color={C.accentFg} />}
+                onPress={() => setEditing('consumption')} />
+            )}
+
+            {/* Odometer */}
+            {editing === 'odometer' ? (
+              <InlineEditor
+                value={odometer} unit="km"
+                placeholder={t('odometerPlaceholder')}
+                validate={v => { if (v.trim() === '') return true; const n = parseInt(v, 10); return !isNaN(n) && n >= 0 && n <= 999999; }}
+                onSave={v => {
+                  if (v.trim() !== '') setOdometerKm(parseInt(v, 10));
+                  setEditing(null);
+                }}
+                onCancel={() => setEditing(null)}
+              />
+            ) : (
+              <Row icon="🛣️" label={t('odometerLabel')}
+                right={<Chip label={odometer ? `${parseInt(odometer).toLocaleString('de-DE')} km` : t('optionalLabel')} color={odometer ? C.accentFg : C.muted} />}
+                onPress={() => setEditing('odometer')} />
+            )}
+
+            {/* Refueling style — 3-way toggle */}
+            <View style={[row.wrap, row.divider]}>
+              <Text style={row.icon}>🔔</Text>
+              <Text style={row.label}>{t('refuelingStyle')}</Text>
+              <View style={ss.styleRow}>
+                {REFUEL_STYLES.map(s => (
+                  <TouchableOpacity
+                    key={s.value}
+                    style={[ss.stylePill, refuelingStyle === s.value && ss.stylePillActive]}
+                    onPress={() => { setRefuelingStyle(s.value); recomputeDecision(); }}>
+                    <Text style={[ss.stylePillIcon, refuelingStyle === s.value && { opacity: 1 }]}>{s.icon}</Text>
+                    <Text style={[ss.stylePillText, refuelingStyle === s.value && { color: C.accentFg }]}>
+                      {t(s.labelKey)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
 
-            <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 8 }} />
-
-            {/* ── Advanced toggle ── */}
-            <TouchableOpacity
-              style={styles.advancedToggle}
-              onPress={() => setShowAdvanced(!showAdvanced)}
-              accessibilityLabel={t('advancedSettings')}
-            >
-              <Text style={styles.advancedToggleText}>
-                {showAdvanced ? '\u25be' : '\u25b8'}{'  '}{t('advancedSettings')}
-              </Text>
-              <Text style={styles.advancedToggleHint}>{t('advancedSettingsHint')}</Text>
+            {/* Advanced toggle */}
+            <TouchableOpacity style={ss.advRow} onPress={() => setShowAdvanced(!showAdvanced)}>
+              <Text style={ss.advText}>{showAdvanced ? '▾' : '▸'}  {t('settingsAdvanced')}</Text>
             </TouchableOpacity>
 
-            {showAdvanced && (
-              <>
-                <View style={styles.settingRow}>
-                  <Text style={styles.settingLabel}>Benachrichtigung ab Tankstand</Text>
-                  <OptionRow<number> 
-                    options={ALERT_THRESHOLD_OPTIONS} 
-                    value={alertThresholdPct} 
-                    onSelect={(val) => { setAlertThresholdPct(val); setGlobalDirty(true); }} 
-                  />
-                </View>
-
-                <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 8 }} />
-
-                <View style={styles.settingRow}>
-                  <View style={styles.settingLabelRow}>
-                    <Text style={styles.settingLabel}>Pendeltage pro Woche (1-7)</Text>
-                  </View>
-                  <TextInput
-                    style={styles.input}
-                    value={commuteDaysLocal}
-                    onChangeText={(v) => { setCommuteDaysLocal(v); setCommuteDaysDirty(true); setGlobalDirty(true); }}
-                    keyboardType="numeric"
-                    returnKeyType="done"
-                    placeholder="5"
-                    placeholderTextColor="#4B5563"
-                  />
-                </View>
-                
-                <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 8 }} />
-                
-                <View style={styles.settingRow}>
-                  <Text style={styles.settingLabel}>{t('vehicleType')}</Text>
-                  <OptionRow<CarType> options={CAR_TYPE_OPTIONS} value={carType} onSelect={handleCarTypeChange} />
-                </View>
-
-                <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 8 }} />
-
-                {/* Avg Consumption */}
-                <View style={styles.settingRow}>
-                  <View style={styles.settingLabelRow}>
-                    <Text style={styles.settingLabel}>{t('avgConsumption')}</Text>
-                    {savedField === 'consumption' && <Text style={styles.savedHint}>{t('saved')}</Text>}
-                  </View>
-                  <TextInput
-                    style={styles.input}
-                    value={consumptionInput}
-                    onChangeText={(v) => { setConsumptionInput(v); setConsumptionDirty(true); setGlobalDirty(true); }}
-                    keyboardType="decimal-pad"
-                    returnKeyType="done"
-                    onEndEditing={saveConsumption}
-                    onSubmitEditing={saveConsumption}
-                    placeholderTextColor="#4B5563"
-                    accessibilityLabel={t('avgConsumption')}
-                  />
-                  {consumptionDirty && (
-                    <TouchableOpacity
-                      style={styles.applyBtn}
-                      onPress={saveConsumption}
-                      accessibilityLabel={t('saveConsumptionA11y')}
-                    >
-                      <Text style={styles.applyBtnText}>{t('applyBtn')}</Text>
+            {showAdvanced && (<>
+              {/* Alert threshold */}
+              <View style={[row.wrap, row.divider]}>
+                <Text style={row.icon}>🔋</Text>
+                <Text style={row.label}>{t('alertThresholdShort')}</Text>
+                <View style={ss.tabRow}>
+                  {[20, 30, 40].map(pct => (
+                    <TouchableOpacity key={pct}
+                      style={[ss.tab, alertThresholdPct === pct && ss.tabActive]}
+                      onPress={() => setAlertThresholdPct(pct)}>
+                      <Text style={[ss.tabText, alertThresholdPct === pct && ss.tabTextA]}>{pct}%</Text>
                     </TouchableOpacity>
-                  )}
+                  ))}
                 </View>
+              </View>
 
-                {/* Tank Capacity */}
-                <View style={styles.settingRow}>
-                  <View style={styles.settingLabelRow}>
-                    <Text style={styles.settingLabel}>{t('tankCapacity')}</Text>
-                    {savedField === 'capacity' && <Text style={styles.savedHint}>{t('saved')}</Text>}
-                  </View>
-                  <TextInput
-                    style={styles.input}
-                    value={capacityInput}
-                    onChangeText={(v) => { setCapacityInput(v); setCapacityDirty(true); setGlobalDirty(true); }}
-                    keyboardType="decimal-pad"
-                    returnKeyType="done"
-                    onEndEditing={saveCapacity}
-                    onSubmitEditing={saveCapacity}
-                    placeholderTextColor="#4B5563"
-                    accessibilityLabel={t('tankCapacity')}
-                  />
-                  {capacityDirty && (
-                    <TouchableOpacity
-                      style={styles.applyBtn}
-                      onPress={saveCapacity}
-                      accessibilityLabel={t('saveTankCapacityA11y')}
-                    >
-                      <Text style={styles.applyBtnText}>{t('applyBtn')}</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </>
-            )}
-          </>
-        )}
-      </Section>
+              {/* Commute days */}
+              {editing === 'commuteDays' ? (
+                <InlineEditor
+                  value={commuteDaysInput.toString()} unit={t('commuteDaysShort')}
+                  validate={v => { const n = parseInt(v, 10); return !isNaN(n) && n >= 1 && n <= 7; }}
+                  onSave={v => { setCommuteDaysInput(parseInt(v, 10)); setEditing(null); }}
+                  onCancel={() => setEditing(null)}
+                />
+              ) : (
+                <Row icon="🔁" label={t('commuteDaysShort')}
+                  right={<Chip label={`${commuteDaysInput} d`} color={C.accentFg} />}
+                  onPress={() => setEditing('commuteDays')} />
+              )}
 
-      {/* About & Reset (merged) */}
-      <Section title={t('aboutAndReset')}>
-        <Text style={styles.aboutText}>{t('aboutBody')}</Text>
-        <Text style={styles.creditText}>{t('aboutCredit')}</Text>
-        <View style={styles.resetDivider} />
-        <TouchableOpacity style={[styles.resetBtn, styles.resetBtnDanger]} onPress={confirmFullReset} accessibilityLabel={t('fullReset')}>
-          <Text style={[styles.resetBtnText, styles.resetBtnTextDanger]}>{t('fullReset')}</Text>
-          <Text style={styles.resetBtnDesc}>{t('fullResetDesc')}</Text>
-        </TouchableOpacity>
-      </Section>
+              {/* Range (optional) */}
+              {editing === 'range' ? (
+                <InlineEditor
+                  value={range} unit="km"
+                  placeholder={t('rangePlaceholder')}
+                  validate={v => { if (v.trim() === '' || v === '0') return true; const n = parseFloat(v); return !isNaN(n) && n >= 50 && n <= 2000; }}
+                  onSave={v => {
+                    if (v.trim() === '' || v === '0') setTotalRangeKm(null);
+                    else setTotalRangeKm(parseFloat(v));
+                    setEditing(null);
+                  }}
+                  onCancel={() => setEditing(null)}
+                />
+              ) : (
+                <Row icon="📏" label={t('rangeShort')}
+                  right={<Chip label={range ? `${range} km` : t('optionalLabel')} color={range ? C.accentFg : C.muted} />}
+                  onPress={() => setEditing('range')} />
+              )}
+            </>)}
+          </>)}
+        </Card>
 
-    </ScrollView>
+        {/* ── ABOUT ──────────────────────────────────────────────────── */}
+        <SectionHeader label={t('settingsAbout')} />
+        <Card>
+          <Row icon="ℹ️" label="FuelAmpel" noDivider
+            right={<Chip label={`v${appVersion}`} />} />
+          <View style={[row.wrap]}>
+            <Text style={row.icon}>🗄️</Text>
+            <Text style={[row.label, { color: C.muted, fontSize: 13 }]}>
+              {t('aboutCredit')}
+            </Text>
+          </View>
+        </Card>
+
+        {/* ── DANGER ZONE ────────────────────────────────────────────── */}
+        <SectionHeader label={t('settingsDangerZone')} />
+        <Card>
+          <Row icon="🔄" label={t('fullReset')} danger noDivider
+            onPress={confirmFullReset}
+            right={<Text style={{ color: C.red, fontSize: 18 }}>›</Text>} />
+        </Card>
+
+        <View style={{ height: 40 }} />
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  // Header save button
-  headerSaveBtn:        { color: '#6366F1', fontSize: 16, fontWeight: '700' },
-  headerSaveBtnDisabled:{ color: '#4B5563' },
+const ss = StyleSheet.create({
+  content:  { paddingTop: 8, paddingBottom: 60 },
 
-  screen:   { flex: 1, backgroundColor: '#0D0F14' },
-  content:  { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 60, gap: 24 },
-  pageNote: { backgroundColor: 'rgba(99,102,241,0.08)', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(99,102,241,0.18)', paddingHorizontal: 14, paddingVertical: 12 },
-  pageNoteText: { color: '#A5B4FC', fontSize: 12, lineHeight: 18 },
+  tabRow:   { flexDirection: 'row', gap: 6 },
+  tab:      { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.05)' },
+  tabActive:{ backgroundColor: 'rgba(99,102,241,0.22)' },
+  tabText:  { color: C.muted, fontSize: 12, fontWeight: '600' },
+  tabTextA: { color: C.accentFg },
 
-  section:      { gap: 10 },
-  sectionTitle: { color: '#9CA3AF', fontSize: 11, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase' },
-  sectionBody:  { backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 18, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', padding: 16, gap: 14 },
+  styleRow:     { flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' },
+  stylePill:    { alignItems: 'center', paddingHorizontal: 8, paddingVertical: 5, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.05)', gap: 2 },
+  stylePillActive: { backgroundColor: 'rgba(99,102,241,0.22)' },
+  stylePillIcon:{ fontSize: 14, opacity: 0.45 },
+  stylePillText:{ color: C.muted, fontSize: 10, fontWeight: '600' },
 
-  tabRow:      { flexDirection: 'row', gap: 8 },
-  tab:         { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
-  tabActive:   { backgroundColor: 'rgba(99,102,241,0.2)', borderColor: '#6366F1' },
-  tabText:     { color: '#9CA3AF', fontSize: 13, fontWeight: '600' },
-  tabTextA:    { color: '#A5B4FC' },
-
-  optionGrid:        { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  optPill:           { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.09)', backgroundColor: 'rgba(255,255,255,0.04)' },
-  optPillActive:     { backgroundColor: 'rgba(99,102,241,0.18)', borderColor: '#6366F1' },
-  optPillText:       { color: '#9CA3AF', fontSize: 12, fontWeight: '600' },
-  optPillTextActive: { color: '#A5B4FC' },
-
-  settingRow:      { gap: 6 },
-  settingLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  settingLabel:    { color: '#9CA3AF', fontSize: 13 },
-  savedHint:       { color: '#4ADE80', fontSize: 11, fontWeight: '700', backgroundColor: 'rgba(34,197,94,0.12)', borderWidth: 1, borderColor: 'rgba(34,197,94,0.24)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
-  input:           { backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', color: '#F9FAFB', paddingHorizontal: 14, paddingVertical: 10, fontSize: 15 },
-
-  // Inline apply button: appears beside numeric inputs when the field is dirty (value changed)
-  applyBtn:        { marginTop: 6, alignSelf: 'flex-end', backgroundColor: 'rgba(99,102,241,0.2)', borderRadius: 8, borderWidth: 1, borderColor: '#6366F1', paddingHorizontal: 18, paddingVertical: 8 },
-  applyBtnText:    { color: '#A5B4FC', fontWeight: '700', fontSize: 14 },
-
-  refuelBtn:     { backgroundColor: 'rgba(34,197,94,0.1)', borderRadius: 12, paddingVertical: 13, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(34,197,94,0.3)', marginTop: 4 },
-  refuelBtnText: { color: '#22C55E', fontWeight: '700', fontSize: 14 },
-
-  resetBtn:           { backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', gap: 3 },
-  resetBtnDanger:     { borderColor: 'rgba(239,68,68,0.3)', backgroundColor: 'rgba(239,68,68,0.06)' },
-  resetBtnText:       { color: '#E5E7EB', fontSize: 14, fontWeight: '700' },
-  resetBtnTextDanger: { color: '#FCA5A5' },
-  resetBtnDesc:       { color: '#6B7280', fontSize: 12 },
-
-  aboutText:  { color: '#9CA3AF', fontSize: 13, lineHeight: 20 },
-  creditText: { color: '#6B7280', fontSize: 12, marginTop: 4 },
-
-  advancedToggle:     { paddingVertical: 8, paddingHorizontal: 4, gap: 4 },
-  advancedToggleText: { color: '#9CA3AF', fontSize: 13, fontWeight: '600' },
-  advancedToggleHint: { color: '#6B7280', fontSize: 11 },
-
-  resetDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 6 },
+  advRow:   { paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: 1, borderTopColor: C.divider },
+  advText:  { color: C.muted, fontSize: 13, fontWeight: '600' },
 });

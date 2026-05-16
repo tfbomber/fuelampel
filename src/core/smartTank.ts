@@ -149,6 +149,8 @@ export function createDefaultSmartTank(
 
   return {
     levelPercent: initialPct,
+    odometerKm: null,
+    odometerAtLastRefuelKm: null,
     lastConfirmedMs: Date.now(),
     lastConfirmedBy: 'manual',
     // Dual-confidence model (Phase 1)
@@ -188,6 +190,21 @@ export function setTotalRangeKm(
   const clamped = rangeKm !== null ? Math.max(50, Math.min(2000, Math.round(rangeKm))) : null;
   console.log(`[SmartTank] totalRangeKm set to ${clamped ?? 'null'}`);
   return { ...state, totalRangeKm: clamped };
+}
+
+// ─── A3. setOdometer ───────────────────────────────────────────────────────────
+
+/**
+ * Pure helper: update the odometer reading on an existing SmartTankState.
+ * Does NOT update odometerAtLastRefuelKm — that is only updated on a refuel event.
+ */
+export function setOdometer(
+  state: SmartTankState,
+  odometerKm: number,
+): SmartTankState {
+  const clamped = Math.max(0, Math.min(999999, Math.round(odometerKm)));
+  console.log(`[SmartTank] odometerKm set to ${clamped} km`);
+  return { ...state, odometerKm: clamped };
 }
 
 // ─── B. estimateDailyKm ───────────────────────────────────────────────────────
@@ -289,15 +306,18 @@ export function estimateLevelPercent(state: SmartTankState): number {
  * - Resets levelPercent
  * - Updates refuelIntervalEMA
  * - Back-calculates actual dailyKm over the period → updates dailyKmEMA
+ * - If odometerKm provided AND previous odometer exists → precise km/consumption calibration
  *
  * @param state         Current state
  * @param litresAdded   Litres added; 0 means "full tank"
  * @param confirmedBy   How the refuel was detected
+ * @param odometerKm    Optional: current odometer reading in km (enables precise calibration)
  */
 export function recordRefuel(
   state: SmartTankState,
   litresAdded: number,
   confirmedBy: RefuelEvent['confirmedBy'],
+  odometerKm?: number,
 ): SmartTankState {
   const now = Date.now();
   const actualLitres = litresAdded === 0 ? state.tankCapacityL : litresAdded;
@@ -329,7 +349,25 @@ export function recordRefuel(
 
   // --- Back-calculate actual daily km from this refuel event ---
   let newDailyKmEMA = state.dailyKmEMA;
-  if (lastRefuel) {
+  let newConsumptionPer100km = state.consumptionPer100km;
+
+  if (odometerKm != null && state.odometerAtLastRefuelKm != null) {
+    // PRECISION PATH: odometer-based calibration (most accurate)
+    const kmDriven = odometerKm - state.odometerAtLastRefuelKm;
+    if (kmDriven > 0 && lastRefuel) {
+      const periodDays = (now - lastRefuel.timestampMs) / 86_400_000;
+      if (periodDays >= 0.5) {
+        newDailyKmEMA = ema(newDailyKmEMA, kmDriven / periodDays);
+      }
+      // Back-calculate consumption from actual km driven
+      const actualConsumption = (clampedLitres / kmDriven) * 100;
+      if (actualConsumption >= 3 && actualConsumption <= 25) {
+        newConsumptionPer100km = ema(state.consumptionPer100km, actualConsumption);
+        console.log(`[SmartTank] Odometer calibration: ${kmDriven}km driven, actual consumption=${actualConsumption.toFixed(2)} L/100km`);
+      }
+    }
+  } else if (lastRefuel) {
+    // LEGACY PATH: litres-based back-calculation (less accurate)
     const periodDays = (now - lastRefuel.timestampMs) / 86_400_000;
     if (periodDays >= 0.5) {
       const kmDrivenThisPeriod =
@@ -347,12 +385,15 @@ export function recordRefuel(
 
   console.log(
     `[SmartTank] Refuel recorded: ${clampedLitres.toFixed(1)}L via ${confirmedBy}. ` +
-    `IntervalEMA=${newIntervalEMA?.toFixed(1) ?? 'n/a'}d, dailyKmEMA=${newDailyKmEMA.toFixed(1)}`
+    `IntervalEMA=${newIntervalEMA?.toFixed(1) ?? 'n/a'}d, dailyKmEMA=${newDailyKmEMA.toFixed(1)}` +
+    (odometerKm != null ? `, odometer=${odometerKm}km` : '')
   );
 
   return {
     ...state,
     levelPercent: newLevelPct,
+    odometerKm: odometerKm ?? state.odometerKm,
+    odometerAtLastRefuelKm: odometerKm ?? state.odometerAtLastRefuelKm,
     lastConfirmedMs: now,
     lastConfirmedBy: 'refuel',
     levelConfidence: 1.0, // hard truth: refuel = maximum confidence
@@ -361,6 +402,7 @@ export function recordRefuel(
     refuelHistory: newHistory,
     refuelIntervalEMA: newIntervalEMA,
     dailyKmEMA: newDailyKmEMA,
+    consumptionPer100km: newConsumptionPer100km,
     pendingRefuelConfirm: false,
   };
 }

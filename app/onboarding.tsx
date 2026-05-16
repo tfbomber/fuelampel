@@ -205,14 +205,14 @@ export default function OnboardingScreen() {
   const [workArea, setWorkArea] = useState<CommonArea | null>(null);
   const [commuteDays, setCommuteDays] = useState('5');
   const [tankPct, setTankPct] = useState(50);
+  const [odometerInput, setOdometerInput] = useState(''); // optional odometer at onboarding
 
   const canProceed =
     step === 0 ? modeSelection !== null :
     step === 1 ? true : // fuelType always has default
     step === 2 && modeSelection === 'basis' ? plzFallback.length >= 5 :
     step === 2 && modeSelection === 'smart' ? homeArea !== null :
-    step === 3 && modeSelection === 'smart' ? parseInt(commuteDays, 10) >= 1 && parseInt(commuteDays, 10) <= 7 :
-    true;
+    true; // Step 3 (tank level + optional odometer) always can proceed
 
   async function next() {
     if (step === 0) {
@@ -251,7 +251,8 @@ export default function OnboardingScreen() {
         return;
       }
     } else {
-      if (step < 4) {
+      // Smart mode: 3 steps (0→1→2→3)
+      if (step < 3) {
         setStep(s => s + 1);
         return;
       }
@@ -313,6 +314,16 @@ export default function OnboardingScreen() {
       refuelingStyle: null, carType: null, // Removed from UI, rely on defaults & BiasTracker
       initialPct: tankPct,
     });
+
+    // Set initial odometer if user provided it
+    const odometerVal = parseInt(odometerInput, 10);
+    if (!isNaN(odometerVal) && odometerVal > 0) {
+      // Give store a tick to initialize smartTank from completeOnboarding first
+      setTimeout(() => {
+        useUserStore.getState().setOdometerKm(odometerVal);
+        console.log(`[Onboarding] Initial odometer set to ${odometerVal} km`);
+      }, 100);
+    }
     
     useFuelStore.getState().recomputeDecision();
     await ensureNotificationPermission();
@@ -395,7 +406,7 @@ export default function OnboardingScreen() {
           </View>
         )}
 
-        {/* Step 2 (Smart) — Home & Work Area */}
+        {/* Step 2 (Smart) — Home & Work Area + Commute Days (merged) */}
         {step === 2 && modeSelection === 'smart' && (
           <View style={s.stepWrap}>
             <Text style={s.emoji}>📍</Text>
@@ -423,28 +434,65 @@ export default function OnboardingScreen() {
                 otherArea={homeArea}
               />
             </View>
-          </View>
-        )}
-
-        {/* Step 3 (Smart) — Commute Days */}
-        {step === 3 && modeSelection === 'smart' && (
-          <View style={s.stepWrap}>
-            <Text style={s.emoji}>🔁</Text>
-            <Text style={s.title}>{t('onboardingHabitTitle')}</Text>
-            <Text style={s.subtitle}>{t('onboardingHabitSubtitle')}</Text>
-
-            <Text style={[s.sectionLabel, { marginTop: 8 }]}>🛣️ Wie viele Tage fährst du pro Woche zur Arbeit?</Text>
+            {/* Commute days — merged into this step */}
+            <View style={rangeS.inputRow}>
+              <Text style={s.sectionLabel}>🔁 {t('onboardingCommuteDaysLabel')}</Text>
+            </View>
             <View style={rangeS.inputRow}>
               <TextInput
                 style={rangeS.input}
                 value={commuteDays}
                 onChangeText={setCommuteDays}
-                placeholder="z.B. 5"
+                placeholder="5"
                 placeholderTextColor="#4B5563"
                 keyboardType="numeric"
                 returnKeyType="done"
               />
               <Text style={rangeS.unit}>Tage</Text>
+            </View>
+          </View>
+        )}
+
+        {/* Step 3 (Smart) — Current Tank Level + optional Odometer */}
+        {step === 3 && modeSelection === 'smart' && (
+          <View style={s.stepWrap}>
+            <Text style={s.emoji}>🛢️</Text>
+            <Text style={s.title}>{t('onboardingTankTitle')}</Text>
+            <Text style={s.subtitle}>{t('onboardingTankSubtitle')}</Text>
+
+            <View style={levelS.box}>
+              <Text style={levelS.pct}>{tankPct}%</Text>
+              <Text style={levelS.label}>{getTankLevelLabel(tankPct)}</Text>
+            </View>
+
+            <FuelSlider
+              value={tankPct}
+              fillColor={
+                tankPct >= 50 ? '#22C55E' : tankPct >= 25 ? '#F59E0B' : '#EF4444'
+              }
+              step={5}
+              onValueChange={setTankPct}
+              onSlidingComplete={setTankPct}
+            />
+
+            <Text style={levelS.hint}>{t('tankLevelScaleHint')}</Text>
+
+            {/* Optional odometer */}
+            <View style={{ marginTop: 16, gap: 6 }}>
+              <Text style={s.sectionLabel}>🛣️ {t('onboardingOdometerTitle')}</Text>
+              <Text style={[s.hint, { textAlign: 'left' }]}>{t('onboardingOdometerHint')}</Text>
+              <View style={rangeS.inputRow}>
+                <TextInput
+                  style={rangeS.input}
+                  value={odometerInput}
+                  onChangeText={setOdometerInput}
+                  placeholder={t('odometerPlaceholder')}
+                  placeholderTextColor="#4B5563"
+                  keyboardType="numeric"
+                  returnKeyType="done"
+                />
+                <Text style={rangeS.unit}>km</Text>
+              </View>
             </View>
           </View>
         )}
@@ -483,7 +531,7 @@ export default function OnboardingScreen() {
           activeOpacity={0.8}
         >
           <Text style={s.nextBtnText}>
-            {(modeSelection === 'basis' && step === 1) || (modeSelection === 'smart' && step === 4) || (modeSelection === 'basis' && step === 2)
+            {(modeSelection === 'basis' && step === 1) || (modeSelection === 'smart' && step === 3) || (modeSelection === 'basis' && step === 2)
               ? t('onboardingStart') : t('onboardingNext')}
           </Text>
         </TouchableOpacity>
