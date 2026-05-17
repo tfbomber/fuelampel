@@ -221,7 +221,7 @@ const translations = {
     tankSizeShort:         'Tankgröße',
     consumptionShort:      'Verbrauch',
     odometerLabel:         'Tachostand',
-    odometerPlaceholder:   'z.B. 45230',
+    odometerPlaceholder:   '',                    // No example — range is 0–999.999, any example is misleading
     odometerHintShort:     'km-Stand beim letzten Tanken',
     alertThresholdShort:   'Warnschwelle',
     commuteDaysShort:      'Pendeltage',
@@ -449,7 +449,7 @@ const translations = {
     tankSizeShort:         'Tank Size',
     consumptionShort:      'Consumption',
     odometerLabel:         'Odometer',
-    odometerPlaceholder:   'e.g. 45230',
+    odometerPlaceholder:   '',                    // No example — range is 0–999,999, any example is misleading
     odometerHintShort:     'km reading at last refuel',
     alertThresholdShort:   'Alert Level',
     commuteDaysShort:      'Commute Days',
